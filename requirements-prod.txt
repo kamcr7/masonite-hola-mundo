@@ -1,8 +1,8 @@
-# Core
+# Masonite Core
 masonite==4.20.2
 masonite-orm==2.24.0
 
-# Dependencies
+# Dependencies con versiones espec?ficas
 cleo==0.8.1
 pastel==0.2.1
 requests==2.32.5
@@ -13,3 +13,6 @@ cryptography==36.0.2
 whitenoise==5.2.0
 gunicorn==23.0.0
 python-dotenv==0.15.0
+
+# Pendulum alternative o versi?n espec?fica
+pendulum==2.1.2
