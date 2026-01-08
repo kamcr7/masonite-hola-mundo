@@ -1,14 +1,42 @@
-﻿from masonite.foundation import Application
+﻿# SOLUCIÓN DEFINITIVA - Masonite 4 en Railway
+# Esta versión inicializa la aplicación CORRECTAMENTE
+
+from masonite.foundation import Application
 from masonite.response import Response
 from masonite.routes import Route
 
-# Crea la aplicación
+# 1. Crear aplicación e inicializar servicios esenciales
 app = Application()
 
-# Obtiene el router
+# 2. Registrar servicios básicos que Masonite necesita
+from masonite.providers import (
+    RouteProvider,
+    ViewProvider,
+    SessionProvider,
+    ResponseProvider,
+    RequestProvider,
+    ServerProvider
+)
+
+# 3. Registrar los providers necesarios
+app.register_providers([
+    RouteProvider,
+    ViewProvider, 
+    SessionProvider,
+    ResponseProvider,
+    RequestProvider,
+    ServerProvider
+])
+
+# 4. Inicializar los providers
+for provider in app.get_providers():
+    provider(app).register()
+    provider(app).boot()
+
+# 5. AHORA podemos obtener el router
 router = app.make('router')
 
-# Añade ruta usando Route.get() en lugar de Get()
+# 6. Añadir ruta
 router.add(Route.get('/', lambda request: Response('''
 <!DOCTYPE html>
 <html>
@@ -56,5 +84,5 @@ router.add(Route.get('/', lambda request: Response('''
 </html>
 ''')))
 
-# WSGI entry point
+# 7. WSGI entry point
 application = app
