@@ -1,10 +1,7 @@
-# Masonite sin dependencias conflictivas
 masonite==4.20.2
-
-# Solo dependencias esenciales
 jinja2==3.1.6
 gunicorn==21.2.0
-requests==2.32.5
-
-# Whitenoise compatible
 whitenoise==5.2.0
+requests==2.32.5
+python-dotenv==0.15.0
+cryptography==36.0.2

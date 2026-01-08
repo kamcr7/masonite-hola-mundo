@@ -1,18 +1,30 @@
 ﻿import os
-from masonite import Application
+import sys
 
+# Aplicar parche
+try:
+    exec(open('masonite_fix.py').read())
+except:
+    pass
+
+from masonite import Application
 app = Application()
-application = app  # Para gunicorn
+application = app
 
 @app.route('/')
-def welcome():
+def home():
     return '''
     <!DOCTYPE html>
     <html>
-    <head><title>Masonite Minimal</title></head>
-    <body style="text-align:center;margin-top:100px;">
-    <h1>✅ Masonite funcionando</h1>
-    <p>Versión mínima en Render.com</p>
+    <head><title>Masonite Render</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gradient-to-r from-blue-500 to-purple-600 min-h-screen flex items-center justify-center">
+    <div class="bg-white/90 p-12 rounded-3xl text-center">
+    <h1 class="text-4xl font-bold mb-4">🎉 ¡Masonite en Render!</h1>
+    <p class="text-xl mb-6">Funcionando con Python 3.13</p>
+    <p class="text-green-600 font-bold">✅ DEPLOY EXITOSO</p>
+    </div>
     </body>
     </html>
     '''
