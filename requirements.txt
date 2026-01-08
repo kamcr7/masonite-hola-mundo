@@ -1,6 +1,8 @@
-# Masonite core
+# Masonite y dependencias b?sicas
 masonite==4.20.2
 gunicorn==21.2.0
 
-# Dependencias problem?ticas - forzar instalaci?n sin build
-pendulum==2.1.2 --no-binary :all:
+# Evita compilaci?n usando wheels precompilados
+pendulum==2.1.2
+bcrypt==3.2.2
+cryptography==36.0.2

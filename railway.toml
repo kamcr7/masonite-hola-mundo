@@ -1,5 +1,8 @@
 [build]
 builder = "nixpacks"
 
+[[build.packages]]
+apt = ["libffi-dev", "build-essential", "python3-dev", "pkg-config"]
+
 [deploy]
-startCommand = "gunicorn wsgi:application --bind 0.0.0.0:$PORT"
+startCommand = "gunicorn wsgi:application --bind 0.0.0.0:$PORT --workers 1"
