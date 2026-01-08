@@ -1,0 +1,108 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        .render-badge {
+            background: linear-gradient(90deg, #46b1e9, #6e56cf);
+            color: white;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+    <div class="container mx-auto px-4 py-12">
+        <!-- Header -->
+        <div class="text-center mb-12">
+            <div class="inline-block render-badge px-6 py-2 rounded-full font-bold mb-4">
+                🚀 Desplegado en Render.com
+            </div>
+            <h1 class="text-5xl font-bold text-white mb-4">{{ title }}</h1>
+            <p class="text-xl text-blue-100 max-w-2xl mx-auto">{{ message }}</p>
+        </div>
+
+        <!-- Features Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {% for feature in features %}
+            <div class="bg-white rounded-xl p-6 card">
+                <div class="text-blue-500 text-3xl mb-4">
+                    {% if loop.index == 1 %}<i class="fas fa-bolt"></i>
+                    {% elif loop.index == 2 %}<i class="fas fa-graduation-cap"></i>
+                    {% elif loop.index == 3 %}<i class="fas fa-rocket"></i>
+                    {% elif loop.index == 4 %}<i class="fas fa-server"></i>
+                    {% elif loop.index == 5 %}<i class="fas fa-code"></i>
+                    {% elif loop.index == 6 %}<i class="fas fa-database"></i>
+                    {% elif loop.index == 7 %}<i class="fas fa-lock"></i>
+                    {% else %}<i class="fas fa-cloud-upload-alt"></i>
+                    {% endif %}
+                </div>
+                <h3 class="text-xl font-bold mb-2">{{ feature }}</h3>
+                <p class="text-gray-600">Característica {{ loop.index }} de Masonite</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="text-center mb-12">
+            <a href="/hola" 
+               class="inline-block bg-white text-blue-600 font-bold py-3 px-8 rounded-full mr-4 hover:bg-gray-100 transition">
+                👋 Ver Hola Mundo
+            </a>
+            <a href="/api/saludo" 
+               class="inline-block bg-blue-600 text-white font-bold py-3 px-8 rounded-full hover:bg-blue-700 transition">
+                🔗 Probar API
+            </a>
+        </div>
+
+        <!-- Tech Stack -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-8">
+            <h3 class="text-2xl font-bold text-white mb-6 text-center">🛠 Stack Tecnológico</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="bg-white rounded-lg p-4 text-center">
+                    <div class="text-3xl text-blue-500 mb-2">🐍</div>
+                    <span class="font-bold">Python 3.11</span>
+                </div>
+                <div class="bg-white rounded-lg p-4 text-center">
+                    <div class="text-3xl text-green-500 mb-2">⚡</div>
+                    <span class="font-bold">Masonite</span>
+                </div>
+                <div class="bg-white rounded-lg p-4 text-center">
+                    <div class="text-3xl text-purple-500 mb-2">☁️</div>
+                    <span class="font-bold">Render.com</span>
+                </div>
+                <div class="bg-white rounded-lg p-4 text-center">
+                    <div class="text-3xl text-yellow-500 mb-2">🎨</div>
+                    <span class="font-bold">Tailwind CSS</span>
+                </div>
+                <div class="bg-white rounded-lg p-4 text-center">
+                    <div class="text-3xl text-red-500 mb-2">🚀</div>
+                    <span class="font-bold">Gunicorn</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deployment Info -->
+        <div class="mt-12 text-center text-blue-100">
+            <p>📅 Año: {{ year }} | 🌐 Hosting: Render.com | ⚡ Framework: Masonite</p>
+            <p class="mt-2">💡 Esta aplicación se despliega automáticamente desde GitHub</p>
+        </div>
+    </div>
+
+    <!-- Font Awesome -->
+    <script src="https://kit.fontawesome.com/YOUR_FA_KIT.js" crossorigin="anonymous"></script>
+</body>
+</html>

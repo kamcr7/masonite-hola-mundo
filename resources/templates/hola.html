@@ -1,0 +1,115 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ titulo }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .render-gradient {
+            background: linear-gradient(90deg, #46b1e9, #6e56cf);
+        }
+    </style>
+</head>
+<body>
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <div class="inline-block render-gradient text-white px-6 py-2 rounded-full font-bold mb-4">
+                ☁️ Hosteado en Render.com
+            </div>
+            <h1 class="text-4xl md:text-5xl font-bold text-white mb-4">{{ titulo }}</h1>
+            <p class="text-xl text-white/90">Demo funcional con Masonite Framework</p>
+        </div>
+
+        <!-- Greeting Card -->
+        <div class="bg-white rounded-2xl shadow-2xl overflow-hidden mb-10">
+            <div class="render-gradient p-8 text-white">
+                <div class="text-center">
+                    <div class="text-6xl mb-4">👋</div>
+                    <h2 class="text-3xl font-bold mb-2">¡Hola, <span class="text-yellow-300">{{ nombre }}</span>!</h2>
+                    <p class="text-xl opacity-90">Tu aplicación Masonite está funcionando perfectamente</p>
+                    <p class="mt-2 opacity-75">Fecha: {{ fecha }}</p>
+                </div>
+            </div>
+            
+            <div class="p-8">
+                <!-- Technologies -->
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">🛠 Tecnologías Utilizadas</h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                    {% for tech in tecnologias %}
+                    <div class="bg-gray-50 rounded-lg p-4 text-center border border-gray-200">
+                        <div class="text-2xl mb-2">
+                            {% if tech == "Python" %}🐍
+                            {% elif tech == "Masonite" %}⚡
+                            {% elif tech == "Render.com" %}☁️
+                            {% elif tech == "HTML5" %}📄
+                            {% else %}🎨
+                            {% endif %}
+                        </div>
+                        <span class="font-bold text-gray-800">{{ tech }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Try API -->
+                <div class="bg-blue-50 rounded-xl p-6">
+                    <h4 class="text-xl font-bold text-blue-800 mb-4">🔗 Prueba Nuestra API</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <a href="/api/saludo" 
+                           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                            API Básica
+                        </a>
+                        <a href="/api/saludo/{{ nombre }}" 
+                           class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                            API Personalizada
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Back to Home -->
+                <div class="mt-8 text-center">
+                    <a href="/" 
+                       class="inline-block bg-gray-800 text-white font-bold py-3 px-8 rounded-full hover:bg-gray-900 transition">
+                        ← Volver al Inicio
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deployment Info -->
+        <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-8">
+            <h3 class="text-2xl font-bold text-gray-800 mb-4">🚀 ¿Cómo se despliega?</h3>
+            <div class="space-y-4">
+                <div class="flex items-start">
+                    <div class="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">1</div>
+                    <div>
+                        <h4 class="font-bold">Código en GitHub</h4>
+                        <p class="text-gray-600">El código fuente está en un repositorio GitHub</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">2</div>
+                    <div>
+                        <h4 class="font-bold">Render.com</h4>
+                        <p class="text-gray-600">Render detecta cambios y despliega automáticamente</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="bg-purple-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4">3</div>
+                    <div>
+                        <h4 class="font-bold">URL Gratuita</h4>
+                        <p class="text-gray-600">Tu app está disponible en una URL .onrender.com</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

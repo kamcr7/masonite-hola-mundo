@@ -1,0 +1,15 @@
+# Core
+masonite==4.20.2
+masonite-orm==2.24.0
+
+# Dependencies
+cleo==0.8.1
+pastel==0.2.1
+requests==2.32.5
+Jinja2==3.1.6
+cryptography==36.0.2
+
+# Production
+whitenoise==5.2.0
+gunicorn==23.0.0
+python-dotenv==0.15.0
