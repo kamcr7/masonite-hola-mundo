@@ -1,36 +1,59 @@
-﻿from masonite.foundation import Application, Bootstrapper
+﻿from masonite.foundation import Application
 from masonite.response import Response
-from masonite.routes import Route
 
 # Crea la aplicación
 app = Application()
 
-# Configuración básica
-app.bind('request', {})
-app.bind('response', Response)
-
-# Define una ruta simple
+# Configura una ruta básica
 @app.get('/')
 def home(request):
-    return '''
+    html = '''
     <!DOCTYPE html>
     <html>
     <head>
         <title>✅ Masonite 4 en Railway</title>
         <style>
-            body { text-align: center; margin-top: 100px; font-family: Arial; }
-            h1 { color: #2ecc71; }
-            .success { color: #27ae60; font-weight: bold; }
+            body {
+                text-align: center;
+                margin-top: 100px;
+                font-family: Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.1);
+                padding: 40px;
+                border-radius: 20px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            }
+            h1 {
+                font-size: 3em;
+                margin-bottom: 20px;
+            }
+            .success {
+                color: #2ecc71;
+                font-weight: bold;
+                font-size: 1.2em;
+            }
         </style>
     </head>
     <body>
-        <h1>🚀 ¡Éxito Total!</h1>
-        <p class="success">Masonite 4.20.2 funcionando en Railway</p>
-        <p>Python 3.11 | Gunicorn 21.2.0</p>
-        <p><small>Despliegue completado correctamente</small></p>
+        <div class="card">
+            <h1>🚀 ¡Éxito Total!</h1>
+            <p class="success">Masonite 4.20.2 funcionando en Railway</p>
+            <p>Python 3.11 | Gunicorn 21.2.0</p>
+            <p><small>Despliegue completado correctamente</small></p>
+        </div>
     </body>
     </html>
     '''
+    return Response(html)
 
 # WSGI entry point
 application = app
