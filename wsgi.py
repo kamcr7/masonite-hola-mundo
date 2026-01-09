@@ -1,9 +1,14 @@
-﻿def application(environ, start_response):
-    html = '''<h1>Prueba de Conexión</h1>
-    <p>Si ves esto, la app funciona.</p>
-    <p>Ahora revisa Railway Logs para ver los mensajes de conexión.</p>'''
+﻿import sys
+print(f"Python: {sys.version}")
+
+try:
+    import psycopg2
+    print(f"✅ psycopg2: {psycopg2.__version__}")
+except:
+    print("❌ psycopg2 NO instalado")
     
-    print("=== PRUEBA: App cargada ===")
-    
-    start_response('200 OK', [('Content-Type', 'text/html')])
-    return [html.encode('utf-8')]
+print("=== FIN ===")
+
+def application(environ, start_response):
+    start_response('200 OK', [('Content-Type', 'text/plain')])
+    return [b'Check Railway logs']
