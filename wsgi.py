@@ -1,99 +1,162 @@
-﻿import psycopg2
+﻿import os
+import psycopg2
+import requests
+from urllib.parse import urlparse
 
 def application(environ, start_response):
-    # === REEMPLAZA ESTO CON TU CONTRASEÑA REAL ===
-    CONTRASEÑA_REAL = "YmbYQizQXChKLoqdVAORJvZiJMDCbLTt"  # ← PON AQUÍ TU CONTRASEÑA REAL
+    path = environ.get('PATH_INFO', '/')
+    method = environ.get('REQUEST_METHOD', 'GET')
     
-    # === NO MODIFIQUES NADA DEBAJO ===
-    DATABASE_URL = f"postgresql://postgres:{CONTRASEÑA_REAL}@interchange.proxy.rlwy.net:31359/railway"
+    # Configuración reCAPTCHA
+    SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY', '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI')
+    SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe')
+    DATABASE_URL = os.environ.get('DATABASE_URL', '')
     
-    print(f"🔗 Conectando a: interchange.proxy.rlwy.net:31359")
-    
-    try:
-        # Conectar a PostgreSQL
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
-        print("✅ Conexión exitosa a PostgreSQL")
-        
-        cur = conn.cursor()
-        
-        # Crear tabla si no existe
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS mensajes (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(100),
-                mensaje TEXT,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    # Conexión PostgreSQL
+    def conectar_db():
+        if not DATABASE_URL:
+            return None
+        try:
+            result = urlparse(DATABASE_URL)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port
             )
-        ''')
-        print("✅ Tabla 'mensajes' creada/verificada")
+        except:
+            return None
+    
+    # Verificar reCAPTCHA
+    def verificar_recaptcha(token):
+        if not token:
+            return False
         
-        # Procesar formulario si es POST
-        if environ['REQUEST_METHOD'] == 'POST':
+        # Si son claves de prueba, siempre válido
+        if SECRET_KEY == '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe':
+            return True
+        
+        try:
+            response = requests.post(
+                'https://www.google.com/recaptcha/api/siteverify',
+                data={'secret': SECRET_KEY, 'response': token},
+                timeout=5
+            )
+            return response.json().get('success', False)
+        except:
+            return False
+    
+    # Página principal - TODO en una página
+    if path == '/' and method == 'GET':
+        # Obtener mensajes guardados
+        mensajes_html = ''
+        conn = conectar_db()
+        if conn:
             try:
-                # Leer datos del formulario
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+                cur = conn.cursor()
+                cur.execute("SELECT nombre, mensaje, fecha FROM mensajes ORDER BY fecha DESC")
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
                 
-                # Extraer nombre y mensaje
-                from urllib.parse import parse_qs
-                params = parse_qs(post_data)
-                nombre = params.get('nombre', [''])[0].strip()
-                mensaje = params.get('mensaje', [''])[0].strip()
-                
-                if nombre and mensaje:
-                    # Insertar en BD
-                    cur.execute(
-                        "INSERT INTO mensajes (nombre, mensaje) VALUES (%s, %s)",
-                        (nombre, mensaje)
-                    )
-                    print(f"💾 Mensaje guardado: {nombre}")
-                
-            except Exception as e:
-                print(f"⚠️ Error procesando formulario: {e}")
+                if rows:
+                    mensajes_html = '<h3>Mensajes:</h3><ul>'
+                    for nombre, mensaje, fecha in rows:
+                        fecha_str = str(fecha)[:16]
+                        mensajes_html += f'<li><strong>{nombre}</strong> ({fecha_str}): {mensaje}</li>'
+                    mensajes_html += '</ul>'
+                else:
+                    mensajes_html = '<p>No hay mensajes.</p>'
+            except:
+                mensajes_html = '<p>Error cargando mensajes.</p>'
         
-        # Obtener todos los mensajes
-        cur.execute("SELECT nombre, mensaje, fecha FROM mensajes ORDER BY fecha DESC")
-        mensajes = cur.fetchall()
-        print(f"📊 Mensajes en BD: {len(mensajes)}")
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        # Generar HTML con formulario y mensajes
-        html = '''<h1>Formulario con PostgreSQL</h1>
-        
+        # HTML simple
+        html = f'''<h1>Formulario con reCAPTCHA</h1>
+
 <form method="POST">
-<p><strong>Nombre:</strong><br>
-<input type="text" name="nombre" required></p>
+<p>Nombre: <input type="text" name="nombre" required></p>
+<p>Mensaje: <textarea name="mensaje" rows="3" required></textarea></p>
 
-<p><strong>Mensaje:</strong><br>
-<textarea name="mensaje" rows="3" required></textarea></p>
+<div class="g-recaptcha" data-sitekey="{SITE_KEY}"></div>
+<script src="https://www.google.com/recaptcha/api.js"></script>
 
-<p><button type="submit">Enviar Mensaje</button></p>
+<p><button type="submit">Enviar</button></p>
 </form>
 
 <hr>
 
-<h3>Mensajes guardados:</h3>'''
+{mensajes_html}'''
         
-        if mensajes:
-            html += '<ul>'
-            for nombre, mensaje, fecha in mensajes:
-                fecha_str = str(fecha)[:16]
-                html += f'<li><strong>{nombre}</strong> ({fecha_str}): {mensaje}</li>'
-            html += '</ul>'
-        else:
-            html += '<p>No hay mensajes aún. ¡Envía el primero!</p>'
-        
-        html += '''<p><small>✅ PostgreSQL conectado correctamente</small></p>'''
-        
-    except Exception as e:
-        print(f"❌ Error de conexión: {e}")
-        html = f'''<h1>❌ Error de conexión</h1>
-        <p><strong>Error:</strong> {str(e)}</p>
-        <p>Verifica que la contraseña sea correcta en el código.</p>
-        <p><small>Contraseña usada: {CONTRASEÑA_REAL[:3]}...</small></p>'''
+        start_response('200 OK', [('Content-Type', 'text/html')])
+        return [html.encode('utf-8')]
     
-    start_response('200 OK', [('Content-Type', 'text/html')])
-    return [html.encode('utf-8')]
+    # Procesar formulario
+    elif path == '/' and method == 'POST':
+        try:
+            # Leer datos
+            content_length = int(environ.get('CONTENT_LENGTH', 0))
+            post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+            
+            # Extraer
+            from urllib.parse import parse_qs
+            params = parse_qs(post_data)
+            
+            nombre = params.get('nombre', [''])[0].strip()
+            mensaje = params.get('mensaje', [''])[0].strip()
+            recaptcha_token = params.get('g-recaptcha-response', [''])[0]
+            
+            # Validar campos
+            if not nombre or not mensaje:
+                html = '<h1>Error</h1><p>Nombre y mensaje son requeridos.</p><a href="/">Volver</a>'
+                start_response('200 OK', [('Content-Type', 'text/html')])
+                return [html.encode('utf-8')]
+            
+            # Verificar reCAPTCHA
+            if not verificar_recaptcha(recaptcha_token):
+                html = '<h1>Error</h1><p>Por favor verifica el reCAPTCHA.</p><a href="/">Volver</a>'
+                start_response('200 OK', [('Content-Type', 'text/html')])
+                return [html.encode('utf-8')]
+            
+            # Guardar en PostgreSQL
+            conn = conectar_db()
+            if conn:
+                try:
+                    cur = conn.cursor()
+                    
+                    # Crear tabla si no existe
+                    cur.execute('''
+                        CREATE TABLE IF NOT EXISTS mensajes (
+                            id SERIAL PRIMARY KEY,
+                            nombre VARCHAR(100),
+                            mensaje TEXT,
+                            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                    
+                    # Insertar mensaje
+                    cur.execute(
+                        "INSERT INTO mensajes (nombre, mensaje) VALUES (%s, %s)",
+                        (nombre, mensaje)
+                    )
+                    
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                except:
+                    pass
+            
+            # Redirigir a la página principal
+            start_response('302 Found', [('Location', '/')])
+            return [b'Redirecting...']
+            
+        except Exception as e:
+            html = f'<h1>Error</h1><p>{str(e)}</p><a href="/">Volver</a>'
+            start_response('500 Internal Server Error', [('Content-Type', 'text/html')])
+            return [html.encode('utf-8')]
+    
+    # Página no encontrada
+    else:
+        html = '<h1>404</h1><p><a href="/">Inicio</a></p>'
+        start_response('404 Not Found', [('Content-Type', 'text/html')])
+        return [html.encode('utf-8')]
