@@ -1,75 +1,39 @@
-﻿import os
-import psycopg2
-from urllib.parse import urlparse
+﻿import psycopg2
 
 def application(environ, start_response):
-    print("=== VERIFICACIÓN DATABASE_URL ===")
+    # TU DATABASE_URL DIRECTA (copia desde Railway)
+    DATABASE_URL = "postgresql://postgres:TU_CONTRASEÑA_REAL@interchange.proxy.rlwy.net:31359/railway"
     
-    # 1. Obtener TODAS las variables que comienzan con DATABASE o PG
-    print("🔍 Buscando variables de base de datos...")
-    for key in sorted(os.environ.keys()):
-        if 'DATABASE' in key or key.startswith('PG'):
-            value = os.environ[key]
-            if 'PASS' in key or 'PASSWORD' in key:
-                print(f"{key}: {'*' * len(value)}")
-            else:
-                print(f"{key}: {value}")
+    print(f"🔗 Usando DATABASE_URL directa")
     
-    # 2. Obtener DATABASE_URL específicamente
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    print(f"\n📋 DATABASE_URL encontrada: {'SI' if DATABASE_URL else 'NO'}")
-    
-    # 3. Si existe, analizarla
-    if DATABASE_URL:
-        print(f"🔗 Longitud: {len(DATABASE_URL)} caracteres")
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+        print("🎉 ¡CONEXIÓN DIRECTA EXITOSA!")
         
-        # Mostrar partes (ocultando contraseña)
-        try:
-            result = urlparse(DATABASE_URL)
-            print(f"🌐 Host: {result.hostname}")
-            print(f"🚪 Puerto: {result.port}")
-            print(f"🗄️  Base de datos: {result.path[1:]}")
-            print(f"👤 Usuario: {result.username}")
-            print(f"🔐 Contraseña: {'*' * len(result.password) if result.password else 'NONE'}")
-        except:
-            print("⚠️ No se pudo parsear DATABASE_URL")
+        # Crear tabla y insertar prueba
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS prueba (
+                id SERIAL PRIMARY KEY,
+                mensaje TEXT,
+                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cur.execute("INSERT INTO prueba (mensaje) VALUES ('Test desde Railway')")
+        conn.commit()
         
-        # 4. Intentar conexión REAL
-        print("\n🔄 Intentando conexión REAL...")
-        try:
-            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
-            print("🎉 ¡CONEXIÓN EXITOSA!")
-            
-            # Probar consulta simple
-            cur = conn.cursor()
-            cur.execute("SELECT 1 as test, current_timestamp as hora")
-            resultado = cur.fetchone()
-            print(f"✅ Consulta prueba: {resultado}")
-            
-            cur.close()
-            conn.close()
-            print("🔒 Conexión cerrada")
-            
-        except psycopg2.OperationalError as e:
-            print(f"❌ Error de conexión: {e}")
-        except Exception as e:
-            print(f"❌ Error general: {type(e).__name__}: {e}")
-    else:
-        print("❌ DATABASE_URL NO está en las variables de entorno")
-        print("💡 Verifica en Railway → Shared Variables")
-    
-    print("=== FIN VERIFICACIÓN ===")
-    
-    # HTML con resultados
-    html = '''<h1>Verificación PostgreSQL</h1>
-    <p>Revisa Railway Logs para ver los resultados.</p>
-    <p>Busca "=== VERIFICACIÓN DATABASE_URL ==="</p>
-    <h3>Posibles problemas:</h3>
-    <ol>
-    <li>DATABASE_URL no existe en Shared Variables</li>
-    <li>DATABASE_URL tiene formato incorrecto</li>
-    <li>La base de datos PostgreSQL no está corriendo</li>
-    </ol>'''
+        cur.execute("SELECT COUNT(*) FROM prueba")
+        count = cur.fetchone()[0]
+        print(f"📊 Registros en tabla prueba: {count}")
+        
+        cur.close()
+        conn.close()
+        
+        html = f'<h1>✅ ¡Conexión exitosa!</h1><p>PostgreSQL funcionando. Registros: {count}</p>'
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        html = f'<h1>❌ Error conexión</h1><p>{str(e)}</p>'
     
     start_response('200 OK', [('Content-Type', 'text/html')])
     return [html.encode('utf-8')]
