@@ -1,106 +1,124 @@
 ﻿import os
 import psycopg2
+import requests
 from urllib.parse import urlparse
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
     
-    # === 1. OBTENER DATABASE_URL DE RAILWAY ===
-    # IMPORTANTE: Esta debe ser TU contraseña real
-    DATABASE_URL = os.environ.get('DATABASE_URL')
+    # === CONFIGURACIÓN ===
+    # PostgreSQL (usa TU contraseña)
+    DATABASE_URL = os.environ.get('DATABASE_URL', "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway")
     
-    # Si no está en variables, usar la directa (como backup)
-    if not DATABASE_URL:
-        DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
-        print("⚠️ Usando DATABASE_URL directa (no en variables)")
-    else:
-        print("✅ Usando DATABASE_URL de Railway Variables")
+    # reCAPTCHA (usa claves de Railway o las de prueba)
+    SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY', '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI')
     
-    print(f"🔗 Conectando a PostgreSQL...")
-    
-    try:
-        # === 2. CONECTAR A POSTGRESQL ===
-        result = urlparse(DATABASE_URL)
-        conn = psycopg2.connect(
-            host=result.hostname,
-            database=result.path[1:],
-            user=result.username,
-            password=result.password,
-            port=result.port,
-            connect_timeout=5
-        )
-        print("✅ Conexión PostgreSQL exitosa")
-        
-        cur = conn.cursor()
-        
-        # === 3. CREAR TABLA SI NO EXISTE ===
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS mensajes (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(100),
-                mensaje TEXT,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    # === CONEXIÓN POSTGRESQL ===
+    def conectar_bd():
+        try:
+            result = urlparse(DATABASE_URL)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port
             )
-        ''')
-        
-        # === 4. PROCESAR FORMULARIO (POST) ===
-        if method == 'POST':
+        except:
+            return None
+    
+    # === PÁGINA PRINCIPAL ===
+    if path == '/' and method == 'GET':
+        # Obtener mensajes
+        mensajes_html = ''
+        conn = conectar_bd()
+        if conn:
             try:
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+                cur = conn.cursor()
+                cur.execute("SELECT nombre, mensaje, fecha FROM mensajes ORDER BY fecha DESC")
+                rows = cur.fetchall()
                 
-                from urllib.parse import parse_qs
-                params = parse_qs(post_data)
-                nombre = params.get('nombre', [''])[0].strip()
-                mensaje = params.get('mensaje', [''])[0].strip()
+                if rows:
+                    mensajes_html = '<ul>'
+                    for nombre, mensaje, fecha in rows:
+                        fecha_str = str(fecha)[:16]
+                        mensajes_html += f'<li><strong>{nombre}</strong> ({fecha_str}): {mensaje}</li>'
+                    mensajes_html += '</ul>'
+                else:
+                    mensajes_html = '<p>No hay mensajes.</p>'
                 
-                if nombre and mensaje:
-                    cur.execute(
-                        "INSERT INTO mensajes (nombre, mensaje) VALUES (%s, %s)",
-                        (nombre, mensaje)
-                    )
-                    print(f"💾 Guardado: {nombre}")
-                    
-            except Exception as e:
-                print(f"⚠️ Error POST: {e}")
+                cur.close()
+                conn.close()
+            except:
+                mensajes_html = '<p>Error cargando mensajes.</p>'
         
-        # === 5. OBTENER MENSAJES ===
-        cur.execute("SELECT nombre, mensaje, fecha FROM mensajes ORDER BY fecha DESC")
-        mensajes = cur.fetchall()
-        print(f"📊 Total mensajes: {len(mensajes)}")
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        # === 6. GENERAR HTML ===
-        html = '''<h1>Formulario</h1>
+        # HTML con reCAPTCHA
+        html = f'''<h1>Formulario con reCAPTCHA</h1>
 
 <form method="POST">
 <p>Nombre: <input type="text" name="nombre" required></p>
 <p>Mensaje: <textarea name="mensaje" rows="3" required></textarea></p>
+
+<div class="g-recaptcha" data-sitekey="{SITE_KEY}"></div>
+<script src="https://www.google.com/recaptcha/api.js"></script>
+
 <p><button type="submit">Enviar</button></p>
 </form>
 
 <hr>
 
-<h3>Mensajes:</h3>'''
+<h3>Mensajes:</h3>
+{mensajes_html}'''
         
-        if mensajes:
-            html += '<ul>'
-            for nombre, mensaje, fecha in mensajes:
-                fecha_str = str(fecha)[:16]
-                html += f'<li><strong>{nombre}</strong> ({fecha_str}): {mensaje}</li>'
-            html += '</ul>'
-        else:
-            html += '<p>No hay mensajes aún.</p>'
-        
-    except Exception as e:
-        print(f"❌ Error PostgreSQL: {e}")
-        html = f'''<h1>Error de conexión</h1>
-        <p>No se pudo conectar a la base de datos.</p>
-        <p><small>Error: {str(e)[:100]}</small></p>'''
+        start_response('200 OK', [('Content-Type', 'text/html')])
+        return [html.encode('utf-8')]
     
-    start_response('200 OK', [('Content-Type', 'text/html')])
-    return [html.encode('utf-8')]
+    # === PROCESAR FORMULARIO ===
+    elif path == '/' and method == 'POST':
+        try:
+            # Leer datos
+            content_length = int(environ.get('CONTENT_LENGTH', 0))
+            post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+            
+            from urllib.parse import parse_qs
+            params = parse_qs(post_data)
+            
+            nombre = params.get('nombre', [''])[0].strip()
+            mensaje = params.get('mensaje', [''])[0].strip()
+            
+            # Validar
+            if not nombre or not mensaje:
+                html = '<h1>Error</h1><p>Campos requeridos.</p><a href="/">Volver</a>'
+                start_response('200 OK', [('Content-Type', 'text/html')])
+                return [html.encode('utf-8')]
+            
+            # Guardar en BD
+            conn = conectar_bd()
+            if conn:
+                cur = conn.cursor()
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS mensajes (
+                        id SERIAL PRIMARY KEY,
+                        nombre VARCHAR(100),
+                        mensaje TEXT,
+                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cur.execute("INSERT INTO mensajes (nombre, mensaje) VALUES (%s, %s)", (nombre, mensaje))
+                conn.commit()
+                cur.close()
+                conn.close()
+            
+            # Redirigir
+            start_response('302 Found', [('Location', '/')])
+            return [b'Redirecting...']
+            
+        except:
+            start_response('302 Found', [('Location', '/')])
+            return [b'Redirecting...']
+    
+    else:
+        html = '<h1>404</h1><a href="/">Inicio</a>'
+        start_response('404 Not Found', [('Content-Type', 'text/html')])
+        return [html.encode('utf-8')]
