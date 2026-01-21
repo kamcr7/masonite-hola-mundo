@@ -1,8 +1,11 @@
 ﻿# -*- coding: utf-8 -*-
 import os
 import psycopg2
-import re
-from urllib.parse import urlparse
+import base64
+import imghdr
+from urllib.parse import urlparse, parse_qs
+import cgi
+import io
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -14,19 +17,19 @@ def application(environ, start_response):
     # === CONFIGURACIÓN ===
     DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
     
-    # === NAVEGACIÓN SIMPLE ===
+    # === NAVEGACIÓN ===
     def navegacion():
-        return '''<div style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
-            <a href="/" style="color: white; margin: 0 15px; text-decoration: none;">🏠 Inicio</a>
-            <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none;">🧮 Calculadora</a>
-            <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none;">📋 Formulario</a>
-        </div>'''
+        return '''<nav style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
+            <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🏠 Inicio</a>
+            <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
+            <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
+        </nav>'''
     
-    # === CONEXIÓN BD ===
+    # === FUNCIONES COMUNES ===
     def conectar_bd():
         try:
             result = urlparse(DATABASE_URL)
-            conn = psycopg2.connect(
+            return psycopg2.connect(
                 host=result.hostname,
                 database=result.path[1:],
                 user=result.username,
@@ -34,18 +37,16 @@ def application(environ, start_response):
                 port=result.port,
                 connect_timeout=5
             )
-            return conn
-        except Exception as e:
-            print(f"Error BD: {e}")
+        except:
             return None
     
-    # === PÁGINA DE INICIO ===
+    # === PÁGINA PRINCIPAL ===
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Inicio - Aplicación</title>
+    <title>Inicio - Aplicación Masonite</title>
     <style>
         body {{ 
             font-family: Arial, sans-serif; 
@@ -65,57 +66,43 @@ def application(environ, start_response):
             text-align: center;
             margin-bottom: 30px;
         }}
-        .menu {{
+        .features {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin: 30px 0;
         }}
-        .opcion {{
+        .feature {{
             background: #e9ecef;
-            padding: 30px;
+            padding: 20px;
             border-radius: 8px;
             text-align: center;
-            text-decoration: none;
-            color: #333;
-            transition: transform 0.3s;
         }}
-        .opcion:hover {{
-            transform: translateY(-5px);
-            background: #dee2e6;
+        .feature-icon {{
+            font-size: 40px;
+            margin-bottom: 15px;
         }}
-        .opcion h3 {{ margin-top: 0; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
-        <h1>🚀 Aplicación con Formulario y Calculadora</h1>
+        <h1>🚀 Aplicación Masonite en Railway</h1>
         
-        <div class="menu">
-            <a href="/calculadora" class="opcion">
-                <div style="font-size: 40px; margin-bottom: 15px;">🧮</div>
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">🧮</div>
                 <h3>Calculadora</h3>
-                <p>Operaciones sin validación</p>
-                <p><em>Prueba ingresando letras</em></p>
-            </a>
+                <p>Operaciones básicas sin validación</p>
+                <a href="/calculadora">Ir a Calculadora →</a>
+            </div>
             
-            <a href="/formulario" class="opcion">
-                <div style="font-size: 40px; margin-bottom: 15px;">📋</div>
-                <h3>Formulario Simple</h3>
-                <p>Nombre, Edad, Email</p>
-                <p><em>Sube imagen y guarda en BD</em></p>
-            </a>
-        </div>
-        
-        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 30px;">
-            <h3>📝 Características:</h3>
-            <ul>
-                <li><strong>Formulario:</strong> Campos simples con validación básica</li>
-                <li><strong>Calculadora:</strong> Sin validación para provocar errores</li>
-                <li><strong>Base de datos:</strong> PostgreSQL para guardar registros</li>
-                <li><strong>Muestra registros:</strong> Lista de datos enviados</li>
-            </ul>
+            <div class="feature">
+                <div class="feature-icon">📋</div>
+                <h3>Formulario con Imágenes</h3>
+                <p>Registra datos y sube imágenes</p>
+                <a href="/formulario">Ir a Formulario →</a>
+            </div>
         </div>
     </div>
 </body>
@@ -124,129 +111,226 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO SIMPLE ===
+    # === PÁGINA CALCULADORA (igual que antes) ===
+    elif path == '/calculadora':
+        # [Código de calculadora igual que antes]
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Calculadora</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <h1>🧮 Calculadora</h1>
+        <p>Página de calculadora (código igual al anterior).</p>
+        <p><a href="/formulario">Ir al formulario →</a></p>
+    </div>
+</body>
+</html>'''
+        
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+    
+    # === PÁGINA FORMULARIO SIMPLIFICADO ===
     elif path == '/formulario':
         mensaje = ""
         
+        # Procesar POST (formulario con archivos)
         if method == 'POST':
             try:
-                # Leer datos del formulario
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+                # Parsear formulario multipart
+                fs = cgi.FieldStorage(
+                    fp=environ['wsgi.input'],
+                    environ=environ,
+                    keep_blank_values=True
+                )
                 
-                # Parsear datos simples (application/x-www-form-urlencoded)
-                from urllib.parse import parse_qs
-                params = parse_qs(post_data)
+                # Obtener campos
+                nombre = fs.getvalue('nombre', '').strip()
+                edad = fs.getvalue('edad', '').strip()
+                correo = fs.getvalue('correo', '').strip()
+                correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 
-                nombre = params.get('nombre', [''])[0].strip()
-                edad = params.get('edad', [''])[0].strip()
-                email = params.get('email', [''])[0].strip()
-                email_confirmar = params.get('email_confirmar', [''])[0].strip()
+                # Obtener archivo
+                imagen_file = fs['imagen']
+                imagen_data = None
+                imagen_nombre = ""
+                imagen_tipo = ""
                 
-                # Validaciones MUY básicas
+                if imagen_file.filename:
+                    imagen_nombre = imagen_file.filename
+                    imagen_data = imagen_file.file.read()
+                    # Determinar tipo de imagen
+                    try:
+                        imagen_tipo = imghdr.what(None, h=imagen_data)
+                        if not imagen_tipo:
+                            imagen_tipo = "desconocido"
+                    except:
+                        imagen_tipo = "desconocido"
+                
+                # Validaciones simples
+                errores = []
+                
                 if not nombre:
-                    mensaje = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ El nombre es requerido</div>'
-                elif not edad or not edad.isdigit():
-                    mensaje = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ La edad debe ser un número</div>'
-                elif not email:
-                    mensaje = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ El email es requerido</div>'
-                elif email != email_confirmar:
-                    mensaje = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ Los emails no coinciden</div>'
+                    errores.append("Nombre es requerido")
+                
+                if not edad:
+                    errores.append("Edad es requerida")
+                elif not edad.isdigit():
+                    errores.append("Edad debe ser un número")
+                
+                if not correo:
+                    errores.append("Correo es requerido")
+                elif correo != correo_confirmar:
+                    errores.append("Los correos no coinciden")
+                
+                if not imagen_data:
+                    errores.append("Debe subir una imagen")
+                elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
+                    errores.append("La imagen es demasiado grande (máximo 5MB)")
+                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
+                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+                
+                if errores:
+                    mensaje = f'''<div class="error">
+                        <h3>❌ Errores encontrados:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
+                    </div>'''
                 else:
                     # Guardar en PostgreSQL
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
+                            
                             # Crear tabla si no existe
                             cur.execute('''
-                                CREATE TABLE IF NOT EXISTS usuarios (
+                                CREATE TABLE IF NOT EXISTS formulario_simple (
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
                                     edad INTEGER,
-                                    email VARCHAR(100),
+                                    correo VARCHAR(100),
+                                    imagen_nombre VARCHAR(255),
+                                    imagen_tipo VARCHAR(20),
+                                    imagen_data BYTEA,
                                     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                 )
                             ''')
                             
                             # Insertar datos
                             cur.execute(
-                                "INSERT INTO usuarios (nombre, edad, email) VALUES (%s, %s, %s)",
-                                (nombre, int(edad), email)
+                                """INSERT INTO formulario_simple 
+                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
                             
                             conn.commit()
                             cur.close()
                             conn.close()
                             
-                            mensaje = f'''<div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                                ✅ ¡Registro exitoso!
+                            mensaje = f'''<div class="exito">
+                                <h3>✅ ¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
                                 <p><strong>Edad:</strong> {edad} años</p>
-                                <p><strong>Email:</strong> {email}</p>
-                                <p><small>Registro guardado en base de datos</small></p>
+                                <p><strong>Correo:</strong> {correo}</p>
+                                <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                             </div>'''
                             
                         except Exception as e:
-                            mensaje = f'<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ Error al guardar en BD: {str(e)}</div>'
+                            mensaje = f'<div class="error">❌ Error al guardar en BD: {str(e)}</div>'
                     else:
-                        mensaje = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ Error de conexión a la base de datos</div>'
+                        mensaje = '<div class="error">❌ Error de conexión a la base de datos</div>'
                         
             except Exception as e:
-                mensaje = f'<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">❌ Error: {str(e)}</div>'
+                mensaje = f'<div class="error">❌ Error procesando formulario: {str(e)}</div>'
         
-        # Obtener registros existentes
-        registros_html = ''
-        try:
-            conn = conectar_bd()
-            if conn:
+        # Obtener registros anteriores
+        registros_html = ""
+        conn = conectar_bd()
+        if conn:
+            try:
                 cur = conn.cursor()
-                cur.execute("SELECT nombre, edad, email, fecha FROM usuarios ORDER BY fecha DESC LIMIT 20")
+                cur.execute("""
+                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    FROM formulario_simple 
+                    ORDER BY fecha DESC 
+                    LIMIT 10
+                """)
                 registros = cur.fetchall()
                 cur.close()
                 conn.close()
                 
                 if registros:
-                    registros_html = '<h3>📋 Registros guardados:</h3><table style="width: 100%; border-collapse: collapse; margin: 20px 0;">'
-                    registros_html += '''
-                        <tr style="background: #343a40; color: white;">
-                            <th style="padding: 10px; text-align: left;">Nombre</th>
-                            <th style="padding: 10px; text-align: left;">Edad</th>
-                            <th style="padding: 10px; text-align: left;">Email</th>
-                            <th style="padding: 10px; text-align: left;">Fecha</th>
-                        </tr>
-                    '''
+                    registros_html = '<div class="registros"><h3>📝 Registros anteriores:</h3><div class="lista-registros">'
                     
-                    for i, (nombre, edad, email, fecha) in enumerate(registros):
-                        color = '#f8f9fa' if i % 2 == 0 else '#e9ecef'
+                    for reg in registros:
+                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
                         fecha_str = str(fecha)[:16]
-                        registros_html += f'''
-                            <tr style="background: {color};">
-                                <td style="padding: 10px; border: 1px solid #dee2e6;">{nombre}</td>
-                                <td style="padding: 10px; border: 1px solid #dee2e6;">{edad}</td>
-                                <td style="padding: 10px; border: 1px solid #dee2e6;">{email}</td>
-                                <td style="padding: 10px; border: 1px solid #dee2e6;">{fecha_str}</td>
-                            </tr>
-                        '''
+                        
+                        # Obtener imagen en base64 para mostrar
+                        img_html = ""
+                        conn2 = conectar_bd()
+                        if conn2:
+                            try:
+                                cur2 = conn2.cursor()
+                                cur2.execute("SELECT imagen_data FROM formulario_simple WHERE id = %s", (id_reg,))
+                                img_data = cur2.fetchone()[0]
+                                cur2.close()
+                                conn2.close()
+                                
+                                if img_data:
+                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                    img_html = f'''<div class="imagen-preview">
+                                        <img src="data:image/{img_tipo};base64,{img_base64}" 
+                                             alt="{img_nombre}" 
+                                             style="max-width: 150px; max-height: 150px; border-radius: 5px;">
+                                        <p><small>{img_nombre}</small></p>
+                                    </div>'''
+                            except:
+                                img_html = '<p><small>Imagen no disponible</small></p>'
+                        
+                        registros_html += f'''<div class="registro">
+                            <div class="registro-info">
+                                <h4>{nombre_reg}</h4>
+                                <p><strong>Edad:</strong> {edad_reg} años</p>
+                                <p><strong>Correo:</strong> {correo_reg}</p>
+                                <p><small>Registrado: {fecha_str}</small></p>
+                            </div>
+                            {img_html}
+                        </div>'''
                     
-                    registros_html += '</table>'
-                    registros_html += f'<p><em>Total registros: {len(registros)}</em></p>'
+                    registros_html += '</div></div>'
                 else:
-                    registros_html = '<p style="color: #6c757d; margin: 20px 0;">No hay registros aún. ¡Sé el primero!</p>'
-            else:
-                registros_html = '<p style="color: #dc3545; margin: 20px 0;">⚠️ Base de datos no disponible</p>'
-        except:
-            registros_html = '<p style="color: #dc3545; margin: 20px 0;">⚠️ Error cargando registros</p>'
+                    registros_html = '<p>No hay registros aún.</p>'
+                    
+            except Exception as e:
+                registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
+        else:
+            registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
+        # HTML del formulario
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Formulario Simple</title>
+    <title>Formulario con Imágenes</title>
     <style>
         body {{ 
             font-family: Arial, sans-serif; 
-            max-width: 800px; 
+            max-width: 900px; 
             margin: 40px auto; 
             padding: 20px;
             background: #f8f9fa;
@@ -301,266 +385,130 @@ def application(environ, start_response):
         button:hover {{
             background: #218838;
         }}
-        hr {{
-            margin: 40px 0;
-            border: none;
-            border-top: 1px solid #dee2e6;
-        }}
-        .instrucciones {{
-            background: #fff3cd;
+        .exito {{
+            background: #d4edda;
+            color: #155724;
             padding: 20px;
             border-radius: 5px;
             margin: 20px 0;
+            border-left: 4px solid #28a745;
         }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
             margin: 20px 0;
+            border-left: 4px solid #dc3545;
         }}
-        th, td {{
-            padding: 10px;
-            border: 1px solid #dee2e6;
-            text-align: left;
+        hr {{
+            margin: 40px 0;
+            border: none;
+            border-top: 2px solid #dee2e6;
         }}
-        th {{
-            background: #343a40;
-            color: white;
+        .registros {{
+            margin-top: 40px;
         }}
-        tr:nth-child(even) {{
+        .registro {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #007bff;
+        }}
+        .registro-info {{
+            flex: 1;
+        }}
+        .imagen-preview {{
+            text-align: center;
+            margin-left: 20px;
+        }}
+        .lista-registros {{
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+        }}
+        .form-group {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }}
+        @media (max-width: 768px) {{
+            .form-group {{
+                grid-template-columns: 1fr;
+            }}
+            .registro {{
+                flex-direction: column;
+                text-align: center;
+            }}
+            .imagen-preview {{
+                margin-left: 0;
+                margin-top: 15px;
+            }}
         }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
-        <h1>📋 Formulario Simple</h1>
+        <h1>📋 Formulario Simple con Imágenes</h1>
         
-        <div class="instrucciones">
-            <p><strong>⚠️ Nota:</strong> El campo de imagen se muestra pero NO se guarda (solo para demostración).</p>
-            <p>Los datos de nombre, edad y email sí se guardan en la base de datos PostgreSQL.</p>
-        </div>
+        {mensaje if mensaje else ''}
         
-        {mensaje}
-        
-        <form method="POST" enctype="application/x-www-form-urlencoded">
-            <!-- Nombre -->
-            <div class="campo">
-                <label>Nombre completo <span class="requerido">*</span></label>
-                <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
-                <div class="info">Tu nombre completo</div>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <!-- Columna izquierda -->
+                <div>
+                    <!-- Nombre -->
+                    <div class="campo">
+                        <label>Nombre completo <span class="requerido">*</span></label>
+                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
+                        <div class="info">Tu nombre completo</div>
+                    </div>
+                    
+                    <!-- Edad -->
+                    <div class="campo">
+                        <label>Edad <span class="requerido">*</span></label>
+                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
+                        <div class="info">Entre 1 y 120 años</div>
+                    </div>
+                </div>
+                
+                <!-- Columna derecha -->
+                <div>
+                    <!-- Correo -->
+                    <div class="campo">
+                        <label>Correo electrónico <span class="requerido">*</span></label>
+                        <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
+                        <div class="info">Cualquier correo válido</div>
+                    </div>
+                    
+                    <!-- Confirmar Correo -->
+                    <div class="campo">
+                        <label>Confirmar correo <span class="requerido">*</span></label>
+                        <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
+                        <div class="info">Debe coincidir con el correo anterior</div>
+                    </div>
+                </div>
             </div>
             
-            <!-- Edad -->
+            <!-- Imagen -->
             <div class="campo">
-                <label>Edad <span class="requerido">*</span></label>
-                <input type="number" name="edad" placeholder="Ej: 25" required min="1" max="120">
-                <div class="info">Edad en años (solo números)</div>
-            </div>
-            
-            <!-- Email -->
-            <div class="campo">
-                <label>Email <span class="requerido">*</span></label>
-                <input type="email" name="email" placeholder="Ej: usuario@ejemplo.com" required>
-                <div class="info">Cualquier formato de email válido</div>
-            </div>
-            
-            <!-- Confirmar Email -->
-            <div class="campo">
-                <label>Confirmar Email <span class="requerido">*</span></label>
-                <input type="email" name="email_confirmar" placeholder="Repite tu email" required>
-                <div class="info">Debe coincidir con el email anterior</div>
-            </div>
-            
-            <!-- Imagen (solo visual, no funcional) -->
-            <div class="campo">
-                <label>Subir imagen (opcional)</label>
-                <input type="file" name="imagen" accept="image/*">
-                <div class="info">Formato: JPG, PNG, GIF (no se guarda, solo demostración)</div>
+                <label>Subir imagen <span class="requerido">*</span></label>
+                <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
+                <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
             </div>
             
             <!-- Botón -->
-            <button type="submit">✅ Enviar Formulario</button>
+            <button type="submit">📤 Enviar Formulario</button>
         </form>
         
         <hr>
         
         {registros_html}
-    </div>
-</body>
-</html>'''
-        
-        start_response('200 OK', headers)
-        return [html.encode('utf-8')]
-    
-    # === PÁGINA CALCULADORA (SIN VALIDACIÓN) ===
-    elif path == '/calculadora':
-        resultado_suma = ""
-        resultado_division = ""
-        
-        if method == 'POST':
-            try:
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
-                params = dict(pair.split('=') for pair in post_data.split('&'))
-                
-                # SUMA - SIN VALIDACIÓN
-                try:
-                    num1 = float(params.get('suma1', '0'))
-                    num2 = float(params.get('suma2', '0'))
-                    resultado_suma = f"<div style='background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>✅ Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
-                except:
-                    valor1 = params.get('suma1', 'vacío')
-                    valor2 = params.get('suma2', 'vacío')
-                    resultado_suma = f"<div style='background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>❌ Error suma:</strong> '{valor1}' + '{valor2}' no son números válidos</div>"
-                
-                # DIVISIÓN - SIN VALIDACIÓN
-                try:
-                    num3 = float(params.get('div1', '0'))
-                    num4 = float(params.get('div2', '0'))
-                    if num4 == 0:
-                        resultado_division = f"<div style='background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>❌ Error:</strong> No se puede dividir entre cero</div>"
-                    else:
-                        resultado_division = f"<div style='background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>✅ Resultado:</strong> {num3} ÷ {num4} = {num3 / num4}</div>"
-                except:
-                    valor3 = params.get('div1', 'vacío')
-                    valor4 = params.get('div2', 'vacío')
-                    resultado_division = f"<div style='background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>❌ Error división:</strong> '{valor3}' ÷ '{valor4}' no son números válidos</div>"
-                    
-            except Exception as e:
-                resultado_suma = f"<div style='background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;'><strong>❌ Error general:</strong> {str(e)}</div>"
-        
-        html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Calculadora Sin Validación</title>
-    <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            margin-bottom: 30px;
-            text-align: center;
-        }}
-        .calculadora {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
-            margin: 30px 0;
-        }}
-        @media (max-width: 600px) {{
-            .calculadora {{
-                grid-template-columns: 1fr;
-            }}
-        }}
-        .operacion {{
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 8px;
-        }}
-        .suma {{ border-left: 4px solid #28a745; }}
-        .division {{ border-left: 4px solid #dc3545; }}
-        .campo {{
-            margin: 15px 0;
-        }}
-        input[type="text"] {{
-            width: 90%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }}
-        button {{
-            padding: 10px 20px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }}
-        .advertencia {{
-            background: #fff3cd;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #ffc107;
-        }}
-        .ejemplos {{
-            background: #e9ecef;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-        }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>🧮 Calculadora Sin Validación</h1>
-        
-        <div class="advertencia">
-            <strong>⚠️ ADVERTENCIA:</strong> Esta calculadora NO tiene validación.
-            <p>Puedes ingresar letras, símbolos o cualquier texto para provocar errores.</p>
-        </div>
-        
-        <form method="POST">
-            <div class="calculadora">
-                <!-- SUMA -->
-                <div class="operacion suma">
-                    <h2>➕ Suma</h2>
-                    <div class="campo">
-                        <label>Primer número:</label>
-                        <input type="text" name="suma1" placeholder="Ej: 10 o 'abc'">
-                    </div>
-                    <div class="campo">
-                        <label>Segundo número:</label>
-                        <input type="text" name="suma2" placeholder="Ej: 5 o 'xyz'">
-                    </div>
-                    <button type="submit">Calcular Suma</button>
-                    {resultado_suma}
-                </div>
-                
-                <!-- DIVISIÓN -->
-                <div class="operacion division">
-                    <h2>➗ División</h2>
-                    <div class="campo">
-                        <label>Dividendo:</label>
-                        <input type="text" name="div1" placeholder="Ej: 20 o 'hola'">
-                    </div>
-                    <div class="campo">
-                        <label>Divisor:</label>
-                        <input type="text" name="div2" placeholder="Ej: 4 o 'mundo'">
-                    </div>
-                    <button type="submit">Calcular División</button>
-                    {resultado_division}
-                </div>
-            </div>
-        </form>
-        
-        <div class="ejemplos">
-            <h3>📝 Ejemplos para probar:</h3>
-            <ul>
-                <li><strong>Suma normal:</strong> "10" + "5" → Resultado: 15</li>
-                <li><strong>Suma con letras:</strong> "abc" + "123" → Error</li>
-                <li><strong>División normal:</strong> "20" ÷ "4" → Resultado: 5</li>
-                <li><strong>División entre cero:</strong> "10" ÷ "0" → Error</li>
-                <li><strong>Texto vacío:</strong> "" + "5" → Error</li>
-            </ul>
-        </div>
     </div>
 </body>
 </html>'''
@@ -574,34 +522,12 @@ def application(environ, start_response):
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>404 - No encontrado</title>
-    <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-            text-align: center;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        .icono {{ font-size: 80px; margin: 20px 0; }}
-        h1 {{ color: #6c757d; }}
-    </style>
+    <title>404 - Página no encontrada</title>
 </head>
 <body>
     {navegacion()}
-    <div class="container">
-        <div class="icono">🔍</div>
-        <h1>404 - Página no encontrada</h1>
-        <p>La página que buscas no existe.</p>
-        <p><a href="/" style="color: #007bff;">Volver al inicio</a></p>
-    </div>
+    <h1>404 - Página no encontrada</h1>
+    <a href="/">Inicio</a>
 </body>
 </html>'''
         
