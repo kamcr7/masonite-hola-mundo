@@ -9,25 +9,28 @@ def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
     
+    # === CONFIGURACIÓN ===
+    DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
+    
+    # === CONEXIÓN BD ===
+    def conectar_bd():
+        try:
+            result = urlparse(DATABASE_URL)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port,
+                connect_timeout=5
+            )
+        except Exception as e:
+            print(f"Error BD: {e}")
+            return None
+    
     # === RUTAS PARA IMÁGENES ===
     if path.startswith('/imagen/'):
         try:
-            def conectar_bd():
-                try:
-                    DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
-                    result = urlparse(DATABASE_URL)
-                    return psycopg2.connect(
-                        host=result.hostname,
-                        database=result.path[1:],
-                        user=result.username,
-                        password=result.password,
-                        port=result.port,
-                        connect_timeout=5
-                    )
-                except Exception as e:
-                    print(f"Error BD: {e}")
-                    return None
-            
             conn = conectar_bd()
             if not conn:
                 start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
@@ -72,9 +75,6 @@ def application(environ, start_response):
     
     headers = [('Content-Type', 'text/html; charset=utf-8')]
     
-    # === CONFIGURACIÓN ===
-    DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
-    
     # === NAVEGACIÓN ===
     def navegacion():
         return '''<nav style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
@@ -82,22 +82,6 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
         </nav>'''
-    
-    # === CONEXIÓN BD ===
-    def conectar_bd():
-        try:
-            result = urlparse(DATABASE_URL)
-            return psycopg2.connect(
-                host=result.hostname,
-                database=result.path[1:],
-                user=result.username,
-                password=result.password,
-                port=result.port,
-                connect_timeout=5
-            )
-        except Exception as e:
-            print(f"Error BD: {e}")
-            return None
     
     # === PÁGINA DE ERROR ===
     def mostrar_error(mensaje):
@@ -272,7 +256,7 @@ def application(environ, start_response):
             if conn:
                 cur = conn.cursor()
                 cur.execute('''
-                    SELECT id, nombre, edad, correo, imagen_nombre, fecha 
+                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_data, fecha 
                     FROM formulario_registros 
                     ORDER BY fecha DESC 
                     LIMIT 10
@@ -288,11 +272,11 @@ def application(environ, start_response):
                         <div class="registros-grid">
                     '''
                     
-                    for id_reg, nombre_reg, edad_reg, correo_reg, imagen_nombre, fecha in registros:
+                    for id_reg, nombre_reg, edad_reg, correo_reg, imagen_nombre, imagen_data, fecha in registros:
                         fecha_str = str(fecha)[:16]
                         imagen_html = ""
                         
-                        if imagen_nombre:
+                        if imagen_nombre and imagen_data:
                             # Mostrar la imagen si existe
                             imagen_html = f'''
                             <div class="imagen-preview">
@@ -538,19 +522,6 @@ def application(environ, start_response):
             border-radius: 5px;
             margin: 15px 0;
             border-left: 4px solid #007bff;
-        }}
-        .miniaturas {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }}
-        .miniatura {{
-            width: 60px;
-            height: 60px;
-            object-fit: cover;
-            border-radius: 5px;
-            border: 2px solid #dee2e6;
         }}
     </style>
 </head>
