@@ -21,8 +21,9 @@ def application(environ, start_response):
     DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
     
     # === CONFIGURACIÓN RECAPTCHA ===
-    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
-    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
+    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Clave de prueba (funciona en localhost)
+    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Secreto de prueba
+    # Para producción, obtén tus propias claves en: https://www.google.com/recaptcha/admin
     
     # === NAVEGACIÓN ===
     def navegacion():
@@ -51,23 +52,30 @@ def application(environ, start_response):
     # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
     def validar_recaptcha(recaptcha_response):
         try:
+            # URL de verificación de reCAPTCHA
             url = 'https://www.google.com/recaptcha/api/siteverify'
+            
+            # Datos a enviar
             data = urllib.parse.urlencode({
                 'secret': RECAPTCHA_SECRET_KEY,
                 'response': recaptcha_response
             }).encode()
             
+            # Crear request
             req = urllib.request.Request(url, data=data)
+            
+            # Enviar request y obtener respuesta
             response = urllib.request.urlopen(req)
             result = json.loads(response.read().decode())
             
+            # Retornar si es válido
             return result.get('success', False)
             
         except Exception as e:
             print(f"Error validando reCAPTCHA: {e}")
             return False
     
-    # === PÁGINA CARRUSEL SIMPLIFICADO (SOLO IMÁGENES) ===
+    # === PÁGINA CARRUSEL (sin cambios) ===
     if path == '/carrusel':
         mensaje = ""
         
@@ -81,10 +89,10 @@ def application(environ, start_response):
                     keep_blank_values=True
                 )
                 
-                # Verificar si es para eliminar (mantenemos esta funcionalidad solo para el admin)
+                # Verificar si es para eliminar
                 eliminar_id = fs.getvalue('eliminar_id', '').strip()
                 if eliminar_id:
-                    # ELIMINAR IMAGEN (solo si viene de formulario oculto)
+                    # ELIMINAR IMAGEN
                     conn = conectar_bd()
                     if conn:
                         try:
@@ -102,6 +110,7 @@ def application(environ, start_response):
                 else:
                     # AGREGAR NUEVA IMAGEN
                     titulo = fs.getvalue('titulo', '').strip()
+                    descripcion = fs.getvalue('descripcion', '').strip()
                     
                     # Obtener archivo
                     imagen_file = fs['imagen']
@@ -122,6 +131,9 @@ def application(environ, start_response):
                     
                     # Validaciones
                     errores = []
+                    
+                    if not titulo:
+                        errores.append("Título es requerido")
                     
                     if not imagen_data:
                         errores.append("Debe subir una imagen")
@@ -146,6 +158,8 @@ def application(environ, start_response):
                                 cur.execute('''
                                     CREATE TABLE IF NOT EXISTS carrusel_imagenes (
                                         id SERIAL PRIMARY KEY,
+                                        titulo VARCHAR(100),
+                                        descripcion TEXT,
                                         imagen_nombre VARCHAR(255),
                                         imagen_tipo VARCHAR(20),
                                         imagen_data BYTEA,
@@ -153,12 +167,12 @@ def application(environ, start_response):
                                     )
                                 ''')
                                 
-                                # Insertar datos (solo imagen)
+                                # Insertar datos
                                 cur.execute(
                                     """INSERT INTO carrusel_imagenes 
-                                       (imagen_nombre, imagen_tipo, imagen_data) 
-                                       VALUES (%s, %s, %s)""",
-                                    (imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                       (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data) 
+                                       VALUES (%s, %s, %s, %s, %s)""",
+                                    (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                                 )
                                 
                                 conn.commit()
@@ -167,7 +181,8 @@ def application(environ, start_response):
                                 
                                 mensaje = f'''<div class="exito">
                                     <h3>✅ ¡Imagen agregada al carrusel!</h3>
-                                    <p>La imagen se ha agregado correctamente.</p>
+                                    <p><strong>Título:</strong> {titulo}</p>
+                                    <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 </div>'''
                                 
                             except Exception as e:
@@ -185,7 +200,7 @@ def application(environ, start_response):
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, imagen_nombre, imagen_tipo 
+                    SELECT id, titulo, descripcion, imagen_nombre, imagen_tipo, fecha 
                     FROM carrusel_imagenes 
                     ORDER BY fecha DESC
                 """)
@@ -194,14 +209,15 @@ def application(environ, start_response):
                 conn.close()
                 
                 if imagenes:
-                    # Carrusel de imágenes - SOLO IMÁGENES
+                    # Carrusel de imágenes
                     imagenes_html += '''
                     <div class="carrusel-container">
+                        <h3>🖼️ Carrusel de Imágenes</h3>
                         <div class="carrusel" id="carrusel">
                     '''
                     
                     for i, img in enumerate(imagenes):
-                        id_img, img_nombre, img_tipo = img
+                        id_img, titulo_img, desc_img, img_nombre, img_tipo, fecha = img
                         
                         # Obtener imagen en base64 para mostrar
                         img_base64 = ""
@@ -223,12 +239,25 @@ def application(environ, start_response):
                             # Determinar si es la primera imagen (activa)
                             activa = "active" if i == 0 else ""
                             
-                            # SOLO MOSTRAR LA IMAGEN
                             imagenes_html += f'''
-                            <div class="carrusel-item {activa}">
-                                <img src="data:image/{img_tipo};base64,{img_base64}" 
-                                     alt="Imagen {i+1}"
-                                     class="carrusel-imagen">
+                            <div class="carrusel-item {activa}" data-id="{id_img}">
+                                <div class="imagen-contenedor">
+                                    <img src="data:image/{img_tipo};base64,{img_base64}" 
+                                         alt="{titulo_img}"
+                                         class="carrusel-imagen">
+                                    <div class="carrusel-info">
+                                        <h4>{titulo_img}</h4>
+                                        {f'<p>{desc_img}</p>' if desc_img else ''}
+                                        <p><small>Archivo: {img_nombre}</small></p>
+                                        <form method="POST" style="margin-top: 10px;">
+                                            <input type="hidden" name="eliminar_id" value="{id_img}">
+                                            <button type="submit" class="btn-eliminar" 
+                                                    onclick="return confirm('¿Estás seguro de eliminar esta imagen del carrusel?')">
+                                                🗑️ Eliminar
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
                             </div>
                             '''
                     
@@ -247,7 +276,7 @@ def application(environ, start_response):
                     # Contador de imágenes
                     imagenes_html += f'''
                     <div class="contador-imagenes">
-                        <p>Imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
+                        <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
                     '''
                 else:
@@ -264,7 +293,7 @@ def application(environ, start_response):
         else:
             imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del carrusel SIMPLIFICADO
+        # HTML del carrusel
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -299,29 +328,49 @@ def application(environ, start_response):
             position: relative;
             overflow: hidden;
             border-radius: 10px;
-            background: #000;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            height: 500px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }}
         .carrusel-item {{
             display: none;
+            padding: 30px;
             text-align: center;
-            width: 100%;
-            height: 100%;
         }}
         .carrusel-item.active {{
+            display: block;
+        }}
+        .imagen-contenedor {{
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
+            gap: 20px;
+        }}
+        @media (min-width: 768px) {{
+            .imagen-contenedor {{
+                flex-direction: row;
+                align-items: flex-start;
+            }}
         }}
         .carrusel-imagen {{
-            max-width: 95%;
-            max-height: 95%;
-            object-fit: contain;
-            border-radius: 5px;
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }}
+        @media (min-width: 768px) {{
+            .carrusel-imagen {{
+                max-width: 50%;
+            }}
+        }}
+        .carrusel-info {{
+            flex: 1;
+            text-align: left;
+            padding: 0 20px;
+        }}
+        .carrusel-info h4 {{
+            margin-top: 0;
+            color: #333;
+            font-size: 24px;
         }}
         .carrusel-controls {{
             display: flex;
@@ -342,11 +391,9 @@ def application(environ, start_response):
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.3s;
         }}
         .carrusel-btn:hover {{
             background: #0056b3;
-            transform: scale(1.1);
         }}
         .carrusel-indicators {{
             display: flex;
@@ -365,16 +412,12 @@ def application(environ, start_response):
         .indicator.active {{
             background: #007bff;
         }}
-        .indicator:hover {{
-            background: #0056b3;
-        }}
         .contador-imagenes {{
             text-align: center;
             margin: 20px 0;
             padding: 15px;
             background: #e7f3ff;
             border-radius: 5px;
-            font-size: 18px;
         }}
         .sin-imagenes {{
             text-align: center;
@@ -402,14 +445,18 @@ def application(environ, start_response):
             font-weight: bold;
             color: #555;
         }}
+        input[type="text"],
+        textarea,
         input[type="file"] {{
             width: 95%;
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 16px;
-            background: white;
-            cursor: pointer;
+        }}
+        textarea {{
+            min-height: 100px;
+            resize: vertical;
         }}
         .requerido {{ color: #dc3545; }}
         .info {{
@@ -428,10 +475,21 @@ def application(environ, start_response):
             font-weight: bold;
             width: 100%;
             margin-top: 20px;
-            transition: background 0.3s;
         }}
         .btn-agregar:hover {{
             background: #218838;
+        }}
+        .btn-eliminar {{
+            padding: 8px 15px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .btn-eliminar:hover {{
+            background: #c82333;
         }}
         .exito {{
             background: #d4edda;
@@ -457,32 +515,6 @@ def application(environ, start_response):
             margin: 20px 0;
             border-left: 4px solid #ffc107;
         }}
-        .admin-panel {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #dc3545;
-            text-align: center;
-        }}
-        .admin-link {{
-            color: #dc3545;
-            font-weight: bold;
-            text-decoration: none;
-        }}
-        .admin-link:hover {{
-            text-decoration: underline;
-        }}
-        @media (max-width: 768px) {{
-            .carrusel {{
-                height: 350px;
-            }}
-            .carrusel-imagen {{
-                max-width: 90%;
-                max-height: 90%;
-            }}
-        }}
     </style>
 </head>
 <body>
@@ -495,22 +527,30 @@ def application(environ, start_response):
             <ul>
                 <li>Agrega imágenes usando el formulario de abajo</li>
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
-                <li>También puedes usar las flechas del teclado</li>
-                <li>El carrusel cambia automáticamente cada 5 segundos</li>
+                <li>Elimina imágenes haciendo click en "🗑️ Eliminar"</li>
+                <li>Cada imagen puede tener un título y descripción</li>
             </ul>
         </div>
         
         {mensaje if mensaje else ''}
-        
-        <div class="admin-panel">
-            <p><strong>Administración:</strong> Para eliminar imágenes, ve a la <a href="/admin_carrusel" class="admin-link">página de administración del carrusel</a>.</p>
-        </div>
         
         {imagenes_html}
         
         <div class="form-agregar">
             <h3>➕ Agregar Nueva Imagen al Carrusel</h3>
             <form method="POST" enctype="multipart/form-data">
+                <div class="campo">
+                    <label>Título de la imagen <span class="requerido">*</span></label>
+                    <input type="text" name="titulo" placeholder="Ej: Paisaje de montaña" required>
+                    <div class="info">Un título descriptivo para la imagen</div>
+                </div>
+                
+                <div class="campo">
+                    <label>Descripción (opcional)</label>
+                    <textarea name="descripcion" placeholder="Describe la imagen..."></textarea>
+                    <div class="info">Información adicional sobre la imagen</div>
+                </div>
+                
                 <div class="campo">
                     <label>Seleccionar imagen <span class="requerido">*</span></label>
                     <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
@@ -619,12 +659,12 @@ def application(environ, start_response):
                     carruselNext();
                 }}
             }});
-            
-            // Efecto de transición suave
-            slides.forEach(slide => {{
-                slide.style.transition = 'opacity 0.5s ease';
-            }});
         }});
+        
+        // Confirmar eliminación
+        function confirmarEliminacion(id) {{
+            return confirm('¿Estás seguro de que quieres eliminar esta imagen del carrusel?');
+        }}
     </script>
 </body>
 </html>'''
@@ -632,215 +672,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA DE ADMINISTRACIÓN DEL CARRUSEL (para eliminar imágenes) ===
-    if path == '/admin_carrusel':
-        mensaje = ""
-        
-        # Procesar POST para eliminar imágenes
-        if method == 'POST':
-            try:
-                fs = cgi.FieldStorage(
-                    fp=environ['wsgi.input'],
-                    environ=environ,
-                    keep_blank_values=True
-                )
-                
-                eliminar_id = fs.getvalue('eliminar_id', '').strip()
-                if eliminar_id:
-                    conn = conectar_bd()
-                    if conn:
-                        try:
-                            cur = conn.cursor()
-                            cur.execute("DELETE FROM carrusel_imagenes WHERE id = %s", (eliminar_id,))
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-                            mensaje = f'''<div class="exito">
-                                <h3>✅ Imagen eliminada</h3>
-                                <p>La imagen ha sido eliminada del carrusel.</p>
-                            </div>'''
-                        except Exception as e:
-                            mensaje = f'<div class="error">❌ Error al eliminar: {str(e)}</div>'
-                        
-        # Obtener todas las imágenes para administración
-        imagenes_html = ""
-        conn = conectar_bd()
-        if conn:
-            try:
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT id, imagen_nombre, imagen_tipo, fecha 
-                    FROM carrusel_imagenes 
-                    ORDER BY fecha DESC
-                """)
-                imagenes = cur.fetchall()
-                cur.close()
-                conn.close()
-                
-                if imagenes:
-                    imagenes_html = '''
-                    <div class="admin-lista">
-                        <h3>🗑️ Eliminar Imágenes</h3>
-                        <p>Selecciona las imágenes que deseas eliminar:</p>
-                        <div class="imagenes-grid">
-                    '''
-                    
-                    for img in imagenes:
-                        id_img, img_nombre, img_tipo, fecha = img
-                        fecha_str = str(fecha)[:16]
-                        
-                        # Obtener imagen en base64 para mostrar miniatura
-                        img_base64 = ""
-                        conn2 = conectar_bd()
-                        if conn2:
-                            try:
-                                cur2 = conn2.cursor()
-                                cur2.execute("SELECT imagen_data FROM carrusel_imagenes WHERE id = %s", (id_img,))
-                                img_data = cur2.fetchone()[0]
-                                cur2.close()
-                                conn2.close()
-                                
-                                if img_data:
-                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                            except:
-                                pass
-                        
-                        if img_base64:
-                            imagenes_html += f'''
-                            <div class="imagen-admin">
-                                <div class="imagen-miniatura">
-                                    <img src="data:image/{img_tipo};base64,{img_base64}" 
-                                         alt="{img_nombre}">
-                                </div>
-                                <div class="imagen-info">
-                                    <p><strong>Archivo:</strong> {img_nombre}</p>
-                                    <p><strong>Fecha:</strong> {fecha_str}</p>
-                                    <form method="POST" style="margin-top: 10px;">
-                                        <input type="hidden" name="eliminar_id" value="{id_img}">
-                                        <button type="submit" class="btn-eliminar" 
-                                                onclick="return confirm('¿Estás seguro de eliminar esta imagen?')">
-                                            🗑️ Eliminar
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                            '''
-                    
-                    imagenes_html += '''
-                        </div>
-                    </div>
-                    '''
-                else:
-                    imagenes_html = '''
-                    <div class="sin-imagenes">
-                        <p>No hay imágenes en el carrusel.</p>
-                    </div>
-                    '''
-                    
-            except Exception as e:
-                imagenes_html = f'<p class="error">Error cargando imágenes: {str(e)}</p>'
-        else:
-            imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
-        
-        # HTML de administración
-        html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Administrar Carrusel</title>
-    <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 1200px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .imagenes-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }}
-        .imagen-admin {{
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            background: #f8f9fa;
-        }}
-        .imagen-miniatura img {{
-            width: 100%;
-            height: 150px;
-            object-fit: cover;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }}
-        .imagen-info p {{
-            margin: 5px 0;
-            font-size: 14px;
-        }}
-        .btn-eliminar {{
-            width: 100%;
-            padding: 8px;
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }}
-        .btn-eliminar:hover {{
-            background: #c82333;
-        }}
-        .volver-link {{
-            display: inline-block;
-            margin-top: 30px;
-            padding: 10px 20px;
-            background: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-        }}
-        .volver-link:hover {{
-            background: #0056b3;
-        }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>⚙️ Administrar Carrusel de Imágenes</h1>
-        
-        {mensaje if mensaje else ''}
-        
-        <div style="margin-bottom: 30px;">
-            <a href="/carrusel" class="volver-link">← Volver al Carrusel</a>
-        </div>
-        
-        {imagenes_html}
-        
-        <div style="margin-top: 40px;">
-            <a href="/carrusel" class="volver-link">← Volver al Carrusel</a>
-        </div>
-    </div>
-</body>
-</html>'''
-        
-        start_response('200 OK', headers)
-        return [html.encode('utf-8')]
-    
-    # === PÁGINA PRINCIPAL (sin cambios) ===
+    # === PÁGINA PRINCIPAL (actualizada) ===
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
@@ -1289,12 +1121,209 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA (sin cambios) ===
+    # === PÁGINA FORMULARIO CON RECAPTCHA ===
     elif path == '/formulario':
-        # [Todo el código del formulario con reCAPTCHA sin cambios]
-        # (Manteniendo el código original del formulario)
-        # [Por brevedad, mantengo el formulario existente]
+        mensaje = ""
         
+        # Procesar POST (formulario con archivos y reCAPTCHA)
+        if method == 'POST':
+            try:
+                # Parsear formulario multipart
+                fs = cgi.FieldStorage(
+                    fp=environ['wsgi.input'],
+                    environ=environ,
+                    keep_blank_values=True
+                )
+                
+                # Obtener campos
+                nombre = fs.getvalue('nombre', '').strip()
+                edad = fs.getvalue('edad', '').strip()
+                correo = fs.getvalue('correo', '').strip()
+                correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
+                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
+                
+                # Obtener archivo
+                imagen_file = fs['imagen']
+                imagen_data = None
+                imagen_nombre = ""
+                imagen_tipo = ""
+                
+                if imagen_file.filename:
+                    imagen_nombre = imagen_file.filename
+                    imagen_data = imagen_file.file.read()
+                    # Determinar tipo de imagen
+                    try:
+                        imagen_tipo = imghdr.what(None, h=imagen_data)
+                        if not imagen_tipo:
+                            imagen_tipo = "desconocido"
+                    except:
+                        imagen_tipo = "desconocido"
+                
+                # Validaciones simples
+                errores = []
+                
+                if not nombre:
+                    errores.append("Nombre es requerido")
+                
+                if not edad:
+                    errores.append("Edad es requerida")
+                elif not edad.isdigit():
+                    errores.append("Edad debe ser un número")
+                
+                if not correo:
+                    errores.append("Correo es requerido")
+                elif correo != correo_confirmar:
+                    errores.append("Los correos no coinciden")
+                
+                if not imagen_data:
+                    errores.append("Debe subir una imagen")
+                elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
+                    errores.append("La imagen es demasiado grande (máximo 5MB)")
+                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
+                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+                
+                # Validar reCAPTCHA
+                if not recaptcha_response:
+                    errores.append("Por favor, completa el reCAPTCHA")
+                else:
+                    if not validar_recaptcha(recaptcha_response):
+                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
+                
+                if errores:
+                    mensaje = f'''<div class="error">
+                        <h3>❌ Errores encontrados:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
+                    </div>'''
+                else:
+                    # Guardar en PostgreSQL
+                    conn = conectar_bd()
+                    if conn:
+                        try:
+                            cur = conn.cursor()
+                            
+                            # Crear tabla si no existe
+                            cur.execute('''
+                                CREATE TABLE IF NOT EXISTS formulario_simple (
+                                    id SERIAL PRIMARY KEY,
+                                    nombre VARCHAR(100),
+                                    edad INTEGER,
+                                    correo VARCHAR(100),
+                                    imagen_nombre VARCHAR(255),
+                                    imagen_tipo VARCHAR(20),
+                                    imagen_data BYTEA,
+                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            ''')
+                            
+                            # Insertar datos
+                            cur.execute(
+                                """INSERT INTO formulario_simple 
+                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                            )
+                            
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                            
+                            mensaje = f'''<div class="exito">
+                                <h3>✅ ¡Registro exitoso!</h3>
+                                <p><strong>Nombre:</strong> {nombre}</p>
+                                <p><strong>Edad:</strong> {edad} años</p>
+                                <p><strong>Correo:</strong> {correo}</p>
+                                <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
+                                <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
+                                    <strong>✅ reCAPTCHA verificado correctamente</strong>
+                                </p>
+                            </div>'''
+                            
+                        except Exception as e:
+                            mensaje = f'<div class="error">❌ Error al guardar en BD: {str(e)}</div>'
+                    else:
+                        mensaje = '<div class="error">❌ Error de conexión a la base de datos</div>'
+                        
+            except Exception as e:
+                mensaje = f'<div class="error">❌ Error procesando formulario: {str(e)}</div>'
+        
+        # Obtener registros anteriores
+        registros_html = ""
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    FROM formulario_simple 
+                    ORDER BY fecha DESC 
+                    LIMIT 10
+                """)
+                registros = cur.fetchall()
+                cur.close()
+                conn.close()
+                
+                if registros:
+                    registros_html = '''
+                    <div class="registros">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3>📝 Registros guardados:</h3>
+                            <a href="/borrar_registros" style="background: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; font-size: 14px;">
+                                🗑️ Borrar todos los registros
+                            </a>
+                        </div>
+                        <div class="lista-registros">
+                    '''
+                    
+                    for reg in registros:
+                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
+                        fecha_str = str(fecha)[:16]
+                        
+                        # Obtener imagen en base64 para mostrar
+                        img_html = ""
+                        conn2 = conectar_bd()
+                        if conn2:
+                            try:
+                                cur2 = conn2.cursor()
+                                cur2.execute("SELECT imagen_data FROM formulario_simple WHERE id = %s", (id_reg,))
+                                img_data = cur2.fetchone()[0]
+                                cur2.close()
+                                conn2.close()
+                                
+                                if img_data:
+                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                    img_html = f'''<div class="imagen-preview">
+                                        <img src="data:image/{img_tipo};base64,{img_base64}" 
+                                             alt="{img_nombre}" 
+                                             style="max-width: 150px; max-height: 150px; border-radius: 5px;">
+                                        <p><small>{img_nombre}</small></p>
+                                    </div>'''
+                            except:
+                                img_html = '<p><small>Imagen no disponible</small></p>'
+                        
+                        registros_html += f'''<div class="registro">
+                            <div class="registro-info">
+                                <h4>{nombre_reg}</h4>
+                                <p><strong>Edad:</strong> {edad_reg} años</p>
+                                <p><strong>Correo:</strong> {correo_reg}</p>
+                                <p><small>Registrado: {fecha_str}</small></p>
+                            </div>
+                            {img_html}
+                        </div>'''
+                    
+                    registros_html += '</div></div>'
+                else:
+                    registros_html = '''
+                    <div class="sin-registros">
+                        <p>No hay registros aún. ¡Sé el primero en registrarte!</p>
+                    </div>
+                    '''
+                    
+            except Exception as e:
+                registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
+        else:
+            registros_html = '<p class="error">No hay conexión a la base de datos</p>'
+        
+        # HTML del formulario CON RECAPTCHA
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1302,15 +1331,263 @@ def application(environ, start_response):
     <title>Formulario con Imágenes y reCAPTCHA</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
-        /* Estilos del formulario */
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 900px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{ 
+            color: #333; 
+            margin-bottom: 30px;
+            text-align: center;
+        }}
+        .campo {{
+            margin: 20px 0;
+        }}
+        label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }}
+        input[type="text"],
+        input[type="email"],
+        input[type="number"],
+        input[type="file"] {{
+            width: 95%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }}
+        .requerido {{ color: #dc3545; }}
+        .info {{
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }}
+        button[type="submit"] {{
+            padding: 12px 30px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+            width: 100%;
+        }}
+        button[type="submit"]:hover {{
+            background: #218838;
+        }}
+        .exito {{
+            background: #d4edda;
+            color: #155724;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #28a745;
+        }}
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
+        }}
+        hr {{
+            margin: 40px 0;
+            border: none;
+            border-top: 2px solid #dee2e6;
+        }}
+        .registros {{
+            margin-top: 40px;
+        }}
+        .registro {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #007bff;
+        }}
+        .registro-info {{
+            flex: 1;
+        }}
+        .imagen-preview {{
+            text-align: center;
+            margin-left: 20px;
+        }}
+        .lista-registros {{
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+        }}
+        .form-group {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }}
+        .sin-registros {{
+            text-align: center;
+            padding: 30px;
+            background: #e9ecef;
+            border-radius: 8px;
+            color: #6c757d;
+        }}
+        .recaptcha-info {{
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }}
+        .recaptcha-container {{
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+        }}
+        .g-recaptcha {{
+            display: inline-block;
+        }}
+        .recaptcha-nota {{
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 10px;
+            text-align: center;
+        }}
+        @media (max-width: 768px) {{
+            .form-group {{
+                grid-template-columns: 1fr;
+            }}
+            .registro {{
+                flex-direction: column;
+                text-align: center;
+            }}
+            .imagen-preview {{
+                margin-left: 0;
+                margin-top: 15px;
+            }}
+        }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>📋 Formulario con Imágenes y reCAPTCHA</h1>
-        <p>[Formulario con todos los campos y reCAPTCHA]</p>
+        
+        <div class="recaptcha-info">
+            <strong>🔒 Protección reCAPTCHA:</strong>
+            <p>Para prevenir spam y abusos, este formulario está protegido con Google reCAPTCHA.</p>
+            <p>Debes completar el reCAPTCHA antes de enviar el formulario.</p>
+        </div>
+        
+        {mensaje if mensaje else ''}
+        
+        <form method="POST" enctype="multipart/form-data" id="formulario">
+            <div class="form-group">
+                <!-- Columna izquierda -->
+                <div>
+                    <!-- Nombre -->
+                    <div class="campo">
+                        <label>Nombre completo <span class="requerido">*</span></label>
+                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
+                        <div class="info">Tu nombre completo</div>
+                    </div>
+                    
+                    <!-- Edad -->
+                    <div class="campo">
+                        <label>Edad <span class="requerido">*</span></label>
+                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
+                        <div class="info">Entre 1 y 120 años</div>
+                    </div>
+                </div>
+                
+                <!-- Columna derecha -->
+                <div>
+                    <!-- Correo -->
+                    <div class="campo">
+                        <label>Correo electrónico <span class="requerido">*</span></label>
+                        <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
+                        <div class="info">Cualquier correo válido</div>
+                    </div>
+                    
+                    <!-- Confirmar Correo -->
+                    <div class="campo">
+                        <label>Confirmar correo <span class="requerido">*</span></label>
+                        <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
+                        <div class="info">Debe coincidir con el correo anterior</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Imagen -->
+            <div class="campo">
+                <label>Subir imagen <span class="requerido">*</span></label>
+                <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
+                <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
+            </div>
+            
+            <!-- reCAPTCHA -->
+            <div class="recaptcha-container">
+                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
+                <div class="recaptcha-nota">
+                    Este sitio está protegido por reCAPTCHA y se aplican la 
+                    <a href="https://policies.google.com/privacy" target="_blank">Política de privacidad</a> y 
+                    <a href="https://policies.google.com/terms" target="_blank">Términos de servicio</a> de Google.
+                </div>
+            </div>
+            
+            <!-- Botón -->
+            <button type="submit" id="btn-submit">📤 Enviar Formulario</button>
+        </form>
+        
+        <hr>
+        
+        {registros_html}
     </div>
+    
+    <script>
+        // Validar formulario antes de enviar
+        document.getElementById('formulario').addEventListener('submit', function(e) {{
+            const recaptchaResponse = grecaptcha.getResponse();
+            
+            if (recaptchaResponse.length === 0) {{
+                e.preventDefault();
+                alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
+                return false;
+            }}
+            
+            // Deshabilitar botón para evitar envíos múltiples
+            const submitBtn = document.getElementById('btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ Enviando...';
+            
+            return true;
+        }});
+        
+        // Restaurar botón si hay error
+        window.onload = function() {{
+            const submitBtn = document.getElementById('btn-submit');
+            if (submitBtn) {{
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '📤 Enviar Formulario';
+            }}
+        }};
+    </script>
 </body>
 </html>'''
         
