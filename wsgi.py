@@ -3,6 +3,9 @@ import os
 import psycopg2
 import base64
 import imghdr
+import urllib.request
+import urllib.parse
+import json
 from urllib.parse import urlparse, parse_qs
 import cgi
 import io
@@ -16,6 +19,11 @@ def application(environ, start_response):
     
     # === CONFIGURACIÓN ===
     DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
+    
+    # === CONFIGURACIÓN RECAPTCHA ===
+    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Clave de prueba (funciona en localhost)
+    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Secreto de prueba
+    # Para producción, obtén tus propias claves en: https://www.google.com/recaptcha/admin
     
     # === NAVEGACIÓN ===
     def navegacion():
@@ -41,7 +49,33 @@ def application(environ, start_response):
         except:
             return None
     
-    # === PÁGINA CARRUSEL ===
+    # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
+    def validar_recaptcha(recaptcha_response):
+        try:
+            # URL de verificación de reCAPTCHA
+            url = 'https://www.google.com/recaptcha/api/siteverify'
+            
+            # Datos a enviar
+            data = urllib.parse.urlencode({
+                'secret': RECAPTCHA_SECRET_KEY,
+                'response': recaptcha_response
+            }).encode()
+            
+            # Crear request
+            req = urllib.request.Request(url, data=data)
+            
+            # Enviar request y obtener respuesta
+            response = urllib.request.urlopen(req)
+            result = json.loads(response.read().decode())
+            
+            # Retornar si es válido
+            return result.get('success', False)
+            
+        except Exception as e:
+            print(f"Error validando reCAPTCHA: {e}")
+            return False
+    
+    # === PÁGINA CARRUSEL (sin cambios) ===
     if path == '/carrusel':
         mensaje = ""
         
@@ -638,7 +672,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA PRINCIPAL (actualizada con enlace al carrusel) ===
+    # === PÁGINA PRINCIPAL (actualizada) ===
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
@@ -709,6 +743,11 @@ def application(environ, start_response):
                 <a href="/carrusel">Ir a Carrusel →</a>
             </div>
         </div>
+        
+        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #e7f3ff; border-radius: 8px;">
+            <h3>🔒 Seguridad mejorada</h3>
+            <p>Ahora el formulario cuenta con protección reCAPTCHA para prevenir spam.</p>
+        </div>
     </div>
 </body>
 </html>'''
@@ -716,7 +755,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA CALCULADORA (COMPLETA) ===
+    # === PÁGINA CALCULADORA (sin cambios) ===
     elif path == '/calculadora':
         resultado_suma = ""
         resultado_division = ""
@@ -914,7 +953,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === BORRAR REGISTROS ===
+    # === BORRAR REGISTROS (sin cambios) ===
     elif path == '/borrar_registros':
         if method == 'POST':
             try:
@@ -1082,11 +1121,11 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO SIMPLIFICADO ===
+    # === PÁGINA FORMULARIO CON RECAPTCHA ===
     elif path == '/formulario':
         mensaje = ""
         
-        # Procesar POST (formulario con archivos)
+        # Procesar POST (formulario con archivos y reCAPTCHA)
         if method == 'POST':
             try:
                 # Parsear formulario multipart
@@ -1101,6 +1140,7 @@ def application(environ, start_response):
                 edad = fs.getvalue('edad', '').strip()
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
+                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
                 
                 # Obtener archivo
                 imagen_file = fs['imagen']
@@ -1141,6 +1181,13 @@ def application(environ, start_response):
                     errores.append("La imagen es demasiado grande (máximo 5MB)")
                 elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
                     errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+                
+                # Validar reCAPTCHA
+                if not recaptcha_response:
+                    errores.append("Por favor, completa el reCAPTCHA")
+                else:
+                    if not validar_recaptcha(recaptcha_response):
+                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
                 
                 if errores:
                     mensaje = f'''<div class="error">
@@ -1186,6 +1233,9 @@ def application(environ, start_response):
                                 <p><strong>Edad:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
+                                <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
+                                    <strong>✅ reCAPTCHA verificado correctamente</strong>
+                                </p>
                             </div>'''
                             
                         except Exception as e:
@@ -1273,12 +1323,13 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario
+        # HTML del formulario CON RECAPTCHA
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Formulario con Imágenes</title>
+    <title>Formulario con Imágenes y reCAPTCHA</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         body {{ 
             font-family: Arial, sans-serif; 
@@ -1395,6 +1446,29 @@ def application(environ, start_response):
             border-radius: 8px;
             color: #6c757d;
         }}
+        .recaptcha-info {{
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }}
+        .recaptcha-container {{
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+        }}
+        .g-recaptcha {{
+            display: inline-block;
+        }}
+        .recaptcha-nota {{
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 10px;
+            text-align: center;
+        }}
         @media (max-width: 768px) {{
             .form-group {{
                 grid-template-columns: 1fr;
@@ -1413,11 +1487,17 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>📋 Formulario Simple con Imágenes</h1>
+        <h1>📋 Formulario con Imágenes y reCAPTCHA</h1>
+        
+        <div class="recaptcha-info">
+            <strong>🔒 Protección reCAPTCHA:</strong>
+            <p>Para prevenir spam y abusos, este formulario está protegido con Google reCAPTCHA.</p>
+            <p>Debes completar el reCAPTCHA antes de enviar el formulario.</p>
+        </div>
         
         {mensaje if mensaje else ''}
         
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="formulario">
             <div class="form-group">
                 <!-- Columna izquierda -->
                 <div>
@@ -1461,14 +1541,53 @@ def application(environ, start_response):
                 <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
             </div>
             
+            <!-- reCAPTCHA -->
+            <div class="recaptcha-container">
+                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
+                <div class="recaptcha-nota">
+                    Este sitio está protegido por reCAPTCHA y se aplican la 
+                    <a href="https://policies.google.com/privacy" target="_blank">Política de privacidad</a> y 
+                    <a href="https://policies.google.com/terms" target="_blank">Términos de servicio</a> de Google.
+                </div>
+            </div>
+            
             <!-- Botón -->
-            <button type="submit">📤 Enviar Formulario</button>
+            <button type="submit" id="btn-submit">📤 Enviar Formulario</button>
         </form>
         
         <hr>
         
         {registros_html}
     </div>
+    
+    <script>
+        // Validar formulario antes de enviar
+        document.getElementById('formulario').addEventListener('submit', function(e) {{
+            const recaptchaResponse = grecaptcha.getResponse();
+            
+            if (recaptchaResponse.length === 0) {{
+                e.preventDefault();
+                alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
+                return false;
+            }}
+            
+            // Deshabilitar botón para evitar envíos múltiples
+            const submitBtn = document.getElementById('btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ Enviando...';
+            
+            return true;
+        }});
+        
+        // Restaurar botón si hay error
+        window.onload = function() {{
+            const submitBtn = document.getElementById('btn-submit');
+            if (submitBtn) {{
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '📤 Enviar Formulario';
+            }}
+        }};
+    </script>
 </body>
 </html>'''
         
