@@ -9,6 +9,67 @@ def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
     
+    # === RUTAS PARA IMÁGENES ===
+    if path.startswith('/imagen/'):
+        try:
+            def conectar_bd():
+                try:
+                    DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
+                    result = urlparse(DATABASE_URL)
+                    return psycopg2.connect(
+                        host=result.hostname,
+                        database=result.path[1:],
+                        user=result.username,
+                        password=result.password,
+                        port=result.port,
+                        connect_timeout=5
+                    )
+                except Exception as e:
+                    print(f"Error BD: {e}")
+                    return None
+            
+            conn = conectar_bd()
+            if not conn:
+                start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
+                return [b'Error de conexion a la base de datos']
+            
+            cur = conn.cursor()
+            imagen_id = path.split('/')[-1]
+            cur.execute('SELECT imagen_nombre, imagen_data FROM formulario_registros WHERE id = %s', (imagen_id,))
+            resultado = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if resultado and resultado[1]:
+                nombre_imagen, datos_imagen = resultado
+                extension = nombre_imagen.split('.')[-1].lower() if '.' in nombre_imagen else 'jpg'
+                
+                content_type = 'image/jpeg'
+                if extension == 'png':
+                    content_type = 'image/png'
+                elif extension == 'gif':
+                    content_type = 'image/gif'
+                elif extension == 'bmp':
+                    content_type = 'image/bmp'
+                elif extension == 'webp':
+                    content_type = 'image/webp'
+                
+                headers = [
+                    ('Content-Type', content_type),
+                    ('Content-Length', str(len(datos_imagen))),
+                    ('Cache-Control', 'max-age=3600')
+                ]
+                start_response('200 OK', headers)
+                return [datos_imagen]
+            else:
+                start_response('404 Not Found', [('Content-Type', 'text/plain')])
+                return [b'Imagen no encontrada']
+                
+        except Exception as e:
+            print(f"Error cargando imagen: {e}")
+            start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
+            return [b'Error al cargar la imagen']
+    
     headers = [('Content-Type', 'text/html; charset=utf-8')]
     
     # === CONFIGURACIÓN ===
@@ -21,6 +82,22 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
         </nav>'''
+    
+    # === CONEXIÓN BD ===
+    def conectar_bd():
+        try:
+            result = urlparse(DATABASE_URL)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port,
+                connect_timeout=5
+            )
+        except Exception as e:
+            print(f"Error BD: {e}")
+            return None
     
     # === PÁGINA DE ERROR ===
     def mostrar_error(mensaje):
@@ -66,22 +143,6 @@ def application(environ, start_response):
         
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
-    
-    # === CONEXIÓN BD ===
-    def conectar_bd():
-        try:
-            result = urlparse(DATABASE_URL)
-            return psycopg2.connect(
-                host=result.hostname,
-                database=result.path[1:],
-                user=result.username,
-                password=result.password,
-                port=result.port,
-                connect_timeout=5
-            )
-        except Exception as e:
-            print(f"Error BD: {e}")
-            return None
     
     # === PÁGINA FORMULARIO ===
     if path == '/formulario':
@@ -229,24 +290,43 @@ def application(environ, start_response):
                     
                     for id_reg, nombre_reg, edad_reg, correo_reg, imagen_nombre, fecha in registros:
                         fecha_str = str(fecha)[:16]
-                        # Extraer solo la extensión del archivo
-                        if imagen_nombre and '.' in imagen_nombre:
-                            extension = imagen_nombre.split('.')[-1].lower()
-                            icono = "🖼️" if extension in ['jpg', 'jpeg', 'png', 'gif', 'bmp'] else "📎"
+                        imagen_html = ""
+                        
+                        if imagen_nombre:
+                            # Mostrar la imagen si existe
+                            imagen_html = f'''
+                            <div class="imagen-preview">
+                                <a href="/imagen/{id_reg}" target="_blank">
+                                    <img src="/imagen/{id_reg}" alt="{imagen_nombre}" 
+                                         style="max-width: 100%; max-height: 150px; border-radius: 5px; margin-top: 10px;">
+                                </a>
+                                <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    <strong>Archivo:</strong> {imagen_nombre}<br>
+                                    <a href="/imagen/{id_reg}" target="_blank" style="color: #007bff;">Ver imagen completa</a>
+                                </p>
+                            </div>
+                            '''
                         else:
-                            icono = "📎"
+                            imagen_html = '<p style="color: #999; font-style: italic;">Sin imagen</p>'
                         
                         registros_html += f'''
                         <div class="registro-card">
                             <div class="registro-header">
-                                <span class="registro-icon">{icono}</span>
+                                <span class="registro-icon">👤</span>
                                 <h4>{nombre_reg}</h4>
                             </div>
                             <div class="registro-body">
                                 <p><strong>Edad:</strong> {edad_reg} años</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
-                                <p><strong>Archivo:</strong> {imagen_nombre or 'Sin imagen'}</p>
-                                <p><small>Registrado: {fecha_str}</small></p>
+                                {imagen_html}
+                                <p style="margin-top: 10px;"><small>Registrado: {fecha_str}</small></p>
+                                <div style="margin-top: 10px;">
+                                    <a href="/imagen/{id_reg}" target="_blank" 
+                                       style="background: #007bff; color: white; padding: 5px 10px; border-radius: 3px; 
+                                              text-decoration: none; font-size: 12px;">
+                                        📥 Descargar imagen
+                                    </a>
+                                </div>
                             </div>
                         </div>
                         '''
@@ -384,7 +464,7 @@ def application(environ, start_response):
         }}
         .registros-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
             margin-top: 20px;
         }}
@@ -423,6 +503,19 @@ def application(environ, start_response):
             color: #6c757d;
             font-size: 12px;
         }}
+        .imagen-preview {{
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }}
+        .imagen-preview img {{
+            transition: transform 0.2s;
+        }}
+        .imagen-preview img:hover {{
+            transform: scale(1.05);
+        }}
         .sin-registros {{
             text-align: center;
             padding: 40px;
@@ -445,6 +538,19 @@ def application(environ, start_response):
             border-radius: 5px;
             margin: 15px 0;
             border-left: 4px solid #007bff;
+        }}
+        .miniaturas {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }}
+        .miniatura {{
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 5px;
+            border: 2px solid #dee2e6;
         }}
     </style>
 </head>
@@ -498,6 +604,7 @@ def application(environ, start_response):
                     <p>• Formatos aceptados: JPG, PNG, GIF, BMP, etc.</p>
                     <p>• Tamaño máximo: 5MB</p>
                     <p>• La imagen se guardará en la base de datos</p>
+                    <p>• Se mostrará una miniatura en el listado de registros</p>
                 </div>
                 
                 <button type="submit">✅ Enviar Formulario</button>
