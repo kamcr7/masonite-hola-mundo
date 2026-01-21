@@ -73,6 +73,35 @@ def application(environ, start_response):
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
             return [b'Error al cargar la imagen']
     
+    # === ELIMINAR TODOS LOS DATOS (solo primera vez) ===
+    if path == '/resetear':
+        try:
+            conn = conectar_bd()
+            if conn:
+                cur = conn.cursor()
+                cur.execute('DROP TABLE IF EXISTS formulario_registros')
+                conn.commit()
+                cur.close()
+                conn.close()
+                
+                html = '''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Base de datos resetada</title>
+</head>
+<body>
+    <h1>Base de datos resetada correctamente</h1>
+    <p>Todos los registros han sido eliminados.</p>
+    <a href="/formulario">Volver al formulario</a>
+</body>
+</html>'''
+                
+                start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')])
+                return [html.encode('utf-8')]
+        except Exception as e:
+            print(f"Error resetando BD: {e}")
+    
     headers = [('Content-Type', 'text/html; charset=utf-8')]
     
     # === NAVEGACIÓN ===
@@ -81,6 +110,7 @@ def application(environ, start_response):
             <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🏠 Inicio</a>
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
+            <a href="/resetear" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold; background: #dc3545; padding: 5px 10px; border-radius: 3px;">🗑️ Resetear BD</a>
         </nav>'''
     
     # === PÁGINA DE ERROR ===
@@ -256,10 +286,10 @@ def application(environ, start_response):
             if conn:
                 cur = conn.cursor()
                 cur.execute('''
-                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_data, fecha 
+                    SELECT id, nombre, edad, correo, imagen_nombre, fecha 
                     FROM formulario_registros 
                     ORDER BY fecha DESC 
-                    LIMIT 10
+                    LIMIT 20
                 ''')
                 registros = cur.fetchall()
                 cur.close()
@@ -269,47 +299,41 @@ def application(environ, start_response):
                     registros_html = '''
                     <div class="registros-container">
                         <h3>📋 Registros guardados:</h3>
-                        <div class="registros-grid">
+                        <div class="registros-lista">
                     '''
                     
-                    for id_reg, nombre_reg, edad_reg, correo_reg, imagen_nombre, imagen_data, fecha in registros:
+                    for id_reg, nombre_reg, edad_reg, correo_reg, imagen_nombre, fecha in registros:
                         fecha_str = str(fecha)[:16]
-                        imagen_html = ""
                         
-                        if imagen_nombre and imagen_data:
-                            # Mostrar la imagen si existe
-                            imagen_html = f'''
-                            <div class="imagen-preview">
-                                <a href="/imagen/{id_reg}" target="_blank">
-                                    <img src="/imagen/{id_reg}" alt="{imagen_nombre}" 
-                                         style="max-width: 100%; max-height: 150px; border-radius: 5px; margin-top: 10px;">
-                                </a>
-                                <p style="font-size: 12px; color: #666; margin-top: 5px;">
-                                    <strong>Archivo:</strong> {imagen_nombre}<br>
-                                    <a href="/imagen/{id_reg}" target="_blank" style="color: #007bff;">Ver imagen completa</a>
-                                </p>
-                            </div>
-                            '''
-                        else:
-                            imagen_html = '<p style="color: #999; font-style: italic;">Sin imagen</p>'
+                        # Construir la ruta de la imagen
+                        imagen_url = f"/imagen/{id_reg}"
                         
                         registros_html += f'''
-                        <div class="registro-card">
+                        <div class="registro-item">
                             <div class="registro-header">
-                                <span class="registro-icon">👤</span>
-                                <h4>{nombre_reg}</h4>
+                                <div class="registro-info">
+                                    <h4>{nombre_reg}</h4>
+                                    <div class="datos">
+                                        <div><strong>Edad:</strong> {edad_reg} años</div>
+                                        <div><strong>Correo:</strong> {correo_reg}</div>
+                                    </div>
+                                </div>
+                                <div class="registro-fecha">
+                                    <small>Registrado: {fecha_str}</small>
+                                </div>
                             </div>
-                            <div class="registro-body">
-                                <p><strong>Edad:</strong> {edad_reg} años</p>
-                                <p><strong>Correo:</strong> {correo_reg}</p>
-                                {imagen_html}
-                                <p style="margin-top: 10px;"><small>Registrado: {fecha_str}</small></p>
-                                <div style="margin-top: 10px;">
-                                    <a href="/imagen/{id_reg}" target="_blank" 
-                                       style="background: #007bff; color: white; padding: 5px 10px; border-radius: 3px; 
-                                              text-decoration: none; font-size: 12px;">
-                                        📥 Descargar imagen
-                                    </a>
+                            
+                            <div class="registro-imagen">
+                                <div class="imagen-container">
+                                    <img src="{imagen_url}" alt="{imagen_nombre}" 
+                                         onerror="this.style.display='none'; this.parentElement.innerHTML='<p style=\'color:#999\'>Imagen no disponible</p>';">
+                                </div>
+                                <div class="imagen-info">
+                                    <p><strong>Archivo:</strong> {imagen_nombre}</p>
+                                    <div class="imagen-enlaces">
+                                        <a href="{imagen_url}" target="_blank" class="btn-ver">👁️ Ver imagen completa</a>
+                                        <a href="{imagen_url}" download="{imagen_nombre}" class="btn-descargar">📥 Descargar imagen</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -322,6 +346,7 @@ def application(environ, start_response):
                 else:
                     registros_html = '''
                     <div class="sin-registros">
+                        <div class="sin-registros-icon">📭</div>
                         <p>No hay registros aún. ¡Sé el primero en registrarte!</p>
                     </div>
                     '''
@@ -446,59 +471,93 @@ def application(environ, start_response):
             padding-top: 30px;
             border-top: 2px solid #dee2e6;
         }}
-        .registros-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
+        .registros-lista {{
             margin-top: 20px;
         }}
-        .registro-card {{
+        .registro-item {{
             background: white;
             border: 1px solid #dee2e6;
             border-radius: 8px;
             padding: 20px;
+            margin-bottom: 20px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }}
-        .registro-card:hover {{
-            transform: translateY(-5px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         }}
         .registro-header {{
             display: flex;
-            align-items: center;
+            justify-content: space-between;
+            align-items: flex-start;
             margin-bottom: 15px;
             border-bottom: 1px solid #eee;
             padding-bottom: 10px;
         }}
-        .registro-icon {{
-            font-size: 24px;
-            margin-right: 15px;
-        }}
-        .registro-header h4 {{
-            margin: 0;
+        .registro-info h4 {{
+            margin: 0 0 10px 0;
             color: #333;
+            font-size: 20px;
         }}
-        .registro-body p {{
-            margin: 8px 0;
+        .datos div {{
+            margin: 5px 0;
             color: #555;
         }}
-        .registro-body small {{
+        .registro-fecha small {{
             color: #6c757d;
             font-size: 12px;
         }}
-        .imagen-preview {{
-            margin: 10px 0;
-            padding: 10px;
+        .registro-imagen {{
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }}
+        .imagen-container {{
+            flex: 0 0 200px;
+            height: 150px;
             background: #f8f9fa;
             border-radius: 5px;
+            overflow: hidden;
             border: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }}
-        .imagen-preview img {{
-            transition: transform 0.2s;
+        .imagen-container img {{
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
         }}
-        .imagen-preview img:hover {{
-            transform: scale(1.05);
+        .imagen-info {{
+            flex: 1;
+        }}
+        .imagen-info p {{
+            margin: 0 0 10px 0;
+            color: #555;
+        }}
+        .imagen-enlaces {{
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .btn-ver, .btn-descargar {{
+            padding: 8px 15px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }}
+        .btn-ver {{
+            background: #007bff;
+            color: white;
+        }}
+        .btn-descargar {{
+            background: #28a745;
+            color: white;
+        }}
+        .btn-ver:hover {{
+            background: #0056b3;
+        }}
+        .btn-descargar:hover {{
+            background: #218838;
         }}
         .sin-registros {{
             text-align: center;
@@ -508,6 +567,10 @@ def application(environ, start_response):
             color: #6c757d;
             font-size: 18px;
         }}
+        .sin-registros-icon {{
+            font-size: 50px;
+            margin-bottom: 15px;
+        }}
         .error-bd {{
             background: #f8d7da;
             color: #721c24;
@@ -516,12 +579,21 @@ def application(environ, start_response):
             text-align: center;
             margin: 20px 0;
         }}
-        .imagen-info {{
+        .imagen-info-form {{
             background: #e7f3ff;
             padding: 15px;
             border-radius: 5px;
             margin: 15px 0;
             border-left: 4px solid #007bff;
+        }}
+        .reset-warning {{
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: center;
         }}
     </style>
 </head>
@@ -529,6 +601,10 @@ def application(environ, start_response):
     {navegacion()}
     <div class="container">
         <h1>📝 Formulario de Registro</h1>
+        
+        <div class="reset-warning">
+            <strong>⚠️ Nota:</strong> Si las imágenes antiguas no se muestran, usa el botón "Resetear BD" en el menú para limpiar la base de datos.
+        </div>
         
         {mensaje_exito if mensaje_exito else ''}
         
@@ -570,12 +646,12 @@ def application(environ, start_response):
                     <div class="info">Selecciona una imagen (JPG, PNG, GIF, etc.)</div>
                 </div>
                 
-                <div class="imagen-info">
+                <div class="imagen-info-form">
                     <strong>📸 Información sobre la imagen:</strong>
                     <p>• Formatos aceptados: JPG, PNG, GIF, BMP, etc.</p>
                     <p>• Tamaño máximo: 5MB</p>
                     <p>• La imagen se guardará en la base de datos</p>
-                    <p>• Se mostrará una miniatura en el listado de registros</p>
+                    <p>• Se mostrará directamente en la página</p>
                 </div>
                 
                 <button type="submit">✅ Enviar Formulario</button>
@@ -584,6 +660,19 @@ def application(environ, start_response):
         
         {registros_html}
     </div>
+    
+    <script>
+        // Manejar errores de imágenes
+        document.addEventListener('DOMContentLoaded', function() {{
+            const imagenes = document.querySelectorAll('.imagen-container img');
+            imagenes.forEach(img => {{
+                img.onerror = function() {{
+                    this.style.display = 'none';
+                    this.parentElement.innerHTML = '<p style="color:#999; text-align:center;">Imagen no disponible</p>';
+                }};
+            }});
+        }});
+    </script>
 </body>
 </html>'''
         
