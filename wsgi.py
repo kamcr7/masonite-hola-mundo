@@ -23,6 +23,7 @@ def application(environ, start_response):
             <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🏠 Inicio</a>
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
+            <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🖼️ Carrusel</a>
         </nav>'''
     
     # === FUNCIONES COMUNES ===
@@ -40,7 +41,604 @@ def application(environ, start_response):
         except:
             return None
     
-    # === PÁGINA PRINCIPAL ===
+    # === PÁGINA CARRUSEL ===
+    if path == '/carrusel':
+        mensaje = ""
+        
+        # Procesar POST (agregar nueva imagen al carrusel)
+        if method == 'POST':
+            try:
+                # Parsear formulario multipart
+                fs = cgi.FieldStorage(
+                    fp=environ['wsgi.input'],
+                    environ=environ,
+                    keep_blank_values=True
+                )
+                
+                # Verificar si es para eliminar
+                eliminar_id = fs.getvalue('eliminar_id', '').strip()
+                if eliminar_id:
+                    # ELIMINAR IMAGEN
+                    conn = conectar_bd()
+                    if conn:
+                        try:
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM carrusel_imagenes WHERE id = %s", (eliminar_id,))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                            mensaje = f'''<div class="exito">
+                                <h3>✅ Imagen eliminada</h3>
+                                <p>La imagen ha sido eliminada del carrusel.</p>
+                            </div>'''
+                        except Exception as e:
+                            mensaje = f'<div class="error">❌ Error al eliminar: {str(e)}</div>'
+                else:
+                    # AGREGAR NUEVA IMAGEN
+                    titulo = fs.getvalue('titulo', '').strip()
+                    descripcion = fs.getvalue('descripcion', '').strip()
+                    
+                    # Obtener archivo
+                    imagen_file = fs['imagen']
+                    imagen_data = None
+                    imagen_nombre = ""
+                    imagen_tipo = ""
+                    
+                    if imagen_file.filename:
+                        imagen_nombre = imagen_file.filename
+                        imagen_data = imagen_file.file.read()
+                        # Determinar tipo de imagen
+                        try:
+                            imagen_tipo = imghdr.what(None, h=imagen_data)
+                            if not imagen_tipo:
+                                imagen_tipo = "desconocido"
+                        except:
+                            imagen_tipo = "desconocido"
+                    
+                    # Validaciones
+                    errores = []
+                    
+                    if not titulo:
+                        errores.append("Título es requerido")
+                    
+                    if not imagen_data:
+                        errores.append("Debe subir una imagen")
+                    elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
+                        errores.append("La imagen es demasiado grande (máximo 5MB)")
+                    elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
+                        errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+                    
+                    if errores:
+                        mensaje = f'''<div class="error">
+                            <h3>❌ Errores encontrados:</h3>
+                            <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
+                        </div>'''
+                    else:
+                        # Guardar en PostgreSQL
+                        conn = conectar_bd()
+                        if conn:
+                            try:
+                                cur = conn.cursor()
+                                
+                                # Crear tabla si no existe
+                                cur.execute('''
+                                    CREATE TABLE IF NOT EXISTS carrusel_imagenes (
+                                        id SERIAL PRIMARY KEY,
+                                        titulo VARCHAR(100),
+                                        descripcion TEXT,
+                                        imagen_nombre VARCHAR(255),
+                                        imagen_tipo VARCHAR(20),
+                                        imagen_data BYTEA,
+                                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                    )
+                                ''')
+                                
+                                # Insertar datos
+                                cur.execute(
+                                    """INSERT INTO carrusel_imagenes 
+                                       (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data) 
+                                       VALUES (%s, %s, %s, %s, %s)""",
+                                    (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                )
+                                
+                                conn.commit()
+                                cur.close()
+                                conn.close()
+                                
+                                mensaje = f'''<div class="exito">
+                                    <h3>✅ ¡Imagen agregada al carrusel!</h3>
+                                    <p><strong>Título:</strong> {titulo}</p>
+                                    <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
+                                </div>'''
+                                
+                            except Exception as e:
+                                mensaje = f'<div class="error">❌ Error al guardar: {str(e)}</div>'
+                        else:
+                            mensaje = '<div class="error">❌ Error de conexión a la base de datos</div>'
+                        
+            except Exception as e:
+                mensaje = f'<div class="error">❌ Error procesando formulario: {str(e)}</div>'
+        
+        # Obtener imágenes del carrusel
+        imagenes_html = ""
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT id, titulo, descripcion, imagen_nombre, imagen_tipo, fecha 
+                    FROM carrusel_imagenes 
+                    ORDER BY fecha DESC
+                """)
+                imagenes = cur.fetchall()
+                cur.close()
+                conn.close()
+                
+                if imagenes:
+                    # Carrusel de imágenes
+                    imagenes_html += '''
+                    <div class="carrusel-container">
+                        <h3>🖼️ Carrusel de Imágenes</h3>
+                        <div class="carrusel" id="carrusel">
+                    '''
+                    
+                    for i, img in enumerate(imagenes):
+                        id_img, titulo_img, desc_img, img_nombre, img_tipo, fecha = img
+                        
+                        # Obtener imagen en base64 para mostrar
+                        img_base64 = ""
+                        conn2 = conectar_bd()
+                        if conn2:
+                            try:
+                                cur2 = conn2.cursor()
+                                cur2.execute("SELECT imagen_data FROM carrusel_imagenes WHERE id = %s", (id_img,))
+                                img_data = cur2.fetchone()[0]
+                                cur2.close()
+                                conn2.close()
+                                
+                                if img_data:
+                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
+                            except:
+                                pass
+                        
+                        if img_base64:
+                            # Determinar si es la primera imagen (activa)
+                            activa = "active" if i == 0 else ""
+                            
+                            imagenes_html += f'''
+                            <div class="carrusel-item {activa}" data-id="{id_img}">
+                                <div class="imagen-contenedor">
+                                    <img src="data:image/{img_tipo};base64,{img_base64}" 
+                                         alt="{titulo_img}"
+                                         class="carrusel-imagen">
+                                    <div class="carrusel-info">
+                                        <h4>{titulo_img}</h4>
+                                        {f'<p>{desc_img}</p>' if desc_img else ''}
+                                        <p><small>Archivo: {img_nombre}</small></p>
+                                        <form method="POST" style="margin-top: 10px;">
+                                            <input type="hidden" name="eliminar_id" value="{id_img}">
+                                            <button type="submit" class="btn-eliminar" 
+                                                    onclick="return confirm('¿Estás seguro de eliminar esta imagen del carrusel?')">
+                                                🗑️ Eliminar
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            '''
+                    
+                    imagenes_html += '''
+                        </div>
+                        
+                        <!-- Controles del carrusel -->
+                        <div class="carrusel-controls">
+                            <button class="carrusel-btn prev" onclick="carruselPrev()">◀</button>
+                            <div class="carrusel-indicators" id="indicators"></div>
+                            <button class="carrusel-btn next" onclick="carruselNext()">▶</button>
+                        </div>
+                    </div>
+                    '''
+                    
+                    # Contador de imágenes
+                    imagenes_html += f'''
+                    <div class="contador-imagenes">
+                        <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
+                    </div>
+                    '''
+                else:
+                    imagenes_html = '''
+                    <div class="sin-imagenes">
+                        <div class="sin-imagenes-icon">📷</div>
+                        <h3>No hay imágenes en el carrusel</h3>
+                        <p>Agrega tu primera imagen usando el formulario de abajo.</p>
+                    </div>
+                    '''
+                    
+            except Exception as e:
+                imagenes_html = f'<p class="error">Error cargando imágenes: {str(e)}</p>'
+        else:
+            imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
+        
+        # HTML del carrusel
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Carrusel de Imágenes</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{ 
+            color: #333; 
+            text-align: center;
+            margin-bottom: 40px;
+        }}
+        .carrusel-container {{
+            margin: 40px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }}
+        .carrusel {{
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }}
+        .carrusel-item {{
+            display: none;
+            padding: 30px;
+            text-align: center;
+        }}
+        .carrusel-item.active {{
+            display: block;
+        }}
+        .imagen-contenedor {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }}
+        @media (min-width: 768px) {{
+            .imagen-contenedor {{
+                flex-direction: row;
+                align-items: flex-start;
+            }}
+        }}
+        .carrusel-imagen {{
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }}
+        @media (min-width: 768px) {{
+            .carrusel-imagen {{
+                max-width: 50%;
+            }}
+        }}
+        .carrusel-info {{
+            flex: 1;
+            text-align: left;
+            padding: 0 20px;
+        }}
+        .carrusel-info h4 {{
+            margin-top: 0;
+            color: #333;
+            font-size: 24px;
+        }}
+        .carrusel-controls {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            padding: 10px;
+        }}
+        .carrusel-btn {{
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .carrusel-btn:hover {{
+            background: #0056b3;
+        }}
+        .carrusel-indicators {{
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex: 1;
+        }}
+        .indicator {{
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+            cursor: pointer;
+            transition: background 0.3s;
+        }}
+        .indicator.active {{
+            background: #007bff;
+        }}
+        .contador-imagenes {{
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 5px;
+        }}
+        .sin-imagenes {{
+            text-align: center;
+            padding: 60px 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            margin: 40px 0;
+        }}
+        .sin-imagenes-icon {{
+            font-size: 60px;
+            margin-bottom: 20px;
+        }}
+        .form-agregar {{
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 10px;
+            margin-top: 40px;
+        }}
+        .campo {{
+            margin: 20px 0;
+        }}
+        label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }}
+        input[type="text"],
+        textarea,
+        input[type="file"] {{
+            width: 95%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }}
+        textarea {{
+            min-height: 100px;
+            resize: vertical;
+        }}
+        .requerido {{ color: #dc3545; }}
+        .info {{
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }}
+        .btn-agregar {{
+            padding: 15px 30px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            width: 100%;
+            margin-top: 20px;
+        }}
+        .btn-agregar:hover {{
+            background: #218838;
+        }}
+        .btn-eliminar {{
+            padding: 8px 15px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .btn-eliminar:hover {{
+            background: #c82333;
+        }}
+        .exito {{
+            background: #d4edda;
+            color: #155724;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #28a745;
+        }}
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
+        }}
+        .instrucciones {{
+            background: #fff3cd;
+            color: #856404;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <h1>🖼️ Carrusel de Imágenes</h1>
+        
+        <div class="instrucciones">
+            <h3>📋 Instrucciones:</h3>
+            <ul>
+                <li>Agrega imágenes usando el formulario de abajo</li>
+                <li>Navega entre imágenes usando los botones ◀ ▶</li>
+                <li>Elimina imágenes haciendo click en "🗑️ Eliminar"</li>
+                <li>Cada imagen puede tener un título y descripción</li>
+            </ul>
+        </div>
+        
+        {mensaje if mensaje else ''}
+        
+        {imagenes_html}
+        
+        <div class="form-agregar">
+            <h3>➕ Agregar Nueva Imagen al Carrusel</h3>
+            <form method="POST" enctype="multipart/form-data">
+                <div class="campo">
+                    <label>Título de la imagen <span class="requerido">*</span></label>
+                    <input type="text" name="titulo" placeholder="Ej: Paisaje de montaña" required>
+                    <div class="info">Un título descriptivo para la imagen</div>
+                </div>
+                
+                <div class="campo">
+                    <label>Descripción (opcional)</label>
+                    <textarea name="descripcion" placeholder="Describe la imagen..."></textarea>
+                    <div class="info">Información adicional sobre la imagen</div>
+                </div>
+                
+                <div class="campo">
+                    <label>Seleccionar imagen <span class="requerido">*</span></label>
+                    <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
+                    <div class="info">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
+                </div>
+                
+                <button type="submit" class="btn-agregar">📤 Agregar al Carrusel</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // Variables del carrusel
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.carrusel-item');
+        const indicatorsContainer = document.getElementById('indicators');
+        
+        // Crear indicadores
+        function crearIndicadores() {{
+            if (!indicatorsContainer || slides.length === 0) return;
+            
+            indicatorsContainer.innerHTML = '';
+            for (let i = 0; i < slides.length; i++) {{
+                const indicator = document.createElement('div');
+                indicator.className = 'indicator';
+                if (i === currentSlide) indicator.classList.add('active');
+                indicator.onclick = () => goToSlide(i);
+                indicatorsContainer.appendChild(indicator);
+            }}
+        }}
+        
+        // Mostrar slide específico
+        function showSlide(index) {{
+            if (slides.length === 0) return;
+            
+            // Asegurar que el índice esté dentro de los límites
+            if (index >= slides.length) {{
+                currentSlide = 0;
+            }} else if (index < 0) {{
+                currentSlide = slides.length - 1;
+            }} else {{
+                currentSlide = index;
+            }}
+            
+            // Ocultar todos los slides
+            slides.forEach(slide => {{
+                slide.classList.remove('active');
+            }});
+            
+            // Mostrar slide actual
+            slides[currentSlide].classList.add('active');
+            
+            // Actualizar indicadores
+            const indicators = document.querySelectorAll('.indicator');
+            indicators.forEach((indicator, i) => {{
+                indicator.classList.toggle('active', i === currentSlide);
+            }});
+        }}
+        
+        // Slide siguiente
+        function carruselNext() {{
+            showSlide(currentSlide + 1);
+        }}
+        
+        // Slide anterior
+        function carruselPrev() {{
+            showSlide(currentSlide - 1);
+        }}
+        
+        // Ir a slide específico
+        function goToSlide(index) {{
+            showSlide(index);
+        }}
+        
+        // Auto-avance del carrusel (cada 5 segundos)
+        let carruselInterval;
+        function iniciarAutoPlay() {{
+            if (slides.length > 1) {{
+                carruselInterval = setInterval(carruselNext, 5000);
+            }}
+        }}
+        
+        function detenerAutoPlay() {{
+            if (carruselInterval) {{
+                clearInterval(carruselInterval);
+            }}
+        }}
+        
+        // Inicializar carrusel
+        document.addEventListener('DOMContentLoaded', function() {{
+            crearIndicadores();
+            iniciarAutoPlay();
+            
+            // Pausar auto-play cuando el mouse está sobre el carrusel
+            const carrusel = document.getElementById('carrusel');
+            if (carrusel) {{
+                carrusel.addEventListener('mouseenter', detenerAutoPlay);
+                carrusel.addEventListener('mouseleave', iniciarAutoPlay);
+            }}
+            
+            // Navegación con teclado
+            document.addEventListener('keydown', function(e) {{
+                if (e.key === 'ArrowLeft') {{
+                    carruselPrev();
+                }} else if (e.key === 'ArrowRight') {{
+                    carruselNext();
+                }}
+            }});
+        }});
+        
+        // Confirmar eliminación
+        function confirmarEliminacion(id) {{
+            return confirm('¿Estás seguro de que quieres eliminar esta imagen del carrusel?');
+        }}
+    </script>
+</body>
+</html>'''
+        
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+    
+    # === PÁGINA PRINCIPAL (actualizada con enlace al carrusel) ===
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
@@ -102,6 +700,13 @@ def application(environ, start_response):
                 <h3>Formulario con Imágenes</h3>
                 <p>Registra datos y sube imágenes</p>
                 <a href="/formulario">Ir a Formulario →</a>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">🖼️</div>
+                <h3>Carrusel de Imágenes</h3>
+                <p>Galería interactiva de imágenes</p>
+                <a href="/carrusel">Ir a Carrusel →</a>
             </div>
         </div>
     </div>
