@@ -1,4 +1,4 @@
-﻿# 🚀 Masonite Hola Mundo
+﻿dir -Force# 🚀 Masonite Hola Mundo
 
 ## Instalación
 1. git clone [url]
