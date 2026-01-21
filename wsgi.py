@@ -93,7 +93,7 @@ def application(environ, start_response):
             <div class="feature">
                 <div class="feature-icon">🧮</div>
                 <h3>Calculadora</h3>
-                <p>Operaciones básicas sin validación</p>
+                <p>Operaciones básicas de suma y división</p>
                 <a href="/calculadora">Ir a Calculadora →</a>
             </div>
             
@@ -111,9 +111,57 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA CALCULADORA (igual que antes) ===
+    # === PÁGINA CALCULADORA (COMPLETA) ===
     elif path == '/calculadora':
-        # [Código de calculadora igual que antes]
+        resultado_suma = ""
+        resultado_division = ""
+        
+        # Procesar formulario de calculadora
+        if method == 'POST':
+            try:
+                # Obtener datos del formulario
+                content_length = int(environ.get('CONTENT_LENGTH', 0))
+                if content_length > 0:
+                    post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
+                    params = parse_qs(post_data)
+                    
+                    # PROCESAR SUMA
+                    try:
+                        suma1 = params.get('suma1', [''])[0]
+                        suma2 = params.get('suma2', [''])[0]
+                        if suma1 and suma2:
+                            num1 = float(suma1)
+                            num2 = float(suma2)
+                            resultado_suma = f"<div class='resultado-exito'><strong>Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
+                        else:
+                            resultado_suma = "<div class='resultado-error'>⚠️ Ingresa ambos números para la suma</div>"
+                    except ValueError:
+                        resultado_suma = "<div class='resultado-error'>❌ Error: Ingresa números válidos para la suma</div>"
+                    except Exception as e:
+                        resultado_suma = f"<div class='resultado-error'>❌ Error en suma: {str(e)}</div>"
+                    
+                    # PROCESAR DIVISIÓN
+                    try:
+                        div1 = params.get('div1', [''])[0]
+                        div2 = params.get('div2', [''])[0]
+                        if div1 and div2:
+                            num3 = float(div1)
+                            num4 = float(div2)
+                            if num4 == 0:
+                                resultado_division = "<div class='resultado-error'>❌ Error: No se puede dividir entre cero</div>"
+                            else:
+                                resultado_division = f"<div class='resultado-exito'><strong>Resultado:</strong> {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
+                        else:
+                            resultado_division = "<div class='resultado-error'>⚠️ Ingresa ambos números para la división</div>"
+                    except ValueError:
+                        resultado_division = "<div class='resultado-error'>❌ Error: Ingresa números válidos para la división</div>"
+                    except Exception as e:
+                        resultado_division = f"<div class='resultado-error'>❌ Error en división: {str(e)}</div>"
+                    
+            except Exception as e:
+                resultado_suma = f"<div class='resultado-error'>❌ Error general: {str(e)}</div>"
+        
+        # HTML de la calculadora
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -122,20 +170,306 @@ def application(environ, start_response):
     <style>
         body {{ 
             font-family: Arial, sans-serif; 
-            max-width: 800px; 
+            max-width: 900px; 
             margin: 40px auto; 
             padding: 20px;
             background: #f8f9fa;
         }}
-        .container {{ background: white; padding: 40px; border-radius: 10px; }}
+        .container {{ 
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{ 
+            color: #333; 
+            text-align: center;
+            margin-bottom: 40px;
+        }}
+        .calculadora-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }}
+        .operacion {{
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }}
+        .suma {{ border-color: #28a745; }}
+        .division {{ border-color: #dc3545; }}
+        .operacion h2 {{
+            margin-top: 0;
+            color: #333;
+            text-align: center;
+        }}
+        .campo {{
+            margin: 15px 0;
+        }}
+        .campo label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }}
+        input[type="text"] {{
+            width: 90%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }}
+        .btn-calcular {{
+            padding: 12px 25px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+        }}
+        .btn-calcular:hover {{
+            background: #0056b3;
+        }}
+        .resultado-exito {{
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            border-left: 4px solid #28a745;
+        }}
+        .resultado-error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            border-left: 4px solid #dc3545;
+        }}
+        @media (max-width: 768px) {{
+            .calculadora-grid {{
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }}
+        }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>🧮 Calculadora</h1>
-        <p>Página de calculadora (código igual al anterior).</p>
-        <p><a href="/formulario">Ir al formulario →</a></p>
+        
+        <div class="calculadora-grid">
+            <!-- SUMA -->
+            <div class="operacion suma">
+                <h2>➕ Suma</h2>
+                <form method="POST">
+                    <div class="campo">
+                        <label>Primer número:</label>
+                        <input type="text" name="suma1" placeholder="Ej: 10" required>
+                    </div>
+                    <div class="campo">
+                        <label>Segundo número:</label>
+                        <input type="text" name="suma2" placeholder="Ej: 5" required>
+                    </div>
+                    <button type="submit" class="btn-calcular">Calcular Suma</button>
+                </form>
+                {resultado_suma if resultado_suma else ''}
+            </div>
+            
+            <!-- DIVISIÓN -->
+            <div class="operacion division">
+                <h2>➗ División</h2>
+                <form method="POST">
+                    <div class="campo">
+                        <label>Dividendo:</label>
+                        <input type="text" name="div1" placeholder="Ej: 10" required>
+                    </div>
+                    <div class="campo">
+                        <label>Divisor:</label>
+                        <input type="text" name="div2" placeholder="Ej: 2" required>
+                    </div>
+                    <button type="submit" class="btn-calcular">Calcular División</button>
+                </form>
+                {resultado_division if resultado_division else ''}
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 40px;">
+            <p><strong>Nota:</strong> Cada operación se calcula por separado. Usa el botón correspondiente a cada operación.</p>
+        </div>
+    </div>
+</body>
+</html>'''
+        
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+    
+    # === BORRAR REGISTROS ===
+    elif path == '/borrar_registros':
+        if method == 'POST':
+            try:
+                conn = conectar_bd()
+                if conn:
+                    cur = conn.cursor()
+                    cur.execute('DELETE FROM formulario_simple')
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    
+                    html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Registros Borrados</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; text-align: center; }}
+        .exito {{ color: #28a745; font-size: 24px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <div class="exito">✅ Todos los registros han sido borrados</div>
+        <p>Se han eliminado todos los registros de la base de datos.</p>
+        <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
+    </div>
+</body>
+</html>'''
+                else:
+                    html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Error</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; text-align: center; }}
+        .error {{ color: #dc3545; font-size: 24px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <div class="error">❌ Error de conexión</div>
+        <p>No se pudo conectar a la base de datos.</p>
+        <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
+    </div>
+</body>
+</html>'''
+                
+                start_response('200 OK', headers)
+                return [html.encode('utf-8')]
+                
+            except Exception as e:
+                html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Error</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; text-align: center; }}
+        .error {{ color: #dc3545; font-size: 24px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <div class="error">❌ Error al borrar registros</div>
+        <p>Error: {str(e)}</p>
+        <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
+    </div>
+</body>
+</html>'''
+                
+                start_response('200 OK', headers)
+                return [html.encode('utf-8')]
+        
+        # Si es GET, mostrar formulario de confirmación
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Borrar Registros</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        .advertencia {{
+            background: #fff3cd;
+            color: #856404;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+            border-left: 4px solid #ffc107;
+        }}
+        .advertencia-icon {{
+            font-size: 40px;
+            margin-bottom: 15px;
+        }}
+        .botones {{
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }}
+        .btn-borrar {{
+            background: #dc3545;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }}
+        .btn-cancelar {{
+            background: #6c757d;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+        }}
+        .btn-borrar:hover {{ background: #c82333; }}
+        .btn-cancelar:hover {{ background: #5a6268; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <div class="advertencia">
+            <div class="advertencia-icon">⚠️</div>
+            <h2>¡Advertencia!</h2>
+            <p>Estás a punto de borrar <strong>TODOS</strong> los registros de la base de datos.</p>
+            <p>Esta acción <strong>NO se puede deshacer</strong>.</p>
+        </div>
+        
+        <form method="POST" action="/borrar_registros">
+            <div class="botones">
+                <button type="submit" class="btn-borrar">🗑️ Sí, borrar todos los registros</button>
+                <a href="/formulario" class="btn-cancelar">❌ Cancelar y volver</a>
+            </div>
+        </form>
     </div>
 </body>
 </html>'''
@@ -274,7 +608,16 @@ def application(environ, start_response):
                 conn.close()
                 
                 if registros:
-                    registros_html = '<div class="registros"><h3>📝 Registros anteriores:</h3><div class="lista-registros">'
+                    registros_html = '''
+                    <div class="registros">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3>📝 Registros guardados:</h3>
+                            <a href="/borrar_registros" style="background: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; font-size: 14px;">
+                                🗑️ Borrar todos los registros
+                            </a>
+                        </div>
+                        <div class="lista-registros">
+                    '''
                     
                     for reg in registros:
                         id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
@@ -314,7 +657,11 @@ def application(environ, start_response):
                     
                     registros_html += '</div></div>'
                 else:
-                    registros_html = '<p>No hay registros aún.</p>'
+                    registros_html = '''
+                    <div class="sin-registros">
+                        <p>No hay registros aún. ¡Sé el primero en registrarte!</p>
+                    </div>
+                    '''
                     
             except Exception as e:
                 registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
@@ -371,7 +718,7 @@ def application(environ, start_response):
             color: #6c757d;
             margin-top: 5px;
         }}
-        button {{
+        button[type="submit"] {{
             padding: 12px 30px;
             background: #28a745;
             color: white;
@@ -382,7 +729,7 @@ def application(environ, start_response):
             margin-top: 20px;
             width: 100%;
         }}
-        button:hover {{
+        button[type="submit"]:hover {{
             background: #218838;
         }}
         .exito {{
@@ -435,6 +782,13 @@ def application(environ, start_response):
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
+        }}
+        .sin-registros {{
+            text-align: center;
+            padding: 30px;
+            background: #e9ecef;
+            border-radius: 8px;
+            color: #6c757d;
         }}
         @media (max-width: 768px) {{
             .form-group {{
