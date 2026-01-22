@@ -1124,10 +1124,11 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON VALIDACIÓN EN TIEMPO REAL ===
+    # === PÁGINA FORMULARIO CON MEJORAS ===
     elif path == '/formulario':
         mensaje = ""
-        hay_errores = False
+        registro_exitoso = False
+        datos_registro = {}
         
         # Procesar POST (formulario con archivos y reCAPTCHA)
         if method == 'POST':
@@ -1163,34 +1164,45 @@ def application(environ, start_response):
                     except:
                         imagen_tipo = "desconocido"
                 
-                # Validaciones - pero sin mostrar errores
-                hay_errores = False
+                # Validaciones 
+                errores = []
                 
-                if not nombre or not validar_nombre(nombre):
-                    hay_errores = True
+                if not nombre:
+                    errores.append("Nombre es requerido")
+                elif not validar_nombre(nombre):
+                    errores.append("El nombre solo puede contener letras y espacios")
                 
                 if not fecha_nacimiento:
-                    hay_errores = True
+                    errores.append("Fecha de nacimiento es requerida")
                 else:
                     edad = calcular_edad(fecha_nacimiento)
-                    if edad is None or edad < 1 or edad > 120:
-                        hay_errores = True
+                    if edad is None:
+                        errores.append("Fecha de nacimiento inválida")
+                    elif edad < 1:
+                        errores.append("La fecha de nacimiento debe ser anterior a la fecha actual")
+                    elif edad > 120:
+                        errores.append("La edad calculada no puede ser mayor a 120 años")
                 
-                if not correo or correo != correo_confirmar:
-                    hay_errores = True
+                if not correo:
+                    errores.append("Correo es requerido")
+                elif correo != correo_confirmar:
+                    errores.append("Los correos no coinciden")
                 
                 if not imagen_data:
-                    hay_errores = True
+                    errores.append("Debe subir una imagen")
                 elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
-                    hay_errores = True
+                    errores.append("La imagen es demasiado grande (máximo 5MB)")
                 elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    hay_errores = True
+                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
                 
                 # Validar reCAPTCHA
-                if not recaptcha_response or not validar_recaptcha(recaptcha_response):
-                    hay_errores = True
+                if not recaptcha_response:
+                    errores.append("Por favor, completa el reCAPTCHA")
+                else:
+                    if not validar_recaptcha(recaptcha_response):
+                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
                 
-                if not hay_errores:
+                if not errores:
                     # Calcular edad desde fecha de nacimiento
                     edad = calcular_edad(fecha_nacimiento)
                     
@@ -1227,22 +1239,31 @@ def application(environ, start_response):
                             cur.close()
                             conn.close()
                             
-                            mensaje = f'''<div class="exito">
-                                <h3>¡Registro exitoso!</h3>
-                                <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento}</p>
-                                <p><strong>Edad calculada:</strong> {edad} años</p>
-                                <p><strong>Correo:</strong> {correo}</p>
-                                <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                            </div>'''
+                            # Guardar datos para mostrar en mensaje
+                            datos_registro = {
+                                'nombre': nombre,
+                                'fecha_nacimiento': fecha_nacimiento,
+                                'edad': edad,
+                                'correo': correo,
+                                'imagen_nombre': imagen_nombre,
+                                'imagen_tipo': imagen_tipo.upper()
+                            }
+                            
+                            registro_exitoso = True
                             
                         except Exception as e:
-                            hay_errores = True
+                            mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
                     else:
-                        hay_errores = True
+                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
+                else:
+                    # Mostrar errores si los hay
+                    mensaje = f'''<div class="error">
+                        <h3>Errores encontrados:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
+                    </div>'''
                         
             except Exception as e:
-                hay_errores = True
+                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
         # Obtener registros anteriores
         registros_html = ""
@@ -1264,9 +1285,9 @@ def application(environ, start_response):
                     registros_html = '''
                     <div class="registros">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <h3>Registros guardados:</h3>
+                            <h3>📋 Registros guardados:</h3>
                             <a href="/borrar_registros" style="background: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; font-size: 14px;">
-                                Borrar todos los registros
+                                🗑️ Borrar todos los registros
                             </a>
                         </div>
                         <div class="lista-registros">
@@ -1323,7 +1344,18 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON VALIDACIÓN EN TIEMPO REAL
+        # Mostrar mensaje de éxito si se registró correctamente
+        if registro_exitoso:
+            mensaje = f'''<div class="exito">
+                <h3>✅ ¡Registro exitoso!</h3>
+                <p><strong>Nombre:</strong> {datos_registro['nombre']}</p>
+                <p><strong>Fecha de nacimiento:</strong> {datos_registro['fecha_nacimiento']}</p>
+                <p><strong>Edad calculada:</strong> {datos_registro['edad']} años</p>
+                <p><strong>Correo:</strong> {datos_registro['correo']}</p>
+                <p><strong>Imagen:</strong> {datos_registro['imagen_nombre']} ({datos_registro['imagen_tipo']})</p>
+            </div>'''
+        
+        # HTML del formulario CON MEJORAS
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1409,6 +1441,18 @@ def application(environ, start_response):
             border-radius: 5px;
             margin: 20px 0;
             border-left: 4px solid #28a745;
+        }}
+        .exito h3 {{
+            margin-top: 0;
+            color: #155724;
+        }}
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
         }}
         .error-message {{
             color: #dc3545;
@@ -1591,9 +1635,6 @@ def application(environ, start_response):
         // Expresión regular para validar nombre (solo letras y espacios)
         const nombreRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$/;
         
-        // Estado de validación
-        let formularioValido = false;
-        
         // Función para validar nombre
         function validarNombre(input) {{
             const valor = input.value.trim();
@@ -1766,7 +1807,7 @@ def application(environ, start_response):
             const recaptchaValido = validarRecaptcha();
             
             // Verificar si todos son válidos
-            formularioValido = nombreValido && fechaValida && correoValido && correoConfirmValido && imagenValida && recaptchaValido;
+            const formularioValido = nombreValido && fechaValida && correoValido && correoConfirmValido && imagenValida && recaptchaValido;
             
             if (!formularioValido) {{
                 // Deshabilitar envío si hay errores
@@ -1849,6 +1890,34 @@ def application(environ, start_response):
             // Solo permitir letras (incluyendo mayúsculas y minúsculas)
             if (!/^[A-Za-zÁÉÍÓÚáéíóúÑñÜü]$/.test(charStr)) {{
                 e.preventDefault();
+            }}
+        }});
+        
+        // Limpiar el formulario después de un envío exitoso (si hay mensaje de éxito)
+        document.addEventListener('DOMContentLoaded', function() {{
+            const mensajeExito = document.querySelector('.exito');
+            if (mensajeExito) {{
+                // Limpiar formulario después de 5 segundos
+                setTimeout(() => {{
+                    document.getElementById('formulario').reset();
+                    
+                    // Limpiar clases de validación
+                    const campos = document.querySelectorAll('input, textarea');
+                    campos.forEach(campo => {{
+                        campo.classList.remove('valido', 'invalido');
+                    }});
+                    
+                    // Ocultar mensajes de error
+                    const mensajesError = document.querySelectorAll('.error-message');
+                    mensajesError.forEach(mensaje => {{
+                        mensaje.style.display = 'none';
+                    }});
+                    
+                    // Resetear reCAPTCHA
+                    if (typeof grecaptcha !== 'undefined' && grecaptcha.reset) {{
+                        grecaptcha.reset();
+                    }}
+                }}, 5000);
             }}
         }});
     </script>
