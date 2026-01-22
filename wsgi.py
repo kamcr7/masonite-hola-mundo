@@ -9,6 +9,7 @@ import json
 from urllib.parse import urlparse, parse_qs
 import cgi
 import io
+from datetime import datetime, date
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -32,6 +33,7 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Formulario</a>
             <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Carrusel</a>
+            <a href="/pagina_error" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Página Error</a>
         </nav>'''
     
     # === FUNCIONES COMUNES ===
@@ -46,6 +48,16 @@ def application(environ, start_response):
                 port=result.port,
                 connect_timeout=5
             )
+        except:
+            return None
+    
+    # === FUNCIÓN PARA CALCULAR EDAD DESDE FECHA DE NACIMIENTO ===
+    def calcular_edad(fecha_nacimiento_str):
+        try:
+            fecha_nacimiento = datetime.strptime(fecha_nacimiento_str, '%Y-%m-%d').date()
+            hoy = date.today()
+            edad = hoy.year - fecha_nacimiento.year - ((hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day))
+            return edad
         except:
             return None
     
@@ -269,15 +281,6 @@ def application(environ, start_response):
                         <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
                     '''
-                    
-                    # BOTÓN PARA IR A LA PÁGINA 404
-                    imagenes_html += '''
-                    <div style="text-align: center; margin: 30px 0;">
-                        <a href="/pagina_no_existe" class="btn-error-404">
-                            Ir a Página 404
-                        </a>
-                    </div>
-                    '''
                 else:
                     imagenes_html = '''
                     <div class="sin-imagenes">
@@ -404,24 +407,6 @@ def application(environ, start_response):
             background: #e7f3ff;
             border-radius: 5px;
         }}
-        .btn-error-404 {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            text-decoration: none;
-            transition: background 0.3s;
-        }}
-        .btn-error-404:hover {{
-            background: #c82333;
-            color: white;
-            text-decoration: none;
-        }}
         .sin-imagenes {{
             text-align: center;
             padding: 60px 20px;
@@ -450,7 +435,8 @@ def application(environ, start_response):
         }}
         input[type="text"],
         textarea,
-        input[type="file"] {{
+        input[type="file"],
+        input[type="date"] {{
             width: 95%;
             padding: 12px;
             border: 1px solid #ddd;
@@ -532,7 +518,6 @@ def application(environ, start_response):
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
                 <li>Elimina imágenes haciendo click en "Eliminar"</li>
                 <li>Cada imagen puede tener un título y descripción</li>
-                <li>Prueba el botón "Ir a Página 404" para ver la página de error</li>
             </ul>
         </div>
         
@@ -745,6 +730,13 @@ def application(environ, start_response):
                 <h3>Carrusel de Imágenes</h3>
                 <p>Galería interactiva de imágenes</p>
                 <a href="/carrusel">Ir a Carrusel →</a>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">!</div>
+                <h3>Página Error</h3>
+                <p>Página especial para probar el manejo de errores</p>
+                <a href="/pagina_error">Ir a Página Error →</a>
             </div>
         </div>
         
@@ -1125,7 +1117,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA ===
+    # === PÁGINA FORMULARIO CON FECHA DE NACIMIENTO ===
     elif path == '/formulario':
         mensaje = ""
         
@@ -1141,7 +1133,7 @@ def application(environ, start_response):
                 
                 # Obtener campos
                 nombre = fs.getvalue('nombre', '').strip()
-                edad = fs.getvalue('edad', '').strip()
+                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()  # Cambiado de edad
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
@@ -1169,10 +1161,17 @@ def application(environ, start_response):
                 if not nombre:
                     errores.append("Nombre es requerido")
                 
-                if not edad:
-                    errores.append("Edad es requerida")
-                elif not edad.isdigit():
-                    errores.append("Edad debe ser un número")
+                if not fecha_nacimiento:
+                    errores.append("Fecha de nacimiento es requerida")
+                else:
+                    # Validar fecha de nacimiento
+                    edad = calcular_edad(fecha_nacimiento)
+                    if edad is None:
+                        errores.append("Fecha de nacimiento inválida")
+                    elif edad < 1:
+                        errores.append("La fecha de nacimiento debe ser anterior a la fecha actual")
+                    elif edad > 120:
+                        errores.append("La edad calculada no puede ser mayor a 120 años")
                 
                 if not correo:
                     errores.append("Correo es requerido")
@@ -1199,6 +1198,9 @@ def application(environ, start_response):
                         <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                     </div>'''
                 else:
+                    # Calcular edad desde fecha de nacimiento
+                    edad = calcular_edad(fecha_nacimiento)
+                    
                     # Guardar en PostgreSQL
                     conn = conectar_bd()
                     if conn:
@@ -1211,6 +1213,7 @@ def application(environ, start_response):
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
                                     edad INTEGER,
+                                    fecha_nacimiento DATE,  -- Nueva columna
                                     correo VARCHAR(100),
                                     imagen_nombre VARCHAR(255),
                                     imagen_tipo VARCHAR(20),
@@ -1222,9 +1225,9 @@ def application(environ, start_response):
                             # Insertar datos
                             cur.execute(
                                 """INSERT INTO formulario_simple 
-                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
-                                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                   (nombre, edad, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                                (nombre, edad, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
                             
                             conn.commit()
@@ -1234,7 +1237,8 @@ def application(environ, start_response):
                             mensaje = f'''<div class="exito">
                                 <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Edad:</strong> {edad} años</p>
+                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento}</p>
+                                <p><strong>Edad calculada:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
@@ -1257,7 +1261,7 @@ def application(environ, start_response):
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    SELECT id, nombre, edad, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, fecha 
                     FROM formulario_simple 
                     ORDER BY fecha DESC 
                     LIMIT 10
@@ -1279,8 +1283,9 @@ def application(environ, start_response):
                     '''
                     
                     for reg in registros:
-                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
+                        id_reg, nombre_reg, edad_reg, fecha_nacimiento_reg, correo_reg, img_nombre, img_tipo, fecha = reg
                         fecha_str = str(fecha)[:16]
+                        fecha_nacimiento_str = str(fecha_nacimiento_reg) if fecha_nacimiento_reg else "No registrada"
                         
                         # Obtener imagen en base64 para mostrar
                         img_html = ""
@@ -1308,6 +1313,7 @@ def application(environ, start_response):
                             <div class="registro-info">
                                 <h4>{nombre_reg}</h4>
                                 <p><strong>Edad:</strong> {edad_reg} años</p>
+                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento_str}</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
                                 <p><small>Registrado: {fecha_str}</small></p>
                             </div>
@@ -1327,7 +1333,7 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON RECAPTCHA
+        # HTML del formulario CON RECAPTCHA Y FECHA DE NACIMIENTO
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1364,7 +1370,7 @@ def application(environ, start_response):
         }}
         input[type="text"],
         input[type="email"],
-        input[type="number"],
+        input[type="date"],
         input[type="file"] {{
             width: 95%;
             padding: 10px;
@@ -1512,11 +1518,11 @@ def application(environ, start_response):
                         <div class="info">Tu nombre completo</div>
                     </div>
                     
-                    <!-- Edad -->
+                    <!-- FECHA DE NACIMIENTO (modificado de Edad) -->
                     <div class="campo">
-                        <label>Edad <span class="requerido">*</span></label>
-                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
-                        <div class="info">Entre 1 y 120 años</div>
+                        <label>Fecha de nacimiento <span class="requerido">*</span></label>
+                        <input type="date" name="fecha_nacimiento" required max="{date.today().strftime('%Y-%m-%d')}">
+                        <div class="info">Selecciona tu fecha de nacimiento (se calculará tu edad automáticamente)</div>
                     </div>
                 </div>
                 
@@ -1590,6 +1596,11 @@ def application(environ, start_response):
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Enviar Formulario';
             }}
+            
+            // Establecer fecha máxima como hoy
+            const fechaInput = document.querySelector('input[name="fecha_nacimiento"]');
+            const today = new Date().toISOString().split('T')[0];
+            fechaInput.setAttribute('max', today);
         }};
     </script>
 </body>
@@ -1598,7 +1609,226 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA 404 ===
+    # === PÁGINA ESPECIAL DE ERROR (nueva página) ===
+    elif path == '/pagina_error':
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Página de Error - Aplicación Masonite</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{ 
+            color: #dc3545; 
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 36px;
+        }}
+        .error-header {{
+            text-align: center;
+            margin-bottom: 40px;
+        }}
+        .error-icon {{
+            font-size: 80px;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }}
+        .error-content {{
+            background: #f8d7da;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 30px 0;
+            border-left: 5px solid #dc3545;
+        }}
+        .error-content h3 {{
+            color: #721c24;
+            margin-top: 0;
+        }}
+        .error-list {{
+            background: #f5c6cb;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }}
+        .test-section {{
+            background: #e7f3ff;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 40px 0;
+            border-left: 5px solid #007bff;
+        }}
+        .test-buttons {{
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }}
+        .btn-test {{
+            padding: 12px 25px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+        }}
+        .btn-test:hover {{
+            background: #0056b3;
+        }}
+        .btn-danger {{
+            background: #dc3545;
+        }}
+        .btn-danger:hover {{
+            background: #c82333;
+        }}
+        .instructions {{
+            background: #fff3cd;
+            padding: 25px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border-left: 4px solid #ffc107;
+        }}
+        .instructions h3 {{
+            color: #856404;
+            margin-top: 0;
+        }}
+        .status-codes {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 30px 0;
+        }}
+        .status-code {{
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }}
+        .status-code h4 {{
+            margin: 0;
+            color: #333;
+        }}
+        .code-404 {{ border-left: 4px solid #dc3545; }}
+        .code-500 {{ border-left: 4px solid #fd7e14; }}
+        .code-403 {{ border-left: 4px solid #ffc107; }}
+        .code-200 {{ border-left: 4px solid #28a745; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <div class="error-header">
+            <div class="error-icon">!</div>
+            <h1>Página de Manejo de Errores</h1>
+            <p>Esta es una página especial para probar el manejo de errores en la aplicación</p>
+        </div>
+        
+        <div class="instructions">
+            <h3>¿Qué es esta página?</h3>
+            <p>Esta página está diseñada específicamente para probar el manejo de errores en la aplicación. 
+            Aquí puedes simular diferentes tipos de errores y ver cómo responde el sistema.</p>
+        </div>
+        
+        <div class="error-content">
+            <h3>Tipos de Errores Comunes</h3>
+            <p>En cualquier aplicación web, pueden ocurrir diferentes tipos de errores:</p>
+            
+            <div class="status-codes">
+                <div class="status-code code-404">
+                    <h4>404 - No Encontrado</h4>
+                    <p>La página solicitada no existe</p>
+                </div>
+                <div class="status-code code-500">
+                    <h4>500 - Error Interno</h4>
+                    <p>Error en el servidor</p>
+                </div>
+                <div class="status-code code-403">
+                    <h4>403 - Prohibido</h4>
+                    <p>Acceso no autorizado</p>
+                </div>
+                <div class="status-code code-200">
+                    <h4>200 - Éxito</h4>
+                    <p>Solicitud completada</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Pruebas de Error</h3>
+            <p>Haz clic en los botones de abajo para probar diferentes escenarios:</p>
+            
+            <div class="test-buttons">
+                <a href="/ruta_inexistente" class="btn-test btn-danger">Probar Error 404</a>
+                <button onclick="simularError500()" class="btn-test">Simular Error 500</button>
+                <button onclick="mostrarAlerta()" class="btn-test">Mostrar Alerta</button>
+                <a href="/" class="btn-test">Volver al Inicio</a>
+            </div>
+        </div>
+        
+        <div class="error-content">
+            <h3>¿Cómo funciona el manejo de errores?</h3>
+            <p>Esta aplicación utiliza un sistema de manejo de errores que:</p>
+            <ul>
+                <li><strong>Detecta rutas no existentes</strong> y muestra una página 404 personalizada</li>
+                <li><strong>Registra errores en la consola</strong> para diagnóstico</li>
+                <li><strong>Protege al usuario</strong> de ver mensajes de error técnicos</li>
+                <li><strong>Mantiene la navegación</strong> incluso cuando ocurren errores</li>
+            </ul>
+        </div>
+        
+        <div class="instructions">
+            <h3>Consejos para Usuarios</h3>
+            <ul>
+                <li>Si encuentras un error 404, verifica que la URL sea correcta</li>
+                <li>Los errores 500 son problemas del servidor - contacta al administrador</li>
+                <li>Siempre puedes usar la navegación superior para volver a páginas funcionales</li>
+                <li>Esta página de pruebas es segura y no afecta el funcionamiento normal</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        function simularError500() {{
+            // Esto simula un error 500 pero en realidad no lo provoca
+            alert('En un escenario real, esto provocaría un error 500 del servidor.\\n\\nEn esta página de prueba, solo mostramos esta alerta para simular el comportamiento.');
+        }}
+        
+        function mostrarAlerta() {{
+            alert('Esta es una alerta de prueba.\\n\\nLas alertas JavaScript son diferentes de los errores HTTP y se manejan en el cliente.');
+        }}
+        
+        // Configurar fecha máxima en formularios de fecha si existen
+        window.onload = function() {{
+            const fechaInputs = document.querySelectorAll('input[type="date"]');
+            const today = new Date().toISOString().split('T')[0];
+            fechaInputs.forEach(input => {{
+                if (!input.max) {{
+                    input.setAttribute('max', today);
+                }}
+            }});
+        }};
+    </script>
+</body>
+</html>'''
+        
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+    
+    # === PÁGINA 404 (para rutas no existentes) ===
     else:
         html = f'''<!DOCTYPE html>
 <html>
@@ -1653,6 +1883,22 @@ def application(environ, start_response):
         .btn-volver:hover {{
             background: #0056b3;
         }}
+        .btn-error-page {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-left: 15px;
+            transition: background 0.3s;
+        }}
+        .btn-error-page:hover {{
+            background: #218838;
+        }}
     </style>
 </head>
 <body>
@@ -1672,9 +1918,12 @@ def application(environ, start_response):
             </ul>
         </div>
         
-        <p>Puedes regresar a la página de inicio o usar la navegación superior.</p>
+        <p>Puedes regresar a la página de inicio o visitar nuestra página especial de manejo de errores.</p>
         
-        <a href="/" class="btn-volver">Volver al Inicio</a>
+        <div>
+            <a href="/" class="btn-volver">Volver al Inicio</a>
+            <a href="/pagina_error" class="btn-error-page">Ir a Página de Errores</a>
+        </div>
     </div>
 </body>
 </html>'''
