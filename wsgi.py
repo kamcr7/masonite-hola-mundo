@@ -269,10 +269,19 @@ def application(environ, start_response):
                         <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
                     '''
+                    
+                    # BOTÓN PARA IR A LA PÁGINA 404
+                    imagenes_html += '''
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="/pagina_no_existe" class="btn-error-404">
+                            Ir a Página 404
+                        </a>
+                    </div>
+                    '''
                 else:
                     imagenes_html = '''
                     <div class="sin-imagenes">
-                        <div class="sin-imagenes-icon">📷</div>
+                        <div class="sin-imagenes-icon"></div>
                         <h3>No hay imágenes en el carrusel</h3>
                         <p>Agrega tu primera imagen usando el formulario de abajo.</p>
                     </div>
@@ -395,6 +404,24 @@ def application(environ, start_response):
             background: #e7f3ff;
             border-radius: 5px;
         }}
+        .btn-error-404 {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            transition: background 0.3s;
+        }}
+        .btn-error-404:hover {{
+            background: #c82333;
+            color: white;
+            text-decoration: none;
+        }}
         .sin-imagenes {{
             text-align: center;
             padding: 60px 20px;
@@ -505,6 +532,7 @@ def application(environ, start_response):
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
                 <li>Elimina imágenes haciendo click en "Eliminar"</li>
                 <li>Cada imagen puede tener un título y descripción</li>
+                <li>Prueba el botón "Ir a Página 404" para ver la página de error</li>
             </ul>
         </div>
         
@@ -1577,11 +1605,77 @@ def application(environ, start_response):
 <head>
     <meta charset="UTF-8">
     <title>404 - Página no encontrada</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 100px auto; 
+            padding: 40px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 60px;
+            border-radius: 10px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }}
+        h1 {{ 
+            color: #dc3545; 
+            font-size: 48px;
+            margin-bottom: 20px;
+        }}
+        h2 {{
+            color: #333;
+            margin-bottom: 30px;
+        }}
+        .error-message {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 30px 0;
+            border-left: 4px solid #dc3545;
+            text-align: left;
+        }}
+        .btn-volver {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }}
+        .btn-volver:hover {{
+            background: #0056b3;
+        }}
+    </style>
 </head>
 <body>
     {navegacion()}
-    <h1>404 - Página no encontrada</h1>
-    <a href="/">Inicio</a>
+    <div class="container">
+        <h1>404</h1>
+        <h2>Página no encontrada</h2>
+        
+        <div class="error-message">
+            <p><strong>Lo sentimos, la página que buscas no existe.</strong></p>
+            <p>La ruta solicitada <code>{path}</code> no se encuentra en este servidor.</p>
+            <p>Posibles causas:</p>
+            <ul>
+                <li>La URL puede estar mal escrita</li>
+                <li>La página ha sido movida o eliminada</li>
+                <li>Has seguido un enlace incorrecto</li>
+            </ul>
+        </div>
+        
+        <p>Puedes regresar a la página de inicio o usar la navegación superior.</p>
+        
+        <a href="/" class="btn-volver">Volver al Inicio</a>
+    </div>
 </body>
 </html>'''
         
