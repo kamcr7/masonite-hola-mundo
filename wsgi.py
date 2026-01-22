@@ -28,10 +28,10 @@ def application(environ, start_response):
     # === NAVEGACIÓN ===
     def navegacion():
         return '''<nav style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
-            <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🏠 Inicio</a>
-            <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🧮 Calculadora</a>
-            <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">📋 Formulario</a>
-            <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">🖼️ Carrusel</a>
+            <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Inicio</a>
+            <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Calculadora</a>
+            <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Formulario</a>
+            <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Carrusel</a>
         </nav>'''
     
     # === FUNCIONES COMUNES ===
@@ -102,11 +102,11 @@ def application(environ, start_response):
                             cur.close()
                             conn.close()
                             mensaje = f'''<div class="exito">
-                                <h3>✅ Imagen eliminada</h3>
+                                <h3>Imagen eliminada</h3>
                                 <p>La imagen ha sido eliminada del carrusel.</p>
                             </div>'''
                         except Exception as e:
-                            mensaje = f'<div class="error">❌ Error al eliminar: {str(e)}</div>'
+                            mensaje = f'<div class="error">Error al eliminar: {str(e)}</div>'
                 else:
                     # AGREGAR NUEVA IMAGEN
                     titulo = fs.getvalue('titulo', '').strip()
@@ -144,7 +144,7 @@ def application(environ, start_response):
                     
                     if errores:
                         mensaje = f'''<div class="error">
-                            <h3>❌ Errores encontrados:</h3>
+                            <h3>Errores encontrados:</h3>
                             <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                         </div>'''
                     else:
@@ -180,18 +180,18 @@ def application(environ, start_response):
                                 conn.close()
                                 
                                 mensaje = f'''<div class="exito">
-                                    <h3>✅ ¡Imagen agregada al carrusel!</h3>
+                                    <h3>¡Imagen agregada al carrusel!</h3>
                                     <p><strong>Título:</strong> {titulo}</p>
                                     <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 </div>'''
                                 
                             except Exception as e:
-                                mensaje = f'<div class="error">❌ Error al guardar: {str(e)}</div>'
+                                mensaje = f'<div class="error">Error al guardar: {str(e)}</div>'
                         else:
-                            mensaje = '<div class="error">❌ Error de conexión a la base de datos</div>'
+                            mensaje = '<div class="error">Error de conexión a la base de datos</div>'
                         
             except Exception as e:
-                mensaje = f'<div class="error">❌ Error procesando formulario: {str(e)}</div>'
+                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
         # Obtener imágenes del carrusel
         imagenes_html = ""
@@ -212,7 +212,7 @@ def application(environ, start_response):
                     # Carrusel de imágenes
                     imagenes_html += '''
                     <div class="carrusel-container">
-                        <h3>🖼️ Carrusel de Imágenes</h3>
+                        <h3>Carrusel de Imágenes</h3>
                         <div class="carrusel" id="carrusel">
                     '''
                     
@@ -496,14 +496,14 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>🖼️ Carrusel de Imágenes</h1>
+        <h1>Carrusel de Imágenes</h1>
         
         <div class="instrucciones">
-            <h3>📋 Instrucciones:</h3>
+            <h3>Instrucciones:</h3>
             <ul>
                 <li>Agrega imágenes usando el formulario de abajo</li>
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
-                <li>Elimina imágenes haciendo click en "🗑️ Eliminar"</li>
+                <li>Elimina imágenes haciendo click en "Eliminar"</li>
                 <li>Cada imagen puede tener un título y descripción</li>
             </ul>
         </div>
@@ -513,7 +513,7 @@ def application(environ, start_response):
         {imagenes_html}
         
         <div class="form-agregar">
-            <h3>➕ Agregar Nueva Imagen al Carrusel</h3>
+            <h3>Agregar Nueva Imagen al Carrusel</h3>
             <form method="POST" enctype="multipart/form-data">
                 <div class="campo">
                     <label>Título de la imagen <span class="requerido">*</span></label>
@@ -533,7 +533,7 @@ def application(environ, start_response):
                     <div class="info">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
                 </div>
                 
-                <button type="submit" class="btn-agregar">📤 Agregar al Carrusel</button>
+                <button type="submit" class="btn-agregar">Agregar al Carrusel</button>
             </form>
         </div>
     </div>
@@ -695,25 +695,25 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>🚀 Aplicación Masonite en Railway</h1>
+        <h1>Aplicación Masonite en Railway</h1>
         
         <div class="features">
             <div class="feature">
-                <div class="feature-icon">🧮</div>
+                <div class="feature-icon">+</div>
                 <h3>Calculadora</h3>
                 <p>Operaciones básicas de suma y división</p>
                 <a href="/calculadora">Ir a Calculadora →</a>
             </div>
             
             <div class="feature">
-                <div class="feature-icon">📋</div>
+                <div class="feature-icon">✓</div>
                 <h3>Formulario con Imágenes</h3>
                 <p>Registra datos y sube imágenes</p>
                 <a href="/formulario">Ir a Formulario →</a>
             </div>
             
             <div class="feature">
-                <div class="feature-icon">🖼️</div>
+                <div class="feature-icon">▢</div>
                 <h3>Carrusel de Imágenes</h3>
                 <p>Galería interactiva de imágenes</p>
                 <a href="/carrusel">Ir a Carrusel →</a>
@@ -721,7 +721,7 @@ def application(environ, start_response):
         </div>
         
         <div style="text-align: center; margin-top: 40px; padding: 20px; background: #e7f3ff; border-radius: 8px;">
-            <h3>🔒 Seguridad mejorada</h3>
+            <h3>Seguridad mejorada</h3>
             <p>Ahora el formulario cuenta con protección reCAPTCHA para prevenir spam.</p>
         </div>
     </div>
@@ -754,11 +754,11 @@ def application(environ, start_response):
                             num2 = float(suma2)
                             resultado_suma = f"<div class='resultado-exito'><strong>Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
                         else:
-                            resultado_suma = "<div class='resultado-error'>⚠️ Ingresa ambos números para la suma</div>"
+                            resultado_suma = "<div class='resultado-error'>Ingresa ambos números para la suma</div>"
                     except ValueError:
-                        resultado_suma = "<div class='resultado-error'>❌ Error: Ingresa números válidos para la suma</div>"
+                        resultado_suma = "<div class='resultado-error'>Error: Ingresa números válidos para la suma</div>"
                     except Exception as e:
-                        resultado_suma = f"<div class='resultado-error'>❌ Error en suma: {str(e)}</div>"
+                        resultado_suma = f"<div class='resultado-error'>Error en suma: {str(e)}</div>"
                     
                     # PROCESAR DIVISIÓN
                     try:
@@ -768,18 +768,18 @@ def application(environ, start_response):
                             num3 = float(div1)
                             num4 = float(div2)
                             if num4 == 0:
-                                resultado_division = "<div class='resultado-error'>❌ Error: No se puede dividir entre cero</div>"
+                                resultado_division = "<div class='resultado-error'>Error: No se puede dividir entre cero</div>"
                             else:
                                 resultado_division = f"<div class='resultado-exito'><strong>Resultado:</strong> {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
                         else:
-                            resultado_division = "<div class='resultado-error'>⚠️ Ingresa ambos números para la división</div>"
+                            resultado_division = "<div class='resultado-error'>Ingresa ambos números para la división</div>"
                     except ValueError:
-                        resultado_division = "<div class='resultado-error'>❌ Error: Ingresa números válidos para la división</div>"
+                        resultado_division = "<div class='resultado-error'>Error: Ingresa números válidos para la división</div>"
                     except Exception as e:
-                        resultado_division = f"<div class='resultado-error'>❌ Error en división: {str(e)}</div>"
+                        resultado_division = f"<div class='resultado-error'>Error en división: {str(e)}</div>"
                     
             except Exception as e:
-                resultado_suma = f"<div class='resultado-error'>❌ Error general: {str(e)}</div>"
+                resultado_suma = f"<div class='resultado-error'>Error general: {str(e)}</div>"
         
         # HTML de la calculadora
         html = f'''<!DOCTYPE html>
@@ -881,12 +881,12 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>🧮 Calculadora</h1>
+        <h1>Calculadora</h1>
         
         <div class="calculadora-grid">
             <!-- SUMA -->
             <div class="operacion suma">
-                <h2>➕ Suma</h2>
+                <h2>Suma</h2>
                 <form method="POST">
                     <div class="campo">
                         <label>Primer número:</label>
@@ -903,7 +903,7 @@ def application(environ, start_response):
             
             <!-- DIVISIÓN -->
             <div class="operacion division">
-                <h2>➗ División</h2>
+                <h2>División</h2>
                 <form method="POST">
                     <div class="campo">
                         <label>Dividendo:</label>
@@ -955,7 +955,7 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <div class="exito">✅ Todos los registros han sido borrados</div>
+        <div class="exito">Todos los registros han sido borrados</div>
         <p>Se han eliminado todos los registros de la base de datos.</p>
         <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
     </div>
@@ -976,7 +976,7 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <div class="error">❌ Error de conexión</div>
+        <div class="error">Error de conexión</div>
         <p>No se pudo conectar a la base de datos.</p>
         <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
     </div>
@@ -1001,7 +1001,7 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <div class="error">❌ Error al borrar registros</div>
+        <div class="error">Error al borrar registros</div>
         <p>Error: {str(e)}</p>
         <a href="/formulario" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Volver al formulario</a>
     </div>
@@ -1078,7 +1078,7 @@ def application(environ, start_response):
     {navegacion()}
     <div class="container">
         <div class="advertencia">
-            <div class="advertencia-icon">⚠️</div>
+            <div class="advertencia-icon">⚠</div>
             <h2>¡Advertencia!</h2>
             <p>Estás a punto de borrar <strong>TODOS</strong> los registros de la base de datos.</p>
             <p>Esta acción <strong>NO se puede deshacer</strong>.</p>
@@ -1086,8 +1086,8 @@ def application(environ, start_response):
         
         <form method="POST" action="/borrar_registros">
             <div class="botones">
-                <button type="submit" class="btn-borrar">🗑️ Sí, borrar todos los registros</button>
-                <a href="/formulario" class="btn-cancelar">❌ Cancelar y volver</a>
+                <button type="submit" class="btn-borrar">Sí, borrar todos los registros</button>
+                <a href="/formulario" class="btn-cancelar">Cancelar y volver</a>
             </div>
         </form>
     </div>
@@ -1167,7 +1167,7 @@ def application(environ, start_response):
                 
                 if errores:
                     mensaje = f'''<div class="error">
-                        <h3>❌ Errores encontrados:</h3>
+                        <h3>Errores encontrados:</h3>
                         <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                     </div>'''
                 else:
@@ -1204,23 +1204,23 @@ def application(environ, start_response):
                             conn.close()
                             
                             mensaje = f'''<div class="exito">
-                                <h3>✅ ¡Registro exitoso!</h3>
+                                <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
                                 <p><strong>Edad:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
-                                    <strong>✅ reCAPTCHA verificado correctamente</strong>
+                                    <strong>reCAPTCHA verificado correctamente</strong>
                                 </p>
                             </div>'''
                             
                         except Exception as e:
-                            mensaje = f'<div class="error">❌ Error al guardar en BD: {str(e)}</div>'
+                            mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
                     else:
-                        mensaje = '<div class="error">❌ Error de conexión a la base de datos</div>'
+                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
                         
             except Exception as e:
-                mensaje = f'<div class="error">❌ Error procesando formulario: {str(e)}</div>'
+                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
         # Obtener registros anteriores
         registros_html = ""
@@ -1242,9 +1242,9 @@ def application(environ, start_response):
                     registros_html = '''
                     <div class="registros">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <h3>📝 Registros guardados:</h3>
+                            <h3>Registros guardados:</h3>
                             <a href="/borrar_registros" style="background: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; font-size: 14px;">
-                                🗑️ Borrar todos los registros
+                                Borrar todos los registros
                             </a>
                         </div>
                         <div class="lista-registros">
@@ -1463,10 +1463,10 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>📋 Formulario con Imágenes y reCAPTCHA</h1>
+        <h1>Formulario con Imágenes y reCAPTCHA</h1>
         
         <div class="recaptcha-info">
-            <strong>🔒 Protección reCAPTCHA:</strong>
+            <strong>Protección reCAPTCHA:</strong>
             <p>Para prevenir spam y abusos, este formulario está protegido con Google reCAPTCHA.</p>
             <p>Debes completar el reCAPTCHA antes de enviar el formulario.</p>
         </div>
@@ -1528,7 +1528,7 @@ def application(environ, start_response):
             </div>
             
             <!-- Botón -->
-            <button type="submit" id="btn-submit">📤 Enviar Formulario</button>
+            <button type="submit" id="btn-submit">Enviar Formulario</button>
         </form>
         
         <hr>
@@ -1550,7 +1550,7 @@ def application(environ, start_response):
             // Deshabilitar botón para evitar envíos múltiples
             const submitBtn = document.getElementById('btn-submit');
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '⏳ Enviando...';
+            submitBtn.innerHTML = 'Enviando...';
             
             return true;
         }});
@@ -1560,7 +1560,7 @@ def application(environ, start_response):
             const submitBtn = document.getElementById('btn-submit');
             if (submitBtn) {{
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '📤 Enviar Formulario';
+                submitBtn.innerHTML = 'Enviar Formulario';
             }}
         }};
     </script>
