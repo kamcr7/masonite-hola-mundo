@@ -75,7 +75,7 @@ def application(environ, start_response):
             print(f"Error validando reCAPTCHA: {e}")
             return False
     
-    # === PÁGINA CARRUSEL (sin cambios) ===
+    # === PÁGINA CARRUSEL (modificada para solo mostrar imágenes) ===
     if path == '/carrusel':
         mensaje = ""
         
@@ -239,24 +239,14 @@ def application(environ, start_response):
                             # Determinar si es la primera imagen (activa)
                             activa = "active" if i == 0 else ""
                             
+                            # MODIFICACIÓN: Solo mostrar la imagen, sin texto ni botón eliminar
                             imagenes_html += f'''
                             <div class="carrusel-item {activa}" data-id="{id_img}">
                                 <div class="imagen-contenedor">
                                     <img src="data:image/{img_tipo};base64,{img_base64}" 
                                          alt="{titulo_img}"
                                          class="carrusel-imagen">
-                                    <div class="carrusel-info">
-                                        <h4>{titulo_img}</h4>
-                                        {f'<p>{desc_img}</p>' if desc_img else ''}
-                                        <p><small>Archivo: {img_nombre}</small></p>
-                                        <form method="POST" style="margin-top: 10px;">
-                                            <input type="hidden" name="eliminar_id" value="{id_img}">
-                                            <button type="submit" class="btn-eliminar" 
-                                                    onclick="return confirm('¿Estás seguro de eliminar esta imagen del carrusel?')">
-                                                🗑️ Eliminar
-                                            </button>
-                                        </form>
-                                    </div>
+                                    <!-- Se removió la sección de información y el botón eliminar -->
                                 </div>
                             </div>
                             '''
@@ -348,29 +338,15 @@ def application(environ, start_response):
         @media (min-width: 768px) {{
             .imagen-contenedor {{
                 flex-direction: row;
-                align-items: flex-start;
+                align-items: center;
+                justify-content: center;
             }}
         }}
         .carrusel-imagen {{
             max-width: 100%;
-            max-height: 400px;
+            max-height: 500px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }}
-        @media (min-width: 768px) {{
-            .carrusel-imagen {{
-                max-width: 50%;
-            }}
-        }}
-        .carrusel-info {{
-            flex: 1;
-            text-align: left;
-            padding: 0 20px;
-        }}
-        .carrusel-info h4 {{
-            margin-top: 0;
-            color: #333;
-            font-size: 24px;
         }}
         .carrusel-controls {{
             display: flex;
