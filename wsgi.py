@@ -3,29 +3,18 @@ import os
 import psycopg2
 import base64
 import imghdr
-import urllib.request
 import urllib.parse
-import json
 from urllib.parse import urlparse, parse_qs
 import cgi
-import io
-import re  # Importamos regex para validaciones
-from datetime import datetime  # Para trabajar con fechas
+from datetime import datetime
+import re
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
     
-    # Headers UTF-8
     headers = [('Content-Type', 'text/html; charset=utf-8')]
-    
-    # === CONFIGURACIÓN ===
     DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
-    
-    # === CONFIGURACIÓN RECAPTCHA ===
-    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Clave de prueba (funciona en localhost)
-    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Secreto de prueba
-    # Para producción, obtén tus propias claves en: https://www.google.com/recaptcha/admin
     
     # === NAVEGACIÓN ===
     def navegacion():
@@ -37,7 +26,7 @@ def application(environ, start_response):
             <a href="/pagina_error" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Página Error</a>
         </nav>'''
     
-    # === FUNCIONES COMUNES ===
+    # === FUNCIONES ===
     def conectar_bd():
         try:
             result = urlparse(DATABASE_URL)
@@ -52,39 +41,10 @@ def application(environ, start_response):
         except:
             return None
     
-    # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
-    def validar_recaptcha(recaptcha_response):
-        try:
-            # URL de verificación de reCAPTCHA
-            url = 'https://www.google.com/recaptcha/api/siteverify'
-            
-            # Datos a enviar
-            data = urllib.parse.urlencode({
-                'secret': RECAPTCHA_SECRET_KEY,
-                'response': recaptcha_response
-            }).encode()
-            
-            # Crear request
-            req = urllib.request.Request(url, data=data)
-            
-            # Enviar request y obtener respuesta
-            response = urllib.request.urlopen(req)
-            result = json.loads(response.read().decode())
-            
-            # Retornar si es válido
-            return result.get('success', False)
-            
-        except Exception as e:
-            print(f"Error validando reCAPTCHA: {e}")
-            return False
-    
-    # === FUNCIÓN PARA VALIDAR NOMBRE (solo letras) ===
     def validar_nombre(nombre):
-        # Permite letras, espacios y algunos caracteres especiales comunes en nombres
         patron = r'^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\'-]+$'
         return bool(re.match(patron, nombre)) and len(nombre) >= 2
     
-    # === FUNCIÓN PARA CALCULAR EDAD DESDE FECHA DE NACIMIENTO ===
     def calcular_edad(fecha_nacimiento_str):
         try:
             fecha_nacimiento = datetime.strptime(fecha_nacimiento_str, '%Y-%m-%d')
@@ -94,44 +54,30 @@ def application(environ, start_response):
         except:
             return None
     
-    # === PÁGINA CARRUSEL (modificada para solo mostrar imágenes) ===
+    # === CARRUSEL ===
     if path == '/carrusel':
         mensaje = ""
         
-        # Procesar POST (agregar nueva imagen al carrusel)
         if method == 'POST':
             try:
-                # Parsear formulario multipart
-                fs = cgi.FieldStorage(
-                    fp=environ['wsgi.input'],
-                    environ=environ,
-                    keep_blank_values=True
-                )
+                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
                 
-                # Verificar si es para eliminar
                 eliminar_id = fs.getvalue('eliminar_id', '').strip()
                 if eliminar_id:
-                    # ELIMINAR IMAGEN
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
                             cur.execute("DELETE FROM carrusel_imagenes WHERE id = %s", (eliminar_id,))
                             conn.commit()
-                            cur.close()
-                            conn.close()
-                            mensaje = f'''<div class="exito">
-                                <h3>Imagen eliminada</h3>
-                                <p>La imagen ha sido eliminada del carrusel.</p>
-                            </div>'''
-                        except Exception as e:
-                            mensaje = f'<div class="error">Error al eliminar: {str(e)}</div>'
+                            mensaje = '''<div class="exito"><h3>Imagen eliminada</h3><p>La imagen ha sido eliminada del carrusel.</p></div>'''
+                        except:
+                            mensaje = '<div class="error">Error al eliminar</div>'
+                        finally:
+                            if conn: conn.close()
                 else:
-                    # AGREGAR NUEVA IMAGEN
                     titulo = fs.getvalue('titulo', '').strip()
                     descripcion = fs.getvalue('descripcion', '').strip()
-                    
-                    # Obtener archivo
                     imagen_file = fs['imagen']
                     imagen_data = None
                     imagen_nombre = ""
@@ -140,40 +86,24 @@ def application(environ, start_response):
                     if imagen_file.filename:
                         imagen_nombre = imagen_file.filename
                         imagen_data = imagen_file.file.read()
-                        # Determinar tipo de imagen
                         try:
-                            imagen_tipo = imghdr.what(None, h=imagen_data)
-                            if not imagen_tipo:
-                                imagen_tipo = "desconocido"
+                            imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
                         except:
                             imagen_tipo = "desconocido"
                     
-                    # Validaciones
                     errores = []
-                    
-                    if not titulo:
-                        errores.append("Título es requerido")
-                    
-                    if not imagen_data:
-                        errores.append("Debe subir una imagen")
-                    elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
-                        errores.append("La imagen es demasiado grande (máximo 5MB)")
-                    elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                        errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+                    if not titulo: errores.append("Título es requerido")
+                    if not imagen_data: errores.append("Debe subir una imagen")
+                    elif len(imagen_data) > 5 * 1024 * 1024: errores.append("La imagen es demasiado grande (máximo 5MB)")
+                    elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']: errores.append("Solo se permiten imágenes JPG, PNG o GIF")
                     
                     if errores:
-                        mensaje = f'''<div class="error">
-                            <h3>Errores encontrados:</h3>
-                            <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
-                        </div>'''
+                        mensaje = f'''<div class="error"><h3>Errores encontrados:</h3><ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
                     else:
-                        # Guardar en PostgreSQL
                         conn = conectar_bd()
                         if conn:
                             try:
                                 cur = conn.cursor()
-                                
-                                # Crear tabla si no existe
                                 cur.execute('''
                                     CREATE TABLE IF NOT EXISTS carrusel_imagenes (
                                         id SERIAL PRIMARY KEY,
@@ -185,50 +115,32 @@ def application(environ, start_response):
                                         fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                     )
                                 ''')
-                                
-                                # Insertar datos
                                 cur.execute(
-                                    """INSERT INTO carrusel_imagenes 
-                                       (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data) 
+                                    """INSERT INTO carrusel_imagenes (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data) 
                                        VALUES (%s, %s, %s, %s, %s)""",
                                     (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                                 )
-                                
                                 conn.commit()
-                                cur.close()
-                                conn.close()
-                                
-                                mensaje = f'''<div class="exito">
-                                    <h3>¡Imagen agregada al carrusel!</h3>
-                                    <p><strong>Título:</strong> {titulo}</p>
-                                    <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                                </div>'''
-                                
+                                mensaje = f'''<div class="exito"><h3>¡Imagen agregada al carrusel!</h3><p><strong>Título:</strong> {titulo}</p><p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p></div>'''
                             except Exception as e:
                                 mensaje = f'<div class="error">Error al guardar: {str(e)}</div>'
+                            finally:
+                                if conn: conn.close()
                         else:
                             mensaje = '<div class="error">Error de conexión a la base de datos</div>'
                         
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
-        # Obtener imágenes del carrusel
         imagenes_html = ""
         conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("""
-                    SELECT id, titulo, descripcion, imagen_nombre, imagen_tipo, fecha 
-                    FROM carrusel_imagenes 
-                    ORDER BY fecha DESC
-                """)
+                cur.execute("SELECT id, titulo, descripcion, imagen_nombre, imagen_tipo, fecha FROM carrusel_imagenes ORDER BY fecha DESC")
                 imagenes = cur.fetchall()
-                cur.close()
-                conn.close()
                 
                 if imagenes:
-                    # Carrusel de imágenes
                     imagenes_html += '''
                     <div class="carrusel-container">
                         <h3>Carrusel de Imágenes</h3>
@@ -237,8 +149,6 @@ def application(environ, start_response):
                     
                     for i, img in enumerate(imagenes):
                         id_img, titulo_img, desc_img, img_nombre, img_tipo, fecha = img
-                        
-                        # Obtener imagen en base64 para mostrar
                         img_base64 = ""
                         conn2 = conectar_bd()
                         if conn2:
@@ -246,34 +156,25 @@ def application(environ, start_response):
                                 cur2 = conn2.cursor()
                                 cur2.execute("SELECT imagen_data FROM carrusel_imagenes WHERE id = %s", (id_img,))
                                 img_data = cur2.fetchone()[0]
-                                cur2.close()
-                                conn2.close()
-                                
                                 if img_data:
                                     img_base64 = base64.b64encode(img_data).decode('utf-8')
                             except:
                                 pass
+                            finally:
+                                if conn2: conn2.close()
                         
                         if img_base64:
-                            # Determinar si es la primera imagen (activa)
                             activa = "active" if i == 0 else ""
-                            
-                            # MODIFICACIÓN: Solo mostrar la imagen, sin texto ni botón eliminar
                             imagenes_html += f'''
                             <div class="carrusel-item {activa}" data-id="{id_img}">
                                 <div class="imagen-contenedor">
-                                    <img src="data:image/{img_tipo};base64,{img_base64}" 
-                                         alt="{titulo_img}"
-                                         class="carrusel-imagen">
-                                    <!-- Se removió la sección de información y el botón eliminar -->
+                                    <img src="data:image/{img_tipo};base64,{img_base64}" alt="{titulo_img}" class="carrusel-imagen">
                                 </div>
                             </div>
                             '''
                     
                     imagenes_html += '''
                         </div>
-                        
-                        <!-- Controles del carrusel -->
                         <div class="carrusel-controls">
                             <button class="carrusel-btn prev" onclick="carruselPrev()">◀</button>
                             <div class="carrusel-indicators" id="indicators"></div>
@@ -282,19 +183,12 @@ def application(environ, start_response):
                     </div>
                     '''
                     
-                    # Contador de imágenes
                     imagenes_html += f'''
                     <div class="contador-imagenes">
                         <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
-                    '''
-                    
-                    # BOTÓN PARA IR A LA PÁGINA DE ERROR
-                    imagenes_html += '''
                     <div style="text-align: center; margin: 30px 0;">
-                        <a href="/pagina_error" class="btn-error-404">
-                            Ir a Página de Error de Prueba
-                        </a>
+                        <a href="/pagina_error" class="btn-error-404">Ir a Página de Error de Prueba</a>
                     </div>
                     '''
                 else:
@@ -308,294 +202,88 @@ def application(environ, start_response):
                     
             except Exception as e:
                 imagenes_html = f'<p class="error">Error cargando imágenes: {str(e)}</p>'
+            finally:
+                if conn: conn.close()
         else:
             imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del carrusel
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Carrusel de Imágenes</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 1000px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 40px;
-        }}
-        .carrusel-container {{
-            margin: 40px 0;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }}
-        .carrusel {{
-            position: relative;
-            overflow: hidden;
-            border-radius: 10px;
-            background: white;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }}
-        .carrusel-item {{
-            display: none;
-            padding: 30px;
-            text-align: center;
-        }}
-        .carrusel-item.active {{
-            display: block;
-        }}
-        .imagen-contenedor {{
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }}
-        @media (min-width: 768px) {{
-            .imagen-contenedor {{
-                flex-direction: row;
-                align-items: center;
-                justify-content: center;
-            }}
-        }}
-        .carrusel-imagen {{
-            max-width: 100%;
-            max-height: 500px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }}
-        .carrusel-controls {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 20px;
-            padding: 10px;
-        }}
-        .carrusel-btn {{
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        .carrusel-btn:hover {{
-            background: #0056b3;
-        }}
-        .carrusel-indicators {{
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            flex: 1;
-        }}
-        .indicator {{
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #ccc;
-            cursor: pointer;
-            transition: background 0.3s;
-        }}
-        .indicator.active {{
-            background: #007bff;
-        }}
-        .contador-imagenes {{
-            text-align: center;
-            margin: 20px 0;
-            padding: 15px;
-            background: #e7f3ff;
-            border-radius: 5px;
-        }}
-        .btn-error-404 {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #ffc107;
-            color: #212529;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            text-decoration: none;
-            transition: background 0.3s;
-        }}
-        .btn-error-404:hover {{
-            background: #e0a800;
-            color: #212529;
-            text-decoration: none;
-        }}
-        .sin-imagenes {{
-            text-align: center;
-            padding: 60px 20px;
-            background: #e9ecef;
-            border-radius: 10px;
-            margin: 40px 0;
-        }}
-        .sin-imagenes-icon {{
-            font-size: 60px;
-            margin-bottom: 20px;
-        }}
-        .form-agregar {{
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 10px;
-            margin-top: 40px;
-        }}
-        .campo {{
-            margin: 20px 0;
-        }}
-        label {{
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }}
-        input[type="text"],
-        input[type="date"],
-        textarea,
-        input[type="file"] {{
-            width: 95%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }}
-        textarea {{
-            min-height: 100px;
-            resize: vertical;
-        }}
-        .requerido {{ color: #dc3545; }}
-        .info {{
-            font-size: 14px;
-            color: #6c757d;
-            margin-top: 5px;
-        }}
-        .btn-agregar {{
-            padding: 15px 30px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 18px;
-            font-weight: bold;
-            width: 100%;
-            margin-top: 20px;
-        }}
-        .btn-agregar:hover {{
-            background: #218838;
-        }}
-        .btn-eliminar {{
-            padding: 8px 15px;
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }}
-        .btn-eliminar:hover {{
-            background: #c82333;
-        }}
-        .exito {{
-            background: #d4edda;
-            color: #155724;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #28a745;
-        }}
-        .error {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #dc3545;
-        }}
-        .instrucciones {{
-            background: #fff3cd;
-            color: #856404;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #ffc107;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; text-align: center; margin-bottom: 40px; }}
+        .carrusel-container {{ margin: 40px 0; padding: 20px; background: #f8f9fa; border-radius: 10px; }}
+        .carrusel {{ position: relative; overflow: hidden; border-radius: 10px; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
+        .carrusel-item {{ display: none; padding: 30px; text-align: center; }}
+        .carrusel-item.active {{ display: block; }}
+        .carrusel-imagen {{ max-width: 100%; max-height: 500px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }}
+        .carrusel-controls {{ display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 10px; }}
+        .carrusel-btn {{ background: #007bff; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 20px; cursor: pointer; }}
+        .carrusel-btn:hover {{ background: #0056b3; }}
+        .carrusel-indicators {{ display: flex; gap: 10px; justify-content: center; flex: 1; }}
+        .indicator {{ width: 12px; height: 12px; border-radius: 50%; background: #ccc; cursor: pointer; }}
+        .indicator.active {{ background: #007bff; }}
+        .contador-imagenes {{ text-align: center; margin: 20px 0; padding: 15px; background: #e7f3ff; border-radius: 5px; }}
+        .btn-error-404 {{ display: inline-block; padding: 15px 30px; background: #ffc107; color: #212529; border-radius: 5px; font-size: 16px; font-weight: bold; text-decoration: none; }}
+        .btn-error-404:hover {{ background: #e0a800; }}
+        .sin-imagenes {{ text-align: center; padding: 60px 20px; background: #e9ecef; border-radius: 10px; margin: 40px 0; }}
+        .form-agregar {{ background: #f8f9fa; padding: 30px; border-radius: 10px; margin-top: 40px; }}
+        .campo {{ margin: 20px 0; }}
+        label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #555; }}
+        input, textarea {{ width: 95%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }}
+        textarea {{ min-height: 100px; resize: vertical; }}
+        .btn-agregar {{ padding: 15px 30px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 18px; width: 100%; margin-top: 20px; }}
+        .btn-agregar:hover {{ background: #218838; }}
+        .exito {{ background: #d4edda; color: #155724; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745; }}
+        .error {{ background: #f8d7da; color: #721c24; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc3545; }}
+        .instrucciones {{ background: #fff3cd; color: #856404; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>Carrusel de Imágenes</h1>
-        
         <div class="instrucciones">
             <h3>Instrucciones:</h3>
             <ul>
                 <li>Agrega imágenes usando el formulario de abajo</li>
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
-                <li>Elimina imágenes haciendo click en "Eliminar"</li>
-                <li>Cada imagen puede tener un título y descripción</li>
                 <li>Prueba el botón "Ir a Página de Error" para ver una página de prueba</li>
             </ul>
         </div>
-        
         {mensaje if mensaje else ''}
-        
         {imagenes_html}
-        
         <div class="form-agregar">
             <h3>Agregar Nueva Imagen al Carrusel</h3>
             <form method="POST" enctype="multipart/form-data">
                 <div class="campo">
-                    <label>Título de la imagen <span class="requerido">*</span></label>
+                    <label>Título de la imagen *</label>
                     <input type="text" name="titulo" placeholder="Ej: Paisaje de montaña" required>
-                    <div class="info">Un título descriptivo para la imagen</div>
                 </div>
-                
                 <div class="campo">
                     <label>Descripción (opcional)</label>
                     <textarea name="descripcion" placeholder="Describe la imagen..."></textarea>
-                    <div class="info">Información adicional sobre la imagen</div>
                 </div>
-                
                 <div class="campo">
-                    <label>Seleccionar imagen <span class="requerido">*</span></label>
+                    <label>Seleccionar imagen *</label>
                     <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-                    <div class="info">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
+                    <div style="font-size: 14px; color: #6c757d; margin-top: 5px;">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
                 </div>
-                
                 <button type="submit" class="btn-agregar">Agregar al Carrusel</button>
             </form>
         </div>
     </div>
-    
     <script>
-        // Variables del carrusel
         let currentSlide = 0;
         const slides = document.querySelectorAll('.carrusel-item');
         const indicatorsContainer = document.getElementById('indicators');
         
-        // Crear indicadores
         function crearIndicadores() {{
             if (!indicatorsContainer || slides.length === 0) return;
-            
             indicatorsContainer.innerHTML = '';
             for (let i = 0; i < slides.length; i++) {{
                 const indicator = document.createElement('div');
@@ -606,89 +294,39 @@ def application(environ, start_response):
             }}
         }}
         
-        // Mostrar slide específico
         function showSlide(index) {{
             if (slides.length === 0) return;
+            if (index >= slides.length) {{ currentSlide = 0; }}
+            else if (index < 0) {{ currentSlide = slides.length - 1; }}
+            else {{ currentSlide = index; }}
             
-            // Asegurar que el índice esté dentro de los límites
-            if (index >= slides.length) {{
-                currentSlide = 0;
-            }} else if (index < 0) {{
-                currentSlide = slides.length - 1;
-            }} else {{
-                currentSlide = index;
-            }}
-            
-            // Ocultar todos los slides
-            slides.forEach(slide => {{
-                slide.classList.remove('active');
-            }});
-            
-            // Mostrar slide actual
+            slides.forEach(slide => slide.classList.remove('active'));
             slides[currentSlide].classList.add('active');
             
-            // Actualizar indicadores
             const indicators = document.querySelectorAll('.indicator');
-            indicators.forEach((indicator, i) => {{
-                indicator.classList.toggle('active', i === currentSlide);
-            }});
+            indicators.forEach((indicator, i) => indicator.classList.toggle('active', i === currentSlide));
         }}
         
-        // Slide siguiente
-        function carruselNext() {{
-            showSlide(currentSlide + 1);
-        }}
+        function carruselNext() {{ showSlide(currentSlide + 1); }}
+        function carruselPrev() {{ showSlide(currentSlide - 1); }}
+        function goToSlide(index) {{ showSlide(index); }}
         
-        // Slide anterior
-        function carruselPrev() {{
-            showSlide(currentSlide - 1);
-        }}
-        
-        // Ir a slide específico
-        function goToSlide(index) {{
-            showSlide(index);
-        }}
-        
-        // Auto-avance del carrusel (cada 5 segundos)
-        let carruselInterval;
-        function iniciarAutoPlay() {{
-            if (slides.length > 1) {{
-                carruselInterval = setInterval(carruselNext, 5000);
-            }}
-        }}
-        
-        function detenerAutoPlay() {{
-            if (carruselInterval) {{
-                clearInterval(carruselInterval);
-            }}
-        }}
-        
-        // Inicializar carrusel
         document.addEventListener('DOMContentLoaded', function() {{
             crearIndicadores();
-            iniciarAutoPlay();
-            
-            // Pausar auto-play cuando el mouse está sobre el carrusel
-            const carrusel = document.getElementById('carrusel');
-            if (carrusel) {{
-                carrusel.addEventListener('mouseenter', detenerAutoPlay);
-                carrusel.addEventListener('mouseleave', iniciarAutoPlay);
-            }}
-            
-            // Navegación con teclado
-            document.addEventListener('keydown', function(e) {{
-                if (e.key === 'ArrowLeft') {{
-                    carruselPrev();
-                }} else if (e.key === 'ArrowRight') {{
-                    carruselNext();
+            let carruselInterval;
+            if (slides.length > 1) {{
+                carruselInterval = setInterval(carruselNext, 5000);
+                const carrusel = document.getElementById('carrusel');
+                if (carrusel) {{
+                    carrusel.addEventListener('mouseenter', () => clearInterval(carruselInterval));
+                    carrusel.addEventListener('mouseleave', () => carruselInterval = setInterval(carruselNext, 5000));
                 }}
+            }}
+            document.addEventListener('keydown', function(e) {{
+                if (e.key === 'ArrowLeft') carruselPrev();
+                else if (e.key === 'ArrowRight') carruselNext();
             }});
         }});
-        
-        // Confirmar eliminación
-        function confirmarEliminacion(id) {{
-            return confirm('¿Estás seguro de que quieres eliminar esta imagen del carrusel?');
-        }}
     </script>
 </body>
 </html>'''
@@ -696,7 +334,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA PRINCIPAL (actualizada) ===
+    # === INICIO ===
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
@@ -704,47 +342,18 @@ def application(environ, start_response):
     <meta charset="UTF-8">
     <title>Inicio - Aplicación Masonite</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .features {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }}
-        .feature {{
-            background: #e9ecef;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }}
-        .feature-icon {{
-            font-size: 40px;
-            margin-bottom: 15px;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; text-align: center; margin-bottom: 30px; }}
+        .features {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 30px 0; }}
+        .feature {{ background: #e9ecef; padding: 20px; border-radius: 8px; text-align: center; }}
+        .feature-icon {{ font-size: 40px; margin-bottom: 15px; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>Aplicación Masonite en Railway</h1>
-        
         <div class="features">
             <div class="feature">
                 <div class="feature-icon">+</div>
@@ -752,32 +361,24 @@ def application(environ, start_response):
                 <p>Operaciones básicas de suma y división</p>
                 <a href="/calculadora">Ir a Calculadora →</a>
             </div>
-            
             <div class="feature">
                 <div class="feature-icon">✓</div>
-                <h3>Formulario con Imágenes</h3>
-                <p>Registra datos y sube imágenes</p>
+                <h3>Formulario</h3>
+                <p>Registra datos con validación de nombre y fecha</p>
                 <a href="/formulario">Ir a Formulario →</a>
             </div>
-            
             <div class="feature">
                 <div class="feature-icon">▢</div>
-                <h3>Carrusel de Imágenes</h3>
+                <h3>Carrusel</h3>
                 <p>Galería interactiva de imágenes</p>
                 <a href="/carrusel">Ir a Carrusel →</a>
             </div>
-            
             <div class="feature">
                 <div class="feature-icon">⚠</div>
-                <h3>Página de Error</h3>
-                <p>Página de prueba con mensaje de error</p>
+                <h3>Página Error</h3>
+                <p>Página de prueba con mensaje</p>
                 <a href="/pagina_error">Ir a Página Error →</a>
             </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #e7f3ff; border-radius: 8px;">
-            <h3>Seguridad mejorada</h3>
-            <p>Ahora el formulario cuenta con protección reCAPTCHA para prevenir spam.</p>
         </div>
     </div>
 </body>
@@ -786,21 +387,18 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA CALCULADORA (sin cambios) ===
+    # === CALCULADORA ===
     elif path == '/calculadora':
         resultado_suma = ""
         resultado_division = ""
         
-        # Procesar formulario de calculadora
         if method == 'POST':
             try:
-                # Obtener datos del formulario
                 content_length = int(environ.get('CONTENT_LENGTH', 0))
                 if content_length > 0:
                     post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
                     params = parse_qs(post_data)
                     
-                    # PROCESAR SUMA
                     try:
                         suma1 = params.get('suma1', [''])[0]
                         suma2 = params.get('suma2', [''])[0]
@@ -812,10 +410,7 @@ def application(environ, start_response):
                             resultado_suma = "<div class='resultado-error'>Ingresa ambos números para la suma</div>"
                     except ValueError:
                         resultado_suma = "<div class='resultado-error'>Error: Ingresa números válidos para la suma</div>"
-                    except Exception as e:
-                        resultado_suma = f"<div class='resultado-error'>Error en suma: {str(e)}</div>"
                     
-                    # PROCESAR DIVISIÓN
                     try:
                         div1 = params.get('div1', [''])[0]
                         div2 = params.get('div2', [''])[0]
@@ -830,152 +425,56 @@ def application(environ, start_response):
                             resultado_division = "<div class='resultado-error'>Ingresa ambos números para la división</div>"
                     except ValueError:
                         resultado_division = "<div class='resultado-error'>Error: Ingresa números válidos para la división</div>"
-                    except Exception as e:
-                        resultado_division = f"<div class='resultado-error'>Error en división: {str(e)}</div>"
                     
             except Exception as e:
                 resultado_suma = f"<div class='resultado-error'>Error general: {str(e)}</div>"
         
-        # HTML de la calculadora
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Calculadora</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 900px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{ 
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 40px;
-        }}
-        .calculadora-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
-        }}
-        .operacion {{
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 8px;
-            border-left: 4px solid;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; text-align: center; margin-bottom: 40px; }}
+        .calculadora-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }}
+        .operacion {{ background: #f8f9fa; padding: 30px; border-radius: 8px; border-left: 4px solid; }}
         .suma {{ border-color: #28a745; }}
         .division {{ border-color: #dc3545; }}
-        .operacion h2 {{
-            margin-top: 0;
-            color: #333;
-            text-align: center;
-        }}
-        .campo {{
-            margin: 15px 0;
-        }}
-        .campo label {{
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }}
-        input[type="text"] {{
-            width: 90%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }}
-        .btn-calcular {{
-            padding: 12px 25px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            width: 100%;
-            margin-top: 10px;
-        }}
-        .btn-calcular:hover {{
-            background: #0056b3;
-        }}
-        .resultado-exito {{
-            background: #d4edda;
-            color: #155724;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 20px;
-            border-left: 4px solid #28a745;
-        }}
-        .resultado-error {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 20px;
-            border-left: 4px solid #dc3545;
-        }}
-        @media (max-width: 768px) {{
-            .calculadora-grid {{
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }}
-        }}
+        .operacion h2 {{ margin-top: 0; color: #333; text-align: center; }}
+        .campo {{ margin: 15px 0; }}
+        label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #555; }}
+        input[type="text"] {{ width: 90%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }}
+        .btn-calcular {{ padding: 12px 25px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }}
+        .resultado-exito {{ background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin-top: 20px; }}
+        .resultado-error {{ background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin-top: 20px; }}
+        @media (max-width: 768px) {{ .calculadora-grid {{ grid-template-columns: 1fr; }} }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>Calculadora</h1>
-        
         <div class="calculadora-grid">
-            <!-- SUMA -->
             <div class="operacion suma">
                 <h2>Suma</h2>
                 <form method="POST">
-                    <div class="campo">
-                        <label>Primer número:</label>
-                        <input type="text" name="suma1" placeholder="Ej: 10" required>
-                    </div>
-                    <div class="campo">
-                        <label>Segundo número:</label>
-                        <input type="text" name="suma2" placeholder="Ej: 5" required>
-                    </div>
+                    <div class="campo"><label>Primer número:</label><input type="text" name="suma1" placeholder="Ej: 10" required></div>
+                    <div class="campo"><label>Segundo número:</label><input type="text" name="suma2" placeholder="Ej: 5" required></div>
                     <button type="submit" class="btn-calcular">Calcular Suma</button>
                 </form>
                 {resultado_suma if resultado_suma else ''}
             </div>
-            
-            <!-- DIVISIÓN -->
             <div class="operacion division">
                 <h2>División</h2>
                 <form method="POST">
-                    <div class="campo">
-                        <label>Dividendo:</label>
-                        <input type="text" name="div1" placeholder="Ej: 10" required>
-                    </div>
-                    <div class="campo">
-                        <label>Divisor:</label>
-                        <input type="text" name="div2" placeholder="Ej: 2" required>
-                    </div>
+                    <div class="campo"><label>Dividendo:</label><input type="text" name="div1" placeholder="Ej: 10" required></div>
+                    <div class="campo"><label>Divisor:</label><input type="text" name="div2" placeholder="Ej: 2" required></div>
                     <button type="submit" class="btn-calcular">Calcular División</button>
                 </form>
                 {resultado_division if resultado_division else ''}
             </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 40px;">
-            <p><strong>Nota:</strong> Cada operación se calcula por separado. Usa el botón correspondiente a cada operación.</p>
         </div>
     </div>
 </body>
@@ -984,7 +483,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === BORRAR REGISTROS (sin cambios) ===
+    # === BORRAR REGISTROS ===
     elif path == '/borrar_registros':
         if method == 'POST':
             try:
@@ -993,9 +492,6 @@ def application(environ, start_response):
                     cur = conn.cursor()
                     cur.execute('DELETE FROM formulario_simple')
                     conn.commit()
-                    cur.close()
-                    conn.close()
-                    
                     html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1066,79 +562,28 @@ def application(environ, start_response):
                 start_response('200 OK', headers)
                 return [html.encode('utf-8')]
         
-        # Si es GET, mostrar formulario de confirmación
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Borrar Registros</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 600px; 
-            margin: 50px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        .advertencia {{
-            background: #fff3cd;
-            color: #856404;
-            padding: 20px;
-            border-radius: 5px;
-            margin-bottom: 30px;
-            border-left: 4px solid #ffc107;
-        }}
-        .advertencia-icon {{
-            font-size: 40px;
-            margin-bottom: 15px;
-        }}
-        .botones {{
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 30px;
-        }}
-        .btn-borrar {{
-            background: #dc3545;
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            text-decoration: none;
-        }}
-        .btn-cancelar {{
-            background: #6c757d;
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            text-decoration: none;
-        }}
-        .btn-borrar:hover {{ background: #c82333; }}
-        .btn-cancelar:hover {{ background: #5a6268; }}
+        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .advertencia {{ background: #fff3cd; color: #856404; padding: 20px; border-radius: 5px; margin-bottom: 30px; }}
+        .botones {{ display: flex; gap: 15px; justify-content: center; margin-top: 30px; }}
+        .btn-borrar {{ background: #dc3545; color: white; padding: 12px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }}
+        .btn-cancelar {{ background: #6c757d; color: white; padding: 12px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; text-decoration: none; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <div class="advertencia">
-            <div class="advertencia-icon">⚠</div>
             <h2>¡Advertencia!</h2>
             <p>Estás a punto de borrar <strong>TODOS</strong> los registros de la base de datos.</p>
             <p>Esta acción <strong>NO se puede deshacer</strong>.</p>
         </div>
-        
         <form method="POST" action="/borrar_registros">
             <div class="botones">
                 <button type="submit" class="btn-borrar">Sí, borrar todos los registros</button>
@@ -1152,28 +597,18 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA (MODIFICADA) ===
+    # === FORMULARIO (MODIFICADO) ===
     elif path == '/formulario':
         mensaje = ""
         
-        # Procesar POST (formulario con archivos y reCAPTCHA)
         if method == 'POST':
             try:
-                # Parsear formulario multipart
-                fs = cgi.FieldStorage(
-                    fp=environ['wsgi.input'],
-                    environ=environ,
-                    keep_blank_values=True
-                )
+                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
                 
-                # Obtener campos
                 nombre = fs.getvalue('nombre', '').strip()
-                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()  # CAMBIADO: Ahora es fecha_nacimiento
+                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
-                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
-                
-                # Obtener archivo
                 imagen_file = fs['imagen']
                 imagen_data = None
                 imagen_nombre = ""
@@ -1182,70 +617,36 @@ def application(environ, start_response):
                 if imagen_file.filename:
                     imagen_nombre = imagen_file.filename
                     imagen_data = imagen_file.file.read()
-                    # Determinar tipo de imagen
                     try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data)
-                        if not imagen_tipo:
-                            imagen_tipo = "desconocido"
+                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
                     except:
                         imagen_tipo = "desconocido"
                 
-                # Validaciones simples
                 errores = []
+                if not nombre: errores.append("Nombre es requerido")
+                elif not validar_nombre(nombre): errores.append("El nombre solo puede contener letras, espacios y algunos caracteres especiales")
                 
-                # Validar nombre (solo letras)
-                if not nombre:
-                    errores.append("Nombre es requerido")
-                elif not validar_nombre(nombre):
-                    errores.append("El nombre solo puede contener letras, espacios y algunos caracteres especiales (como apóstrofes o guiones)")
-                
-                # Validar fecha de nacimiento (CAMBIADO: ahora es fecha)
-                if not fecha_nacimiento:
-                    errores.append("Fecha de nacimiento es requerida")
+                if not fecha_nacimiento: errores.append("Fecha de nacimiento es requerida")
                 else:
-                    # Calcular edad desde fecha de nacimiento
-                    edad_calculada = calcular_edad(fecha_nacimiento)
-                    if edad_calculada is None:
-                        errores.append("Fecha de nacimiento no válida")
-                    elif edad_calculada < 1:
-                        errores.append("La fecha de nacimiento debe ser válida (edad mínima: 1 año)")
-                    elif edad_calculada > 120:
-                        errores.append("La fecha de nacimiento debe ser válida (edad máxima: 120 años)")
-                    else:
-                        edad = edad_calculada  # Guardamos la edad calculada
+                    edad = calcular_edad(fecha_nacimiento)
+                    if edad is None: errores.append("Fecha de nacimiento no válida")
+                    elif edad < 1: errores.append("La fecha de nacimiento debe ser válida (edad mínima: 1 año)")
+                    elif edad > 120: errores.append("La fecha de nacimiento debe ser válida (edad máxima: 120 años)")
                 
-                if not correo:
-                    errores.append("Correo es requerido")
-                elif correo != correo_confirmar:
-                    errores.append("Los correos no coinciden")
+                if not correo: errores.append("Correo es requerido")
+                elif correo != correo_confirmar: errores.append("Los correos no coinciden")
                 
-                if not imagen_data:
-                    errores.append("Debe subir una imagen")
-                elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
-                    errores.append("La imagen es demasiado grande (máximo 5MB)")
-                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
-                
-                # Validar reCAPTCHA
-                if not recaptcha_response:
-                    errores.append("Por favor, completa el reCAPTCHA")
-                else:
-                    if not validar_recaptcha(recaptcha_response):
-                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
+                if not imagen_data: errores.append("Debe subir una imagen")
+                elif len(imagen_data) > 5 * 1024 * 1024: errores.append("La imagen es demasiado grande (máximo 5MB)")
+                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']: errores.append("Solo se permiten imágenes JPG, PNG o GIF")
                 
                 if errores:
-                    mensaje = f'''<div class="error">
-                        <h3>Errores encontrados:</h3>
-                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
-                    </div>'''
+                    mensaje = f'''<div class="error"><h3>Errores encontrados:</h3><ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
                 else:
-                    # Guardar en PostgreSQL (edad se calcula automáticamente)
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
-                            
-                            # Crear tabla si no existe (AHORA CON FECHA_NACIMIENTO)
                             cur.execute('''
                                 CREATE TABLE IF NOT EXISTS formulario_simple (
                                     id SERIAL PRIMARY KEY,
@@ -1259,19 +660,12 @@ def application(environ, start_response):
                                     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                 )
                             ''')
-                            
-                            # Insertar datos (AHORA CON FECHA_NACIMIENTO y EDAD)
                             cur.execute(
-                                """INSERT INTO formulario_simple 
-                                   (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                """INSERT INTO formulario_simple (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
                                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                                 (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
-                            
                             conn.commit()
-                            cur.close()
-                            conn.close()
-                            
                             mensaje = f'''<div class="exito">
                                 <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
@@ -1279,34 +673,24 @@ def application(environ, start_response):
                                 <p><strong>Edad calculada:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                                <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
-                                    <strong>reCAPTCHA verificado correctamente</strong>
-                                </p>
                             </div>'''
-                            
                         except Exception as e:
                             mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
+                        finally:
+                            if conn: conn.close()
                     else:
                         mensaje = '<div class="error">Error de conexión a la base de datos</div>'
                         
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
-        # Obtener registros anteriores
         registros_html = ""
         conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("""
-                    SELECT id, nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, fecha 
-                    FROM formulario_simple 
-                    ORDER BY fecha DESC 
-                    LIMIT 10
-                """)
+                cur.execute("SELECT id, nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, fecha FROM formulario_simple ORDER BY fecha DESC LIMIT 10")
                 registros = cur.fetchall()
-                cur.close()
-                conn.close()
                 
                 if registros:
                     registros_html = '''
@@ -1325,7 +709,6 @@ def application(environ, start_response):
                         fecha_str = str(fecha)[:16]
                         fecha_nacimiento_str = str(fecha_nacimiento_reg)
                         
-                        # Obtener imagen en base64 para mostrar
                         img_html = ""
                         conn2 = conectar_bd()
                         if conn2:
@@ -1333,19 +716,16 @@ def application(environ, start_response):
                                 cur2 = conn2.cursor()
                                 cur2.execute("SELECT imagen_data FROM formulario_simple WHERE id = %s", (id_reg,))
                                 img_data = cur2.fetchone()[0]
-                                cur2.close()
-                                conn2.close()
-                                
                                 if img_data:
                                     img_base64 = base64.b64encode(img_data).decode('utf-8')
                                     img_html = f'''<div class="imagen-preview">
-                                        <img src="data:image/{img_tipo};base64,{img_base64}" 
-                                             alt="{img_nombre}" 
-                                             style="max-width: 150px; max-height: 150px; border-radius: 5px;">
+                                        <img src="data:image/{img_tipo};base64,{img_base64}" style="max-width: 150px; max-height: 150px; border-radius: 5px;">
                                         <p><small>{img_nombre}</small></p>
                                     </div>'''
                             except:
                                 img_html = '<p><small>Imagen no disponible</small></p>'
+                            finally:
+                                if conn2: conn2.close()
                         
                         registros_html += f'''<div class="registro">
                             <div class="registro-info">
@@ -1368,259 +748,83 @@ def application(environ, start_response):
                     
             except Exception as e:
                 registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
+            finally:
+                if conn: conn.close()
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON RECAPTCHA (MODIFICADO)
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Formulario con Imágenes y reCAPTCHA</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <title>Formulario con Imágenes</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 900px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            margin-bottom: 30px;
-            text-align: center;
-        }}
-        .campo {{
-            margin: 20px 0;
-        }}
-        label {{
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }}
-        input[type="text"],
-        input[type="date"],
-        input[type="email"],
-        input[type="number"],
-        input[type="file"] {{
-            width: 95%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }}
-        .requerido {{ color: #dc3545; }}
-        .info {{
-            font-size: 14px;
-            color: #6c757d;
-            margin-top: 5px;
-        }}
-        button[type="submit"] {{
-            padding: 12px 30px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 20px;
-            width: 100%;
-        }}
-        button[type="submit"]:hover {{
-            background: #218838;
-        }}
-        .exito {{
-            background: #d4edda;
-            color: #155724;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #28a745;
-        }}
-        .error {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #dc3545;
-        }}
-        hr {{
-            margin: 40px 0;
-            border: none;
-            border-top: 2px solid #dee2e6;
-        }}
-        .registros {{
-            margin-top: 40px;
-        }}
-        .registro {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #007bff;
-        }}
-        .registro-info {{
-            flex: 1;
-        }}
-        .imagen-preview {{
-            text-align: center;
-            margin-left: 20px;
-        }}
-        .lista-registros {{
-            max-height: 500px;
-            overflow-y: auto;
-            padding: 10px;
-        }}
-        .form-group {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }}
-        .sin-registros {{
-            text-align: center;
-            padding: 30px;
-            background: #e9ecef;
-            border-radius: 8px;
-            color: #6c757d;
-        }}
-        .recaptcha-info {{
-            background: #e7f3ff;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #007bff;
-        }}
-        .recaptcha-container {{
-            margin: 20px 0;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            text-align: center;
-        }}
-        .g-recaptcha {{
-            display: inline-block;
-        }}
-        .recaptcha-nota {{
-            font-size: 12px;
-            color: #6c757d;
-            margin-top: 10px;
-            text-align: center;
-        }}
-        @media (max-width: 768px) {{
-            .form-group {{
-                grid-template-columns: 1fr;
-            }}
-            .registro {{
-                flex-direction: column;
-                text-align: center;
-            }}
-            .imagen-preview {{
-                margin-left: 0;
-                margin-top: 15px;
-            }}
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; margin-bottom: 30px; text-align: center; }}
+        .campo {{ margin: 20px 0; }}
+        label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #555; }}
+        input, textarea {{ width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }}
+        button[type="submit"] {{ padding: 12px 30px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }}
+        button[type="submit"]:hover {{ background: #218838; }}
+        .exito {{ background: #d4edda; color: #155724; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        .error {{ background: #f8d7da; color: #721c24; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+        hr {{ margin: 40px 0; border-top: 2px solid #dee2e6; }}
+        .registro {{ display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 15px 0; }}
+        .registro-info {{ flex: 1; }}
+        .form-group {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+        @media (max-width: 768px) {{ .form-group {{ grid-template-columns: 1fr; }} .registro {{ flex-direction: column; }} }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
-        <h1>Formulario con Imágenes y reCAPTCHA</h1>
-        
-        <div class="recaptcha-info">
-            <strong>Protección reCAPTCHA:</strong>
-            <p>Para prevenir spam y abusos, este formulario está protegido con Google reCAPTCHA.</p>
-            <p>Debes completar el reCAPTCHA antes de enviar el formulario.</p>
-        </div>
-        
+        <h1>Formulario con Imágenes</h1>
         {mensaje if mensaje else ''}
-        
-        <form method="POST" enctype="multipart/form-data" id="formulario" onsubmit="return validarFormulario()">
+        <form method="POST" enctype="multipart/form-data" id="formulario">
             <div class="form-group">
-                <!-- Columna izquierda -->
                 <div>
-                    <!-- Nombre (SOLO LETRAS) -->
                     <div class="campo">
-                        <label>Nombre completo <span class="requerido">*</span></label>
-                        <input type="text" name="nombre" id="nombre" placeholder="Ej: Juan Pérez" required
-                               oninput="validarNombre(this)">
-                        <div class="info">Solo letras, espacios y algunos caracteres especiales (no números)</div>
+                        <label>Nombre completo *</label>
+                        <input type="text" name="nombre" id="nombre" placeholder="Ej: Juan Pérez" required oninput="validarNombre(this)">
+                        <div style="font-size: 14px; color: #6c757d; margin-top: 5px;">Solo letras, espacios y algunos caracteres especiales</div>
                         <div id="nombre-error" style="color: #dc3545; font-size: 14px; display: none;"></div>
                     </div>
-                    
-                    <!-- Fecha de Nacimiento (CAMBIADO de Edad) -->
                     <div class="campo">
-                        <label>Fecha de Nacimiento <span class="requerido">*</span></label>
-                        <input type="date" name="fecha_nacimiento" id="fecha_nacimiento" required
-                               max="''' + datetime.now().strftime('%Y-%m-%d') + '''">
-                        <div class="info">Selecciona tu fecha de nacimiento (se calculará tu edad automáticamente)</div>
+                        <label>Fecha de Nacimiento *</label>
+                        <input type="date" name="fecha_nacimiento" id="fecha_nacimiento" required>
+                        <div style="font-size: 14px; color: #6c757d; margin-top: 5px;">Se calculará tu edad automáticamente</div>
                     </div>
                 </div>
-                
-                <!-- Columna derecha -->
                 <div>
-                    <!-- Correo -->
                     <div class="campo">
-                        <label>Correo electrónico <span class="requerido">*</span></label>
+                        <label>Correo electrónico *</label>
                         <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
-                        <div class="info">Cualquier correo válido</div>
                     </div>
-                    
-                    <!-- Confirmar Correo -->
                     <div class="campo">
-                        <label>Confirmar correo <span class="requerido">*</span></label>
+                        <label>Confirmar correo *</label>
                         <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
-                        <div class="info">Debe coincidir con el correo anterior</div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Imagen -->
             <div class="campo">
-                <label>Subir imagen <span class="requerido">*</span></label>
+                <label>Subir imagen *</label>
                 <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-                <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
+                <div style="font-size: 14px; color: #6c757d; margin-top: 5px;">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
             </div>
-            
-            <!-- reCAPTCHA -->
-            <div class="recaptcha-container">
-                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
-                <div class="recaptcha-nota">
-                    Este sitio está protegido por reCAPTCHA y se aplican la 
-                    <a href="https://policies.google.com/privacy" target="_blank">Política de privacidad</a> y 
-                    <a href="https://policies.google.com/terms" target="_blank">Términos de servicio</a> de Google.
-                </div>
-            </div>
-            
-            <!-- Botón -->
             <button type="submit" id="btn-submit">Enviar Formulario</button>
         </form>
-        
         <hr>
-        
         {registros_html}
     </div>
-    
     <script>
-        // Función para validar nombre en tiempo real
         function validarNombre(input) {{
             const nombre = input.value;
             const errorDiv = document.getElementById('nombre-error');
             const patron = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\\'-]+$/;
             
             if (nombre.length > 0 && !patron.test(nombre)) {{
-                errorDiv.textContent = 'El nombre solo puede contener letras, espacios y algunos caracteres especiales.';
+                errorDiv.textContent = 'Solo letras, espacios y algunos caracteres especiales.';
                 errorDiv.style.display = 'block';
                 input.style.borderColor = '#dc3545';
             }} else {{
@@ -1629,68 +833,40 @@ def application(environ, start_response):
             }}
         }}
         
-        // Validar formulario antes de enviar
         document.getElementById('formulario').addEventListener('submit', function(e) {{
             const nombre = document.getElementById('nombre').value;
             const fechaNacimiento = document.getElementById('fecha_nacimiento').value;
-            const recaptchaResponse = grecaptcha.getResponse();
-            
             let errores = [];
             
-            // Validar nombre
             const patron = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\\'-]+$/;
             if (!patron.test(nombre)) {{
                 errores.push('El nombre solo puede contener letras, espacios y algunos caracteres especiales.');
             }}
             
-            // Validar fecha de nacimiento
             if (!fechaNacimiento) {{
                 errores.push('La fecha de nacimiento es requerida.');
             }} else {{
                 const fechaNac = new Date(fechaNacimiento);
                 const hoy = new Date();
-                const edad = hoy.getFullYear() - fechaNac.getFullYear();
+                let edad = hoy.getFullYear() - fechaNac.getFullYear();
                 const mes = hoy.getMonth() - fechaNac.getMonth();
-                
-                if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNac.getDate())) {{
-                    edad--;
-                }}
-                
-                if (edad < 1) {{
-                    errores.push('La fecha de nacimiento debe ser válida (edad mínima: 1 año).');
-                }} else if (edad > 120) {{
-                    errores.push('La fecha de nacimiento debe ser válida (edad máxima: 120 años).');
-                }}
-            }}
-            
-            // Validar reCAPTCHA
-            if (recaptchaResponse.length === 0) {{
-                errores.push('Por favor, completa el reCAPTCHA.');
+                if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNac.getDate())) edad--;
+                if (edad < 1) errores.push('Edad mínima: 1 año.');
+                else if (edad > 120) errores.push('Edad máxima: 120 años.');
             }}
             
             if (errores.length > 0) {{
                 e.preventDefault();
-                alert('Errores encontrados:\\n\\n' + errores.join('\\n'));
+                alert('Errores:\\n\\n' + errores.join('\\n'));
                 return false;
             }}
             
-            // Deshabilitar botón para evitar envíos múltiples
-            const submitBtn = document.getElementById('btn-submit');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = 'Enviando...';
-            
+            document.getElementById('btn-submit').disabled = true;
+            document.getElementById('btn-submit').innerHTML = 'Enviando...';
             return true;
         }});
         
-        // Restaurar botón si hay error
         window.onload = function() {{
-            const submitBtn = document.getElementById('btn-submit');
-            if (submitBtn) {{
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Enviar Formulario';
-            }}
-            
-            // Establecer fecha máxima como hoy para fecha de nacimiento
             const fechaInput = document.getElementById('fecha_nacimiento');
             if (fechaInput) {{
                 const hoy = new Date();
@@ -1704,7 +880,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA DE ERROR DE PRUEBA (NUEVA) ===
+    # === PÁGINA DE ERROR DE PRUEBA ===
     elif path == '/pagina_error':
         html = f'''<!DOCTYPE html>
 <html>
@@ -1712,135 +888,35 @@ def application(environ, start_response):
     <meta charset="UTF-8">
     <title>Página de Error de Prueba</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 1000px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 40px;
-        }}
-        .mensaje-error {{
-            background: #fff3cd;
-            color: #856404;
-            padding: 30px;
-            border-radius: 10px;
-            margin: 30px 0;
-            border-left: 6px solid #ffc107;
-            text-align: center;
-        }}
-        .contenido {{
-            background: #e9ecef;
-            padding: 30px;
-            border-radius: 10px;
-            margin: 30px 0;
-        }}
-        .instrucciones {{
-            background: #e7f3ff;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }}
-        .btn-volver {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            margin: 10px;
-            transition: background 0.3s;
-        }}
-        .btn-volver:hover {{
-            background: #0056b3;
-        }}
-        .btn-prueba {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #28a745;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            margin: 10px;
-            transition: background 0.3s;
-        }}
-        .btn-prueba:hover {{
-            background: #218838;
-        }}
-        .codigo-error {{
-            background: #343a40;
-            color: #f8f9fa;
-            padding: 20px;
-            border-radius: 5px;
-            font-family: monospace;
-            margin: 20px 0;
-            overflow-x: auto;
-        }}
-        .botones-container {{
-            text-align: center;
-            margin-top: 40px;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; text-align: center; margin-bottom: 40px; }}
+        .mensaje-error {{ background: #fff3cd; color: #856404; padding: 30px; border-radius: 10px; margin: 30px 0; text-align: center; }}
+        .contenido {{ background: #e9ecef; padding: 30px; border-radius: 10px; margin: 30px 0; }}
+        .btn-volver {{ display: inline-block; padding: 15px 30px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin: 10px; }}
+        .btn-volver:hover {{ background: #0056b3; }}
+        .botones-container {{ text-align: center; margin-top: 40px; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>Página de Error de Prueba</h1>
-        
         <div class="mensaje-error">
             <h2>⚠ Esta es una página de prueba para errores</h2>
             <p>Esta página está diseñada para simular y probar el manejo de errores en la aplicación.</p>
             <p><strong>Nota:</strong> Este no es un error real, es solo una página de demostración.</p>
         </div>
-        
         <div class="contenido">
             <h3>Propósito de esta página:</h3>
-            <p>Esta página sirve para:</p>
-            <ul>
-                <li>Probar el manejo de rutas en la aplicación</li>
-                <li>Demostrar el diseño de páginas de error</li>
-                <li>Proporcionar un ejemplo de estructura de página</li>
-                <li>Permitir pruebas de navegación entre páginas</li>
-            </ul>
-            
-            <div class="instrucciones">
-                <h4>Información importante:</h4>
-                <p>Si llegaste aquí por error, puedes usar los botones de abajo para regresar a las páginas principales.</p>
-                <p>Esta página está accesible desde el menú de navegación como "Página Error".</p>
-            </div>
-            
-            <h3>Ejemplo de código de error simulado:</h3>
-            <div class="codigo-error">
-                HTTP/1.1 200 OK<br>
-                Content-Type: text/html<br>
-                Status: Página de Prueba - No es un error real<br>
-                Message: Esta es una página de demostración para pruebas
-            </div>
+            <p>Esta página sirve para probar el manejo de rutas en la aplicación y demostrar el diseño de páginas.</p>
+            <p>El formulario ahora tiene validación para que el nombre solo acepte letras y el campo de edad se cambió a fecha de nacimiento.</p>
         </div>
-        
         <div class="botones-container">
-            <a href="/" class="btn-volver">🏠 Volver al Inicio</a>
-            <a href="/formulario" class="btn-prueba">📋 Ir al Formulario</a>
-            <a href="/carrusel" class="btn-prueba">🖼️ Ir al Carrusel</a>
-            <a href="/calculadora" class="btn-prueba">🧮 Ir a la Calculadora</a>
-        </div>
-        
-        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-            <p><strong>Recordatorio:</strong> El formulario ahora tiene validación para que el nombre solo acepte letras y el campo de edad se cambió a fecha de nacimiento.</p>
+            <a href="/" class="btn-volver">Volver al Inicio</a>
+            <a href="/formulario" class="btn-volver">Ir al Formulario</a>
+            <a href="/carrusel" class="btn-volver">Ir al Carrusel</a>
+            <a href="/calculadora" class="btn-volver">Ir a la Calculadora</a>
         </div>
     </div>
 </body>
@@ -1857,53 +933,11 @@ def application(environ, start_response):
     <meta charset="UTF-8">
     <title>404 - Página no encontrada</title>
     <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 100px auto; 
-            padding: 40px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 60px;
-            border-radius: 10px;
-            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
-            text-align: center;
-        }}
-        h1 {{ 
-            color: #dc3545; 
-            font-size: 48px;
-            margin-bottom: 20px;
-        }}
-        h2 {{
-            color: #333;
-            margin-bottom: 30px;
-        }}
-        .error-message {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 30px 0;
-            border-left: 4px solid #dc3545;
-            text-align: left;
-        }}
-        .btn-volver {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            margin-top: 20px;
-            transition: background 0.3s;
-        }}
-        .btn-volver:hover {{
-            background: #0056b3;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 100px auto; padding: 40px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 60px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); text-align: center; }}
+        h1 {{ color: #dc3545; font-size: 48px; margin-bottom: 20px; }}
+        .error-message {{ background: #f8d7da; color: #721c24; padding: 20px; border-radius: 5px; margin: 30px 0; }}
+        .btn-volver {{ display: inline-block; padding: 15px 30px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
     </style>
 </head>
 <body>
@@ -1911,16 +945,11 @@ def application(environ, start_response):
     <div class="container">
         <h1>404</h1>
         <h2>Página no encontrada - Error Real</h2>
-        
         <div class="error-message">
             <p><strong>¡Error real!</strong> La página que buscas no existe en el servidor.</p>
             <p>La ruta solicitada <code>{path}</code> no se encuentra.</p>
-            <p>Esta es una página de error 404 real, no la página de prueba.</p>
             <p>Si querías ver la página de prueba, ve a <a href="/pagina_error">/pagina_error</a></p>
         </div>
-        
-        <p>Puedes regresar a la página de inicio o usar la navegación superior.</p>
-        
         <a href="/" class="btn-volver">Volver al Inicio</a>
     </div>
 </body>
