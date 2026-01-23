@@ -10,7 +10,6 @@ from urllib.parse import urlparse, parse_qs
 import cgi
 import io
 from datetime import datetime, date
-import re
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -87,12 +86,6 @@ def application(environ, start_response):
         except Exception as e:
             print(f"Error validando reCAPTCHA: {e}")
             return False
-    
-    # === FUNCIÓN PARA VALIDAR NOMBRE (solo letras y espacios) ===
-    def validar_nombre(nombre):
-        # Expresión regular que solo permite letras (incluyendo acentos) y espacios
-        patron = re.compile(r'^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$')
-        return bool(patron.match(nombre)) if nombre else False
     
     # === PÁGINA CARRUSEL (modificada para solo mostrar imágenes) ===
     if path == '/carrusel':
@@ -1124,10 +1117,9 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON VALIDACIÓN EN TIEMPO REAL ===
+    # === PÁGINA FORMULARIO CON FECHA DE NACIMIENTO ===
     elif path == '/formulario':
         mensaje = ""
-        hay_errores = False
         
         # Procesar POST (formulario con archivos y reCAPTCHA)
         if method == 'POST':
@@ -1141,7 +1133,7 @@ def application(environ, start_response):
                 
                 # Obtener campos
                 nombre = fs.getvalue('nombre', '').strip()
-                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()
+                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()  # Cambiado de edad
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
@@ -1163,34 +1155,49 @@ def application(environ, start_response):
                     except:
                         imagen_tipo = "desconocido"
                 
-                # Validaciones - pero sin mostrar errores
-                hay_errores = False
+                # Validaciones simples
+                errores = []
                 
-                if not nombre or not validar_nombre(nombre):
-                    hay_errores = True
+                if not nombre:
+                    errores.append("Nombre es requerido")
                 
                 if not fecha_nacimiento:
-                    hay_errores = True
+                    errores.append("Fecha de nacimiento es requerida")
                 else:
+                    # Validar fecha de nacimiento
                     edad = calcular_edad(fecha_nacimiento)
-                    if edad is None or edad < 1 or edad > 120:
-                        hay_errores = True
+                    if edad is None:
+                        errores.append("Fecha de nacimiento inválida")
+                    elif edad < 1:
+                        errores.append("La fecha de nacimiento debe ser anterior a la fecha actual")
+                    elif edad > 120:
+                        errores.append("La edad calculada no puede ser mayor a 120 años")
                 
-                if not correo or correo != correo_confirmar:
-                    hay_errores = True
+                if not correo:
+                    errores.append("Correo es requerido")
+                elif correo != correo_confirmar:
+                    errores.append("Los correos no coinciden")
                 
                 if not imagen_data:
-                    hay_errores = True
+                    errores.append("Debe subir una imagen")
                 elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
-                    hay_errores = True
+                    errores.append("La imagen es demasiado grande (máximo 5MB)")
                 elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    hay_errores = True
+                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
                 
                 # Validar reCAPTCHA
-                if not recaptcha_response or not validar_recaptcha(recaptcha_response):
-                    hay_errores = True
+                if not recaptcha_response:
+                    errores.append("Por favor, completa el reCAPTCHA")
+                else:
+                    if not validar_recaptcha(recaptcha_response):
+                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
                 
-                if not hay_errores:
+                if errores:
+                    mensaje = f'''<div class="error">
+                        <h3>Errores encontrados:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
+                    </div>'''
+                else:
                     # Calcular edad desde fecha de nacimiento
                     edad = calcular_edad(fecha_nacimiento)
                     
@@ -1206,7 +1213,7 @@ def application(environ, start_response):
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
                                     edad INTEGER,
-                                    fecha_nacimiento DATE,
+                                    fecha_nacimiento DATE,  -- Nueva columna
                                     correo VARCHAR(100),
                                     imagen_nombre VARCHAR(255),
                                     imagen_tipo VARCHAR(20),
@@ -1234,15 +1241,18 @@ def application(environ, start_response):
                                 <p><strong>Edad calculada:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
+                                <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
+                                    <strong>reCAPTCHA verificado correctamente</strong>
+                                </p>
                             </div>'''
                             
                         except Exception as e:
-                            hay_errores = True
+                            mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
                     else:
-                        hay_errores = True
+                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
                         
             except Exception as e:
-                hay_errores = True
+                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
         # Obtener registros anteriores
         registros_html = ""
@@ -1323,7 +1333,7 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON VALIDACIÓN EN TIEMPO REAL
+        # HTML del formulario CON RECAPTCHA Y FECHA DE NACIMIENTO
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1367,15 +1377,6 @@ def application(environ, start_response):
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 16px;
-            transition: border 0.3s;
-        }}
-        input.invalido {{
-            border: 2px solid #dc3545;
-            background-color: #fff8f8;
-        }}
-        input.valido {{
-            border: 2px solid #28a745;
-            background-color: #f8fff8;
         }}
         .requerido {{ color: #dc3545; }}
         .info {{
@@ -1393,14 +1394,9 @@ def application(environ, start_response):
             font-size: 16px;
             margin-top: 20px;
             width: 100%;
-            transition: background 0.3s;
         }}
         button[type="submit"]:hover {{
             background: #218838;
-        }}
-        button[type="submit"]:disabled {{
-            background: #6c757d;
-            cursor: not-allowed;
         }}
         .exito {{
             background: #d4edda;
@@ -1410,11 +1406,13 @@ def application(environ, start_response):
             margin: 20px 0;
             border-left: 4px solid #28a745;
         }}
-        .error-message {{
-            color: #dc3545;
-            font-size: 12px;
-            margin-top: 5px;
-            display: none;
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
         }}
         hr {{
             margin: 40px 0;
@@ -1509,28 +1507,22 @@ def application(environ, start_response):
         
         {mensaje if mensaje else ''}
         
-        <form method="POST" enctype="multipart/form-data" id="formulario" onsubmit="return validarFormulario()">
+        <form method="POST" enctype="multipart/form-data" id="formulario">
             <div class="form-group">
                 <!-- Columna izquierda -->
                 <div>
-                    <!-- Nombre (solo letras) -->
+                    <!-- Nombre -->
                     <div class="campo">
                         <label>Nombre completo <span class="requerido">*</span></label>
-                        <input type="text" name="nombre" id="nombre" placeholder="Ej: Juan Pérez" required
-                               oninput="validarNombre(this)"
-                               onblur="validarNombre(this)">
-                        <div class="info">Solo letras y espacios (no se permiten números)</div>
-                        <div class="error-message" id="error-nombre">El nombre solo puede contener letras y espacios</div>
+                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
+                        <div class="info">Tu nombre completo</div>
                     </div>
                     
-                    <!-- FECHA DE NACIMIENTO -->
+                    <!-- FECHA DE NACIMIENTO (modificado de Edad) -->
                     <div class="campo">
                         <label>Fecha de nacimiento <span class="requerido">*</span></label>
-                        <input type="date" name="fecha_nacimiento" id="fecha_nacimiento" required 
-                               onchange="validarFecha(this)"
-                               max="{date.today().strftime('%Y-%m-%d')}">
+                        <input type="date" name="fecha_nacimiento" required max="{date.today().strftime('%Y-%m-%d')}">
                         <div class="info">Selecciona tu fecha de nacimiento (se calculará tu edad automáticamente)</div>
-                        <div class="error-message" id="error-fecha">Fecha de nacimiento inválida</div>
                     </div>
                 </div>
                 
@@ -1539,21 +1531,15 @@ def application(environ, start_response):
                     <!-- Correo -->
                     <div class="campo">
                         <label>Correo electrónico <span class="requerido">*</span></label>
-                        <input type="email" name="correo" id="correo" placeholder="Ej: usuario@correo.com" required
-                               oninput="validarCorreo(this)"
-                               onblur="validarCorreo(this)">
+                        <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
                         <div class="info">Cualquier correo válido</div>
-                        <div class="error-message" id="error-correo">Correo electrónico inválido</div>
                     </div>
                     
                     <!-- Confirmar Correo -->
                     <div class="campo">
                         <label>Confirmar correo <span class="requerido">*</span></label>
-                        <input type="email" name="correo_confirmar" id="correo_confirmar" placeholder="Repite tu correo" required
-                               oninput="validarConfirmacionCorreo(this)"
-                               onblur="validarConfirmacionCorreo(this)">
+                        <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
                         <div class="info">Debe coincidir con el correo anterior</div>
-                        <div class="error-message" id="error-correo-confirmar">Los correos no coinciden</div>
                     </div>
                 </div>
             </div>
@@ -1561,10 +1547,8 @@ def application(environ, start_response):
             <!-- Imagen -->
             <div class="campo">
                 <label>Subir imagen <span class="requerido">*</span></label>
-                <input type="file" name="imagen" id="imagen" accept="image/jpeg,image/png,image/gif" required
-                       onchange="validarImagen(this)">
+                <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
                 <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
-                <div class="error-message" id="error-imagen">Imagen inválida o muy grande (máximo 5MB)</div>
             </div>
             
             <!-- reCAPTCHA -->
@@ -1575,7 +1559,6 @@ def application(environ, start_response):
                     <a href="https://policies.google.com/privacy" target="_blank">Política de privacidad</a> y 
                     <a href="https://policies.google.com/terms" target="_blank">Términos de servicio</a> de Google.
                 </div>
-                <div class="error-message" id="error-recaptcha">Por favor, completa el reCAPTCHA</div>
             </div>
             
             <!-- Botón -->
@@ -1588,269 +1571,37 @@ def application(environ, start_response):
     </div>
     
     <script>
-        // Expresión regular para validar nombre (solo letras y espacios)
-        const nombreRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$/;
-        
-        // Estado de validación
-        let formularioValido = false;
-        
-        // Función para validar nombre
-        function validarNombre(input) {{
-            const valor = input.value.trim();
-            const errorElement = document.getElementById('error-nombre');
-            
-            if (valor === '') {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else if (!nombreRegex.test(valor)) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                input.classList.remove('invalido');
-                input.classList.add('valido');
-                errorElement.style.display = 'none';
-                return true;
-            }}
-        }}
-        
-        // Función para validar fecha
-        function validarFecha(input) {{
-            const valor = input.value;
-            const errorElement = document.getElementById('error-fecha');
-            const hoy = new Date();
-            const fechaSeleccionada = new Date(valor);
-            
-            if (!valor) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else if (fechaSeleccionada > hoy) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                // Calcular edad
-                const diffMs = hoy - fechaSeleccionada;
-                const edad = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25));
-                
-                if (edad < 1 || edad > 120) {{
-                    input.classList.remove('valido');
-                    input.classList.add('invalido');
-                    errorElement.style.display = 'block';
-                    return false;
-                }} else {{
-                    input.classList.remove('invalido');
-                    input.classList.add('valido');
-                    errorElement.style.display = 'none';
-                    return true;
-                }}
-            }}
-        }}
-        
-        // Función para validar correo
-        function validarCorreo(input) {{
-            const valor = input.value.trim();
-            const errorElement = document.getElementById('error-correo');
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            
-            if (!valor) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else if (!emailRegex.test(valor)) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                input.classList.remove('invalido');
-                input.classList.add('valido');
-                errorElement.style.display = 'none';
-                
-                // Validar también la confirmación
-                const confirmacion = document.getElementById('correo_confirmar');
-                if (confirmacion.value) {{
-                    validarConfirmacionCorreo(confirmacion);
-                }}
-                
-                return true;
-            }}
-        }}
-        
-        // Función para validar confirmación de correo
-        function validarConfirmacionCorreo(input) {{
-            const valor = input.value.trim();
-            const correoOriginal = document.getElementById('correo').value.trim();
-            const errorElement = document.getElementById('error-correo-confirmar');
-            
-            if (!valor) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else if (valor !== correoOriginal) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                input.classList.remove('invalido');
-                input.classList.add('valido');
-                errorElement.style.display = 'none';
-                return true;
-            }}
-        }}
-        
-        // Función para validar imagen
-        function validarImagen(input) {{
-            const errorElement = document.getElementById('error-imagen');
-            
-            if (!input.files || input.files.length === 0) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }}
-            
-            const archivo = input.files[0];
-            const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif'];
-            const tamanoMaximo = 5 * 1024 * 1024; // 5MB
-            
-            if (!tiposPermitidos.includes(archivo.type)) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else if (archivo.size > tamanoMaximo) {{
-                input.classList.remove('valido');
-                input.classList.add('invalido');
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                input.classList.remove('invalido');
-                input.classList.add('valido');
-                errorElement.style.display = 'none';
-                return true;
-            }}
-        }}
-        
-        // Función para validar reCAPTCHA
-        function validarRecaptcha() {{
+        // Validar formulario antes de enviar
+        document.getElementById('formulario').addEventListener('submit', function(e) {{
             const recaptchaResponse = grecaptcha.getResponse();
-            const errorElement = document.getElementById('error-recaptcha');
             
-            if (!recaptchaResponse) {{
-                errorElement.style.display = 'block';
-                return false;
-            }} else {{
-                errorElement.style.display = 'none';
-                return true;
-            }}
-        }}
-        
-        // Función para validar todo el formulario
-        function validarFormulario() {{
-            // Validar todos los campos
-            const nombreValido = validarNombre(document.getElementById('nombre'));
-            const fechaValida = validarFecha(document.getElementById('fecha_nacimiento'));
-            const correoValido = validarCorreo(document.getElementById('correo'));
-            const correoConfirmValido = validarConfirmacionCorreo(document.getElementById('correo_confirmar'));
-            const imagenValida = validarImagen(document.getElementById('imagen'));
-            const recaptchaValido = validarRecaptcha();
-            
-            // Verificar si todos son válidos
-            formularioValido = nombreValido && fechaValida && correoValido && correoConfirmValido && imagenValida && recaptchaValido;
-            
-            if (!formularioValido) {{
-                // Deshabilitar envío si hay errores
-                const submitBtn = document.getElementById('btn-submit');
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = 'Corrige los errores';
-                
-                // Re-habilitar después de 2 segundos
-                setTimeout(() => {{
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = 'Enviar Formulario';
-                }}, 2000);
-                
+            if (recaptchaResponse.length === 0) {{
+                e.preventDefault();
+                alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
                 return false;
             }}
             
-            // Si todo está válido, proceder con el envío
+            // Deshabilitar botón para evitar envíos múltiples
             const submitBtn = document.getElementById('btn-submit');
             submitBtn.disabled = true;
             submitBtn.innerHTML = 'Enviando...';
             
             return true;
-        }}
+        }});
         
-        // Inicializar cuando carga la página
+        // Restaurar botón si hay error
         window.onload = function() {{
+            const submitBtn = document.getElementById('btn-submit');
+            if (submitBtn) {{
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Enviar Formulario';
+            }}
+            
             // Establecer fecha máxima como hoy
-            const fechaInput = document.getElementById('fecha_nacimiento');
+            const fechaInput = document.querySelector('input[name="fecha_nacimiento"]');
             const today = new Date().toISOString().split('T')[0];
             fechaInput.setAttribute('max', today);
-            
-            // Configurar reCAPTCHA
-            if (typeof grecaptcha !== 'undefined') {{
-                grecaptcha.ready(function() {{
-                    // Validar reCAPTCHA cuando cambia
-                    const recaptchaElement = document.querySelector('.g-recaptcha');
-                    if (recaptchaElement) {{
-                        const observer = new MutationObserver(function() {{
-                            validarRecaptcha();
-                        }});
-                        
-                        observer.observe(recaptchaElement, {{ 
-                            attributes: true, 
-                            attributeFilter: ['data-sitekey', 'data-callback', 'data-expired-callback'] 
-                        }});
-                    }}
-                }});
-            }}
-            
-            // Validar todos los campos al cargar si tienen valores
-            const campos = ['nombre', 'fecha_nacimiento', 'correo', 'correo_confirmar', 'imagen'];
-            campos.forEach(campoId => {{
-                const campo = document.getElementById(campoId);
-                if (campo && campo.value) {{
-                    if (campoId === 'nombre') validarNombre(campo);
-                    else if (campoId === 'fecha_nacimiento') validarFecha(campo);
-                    else if (campoId === 'correo') validarCorreo(campo);
-                    else if (campoId === 'correo_confirmar') validarConfirmacionCorreo(campo);
-                    else if (campoId === 'imagen') validarImagen(campo);
-                }}
-            }});
         }};
-        
-        // Prevenir que se escriban números en el campo nombre
-        document.getElementById('nombre')?.addEventListener('keypress', function(e) {{
-            // Solo permitir letras, espacios y teclas de control
-            const charCode = e.charCode;
-            const charStr = String.fromCharCode(charCode);
-            
-            // Permitir teclas de control (backspace, delete, tab, etc.)
-            if (charCode === 0 || charCode === 8 || charCode === 9 || charCode === 13) {{
-                return;
-            }}
-            
-            // Permitir espacios
-            if (charCode === 32) {{
-                return;
-            }}
-            
-            // Solo permitir letras (incluyendo mayúsculas y minúsculas)
-            if (!/^[A-Za-zÁÉÍÓÚáéíóúÑñÜü]$/.test(charStr)) {{
-                e.preventDefault();
-            }}
-        }});
     </script>
 </body>
 </html>'''
