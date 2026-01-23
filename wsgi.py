@@ -9,6 +9,8 @@ import json
 from urllib.parse import urlparse, parse_qs
 import cgi
 import io
+import re  # Importamos regex para validaciones
+from datetime import datetime  # Para trabajar con fechas
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -32,6 +34,7 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Formulario</a>
             <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Carrusel</a>
+            <a href="/pagina_error" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Página Error</a>
         </nav>'''
     
     # === FUNCIONES COMUNES ===
@@ -74,6 +77,22 @@ def application(environ, start_response):
         except Exception as e:
             print(f"Error validando reCAPTCHA: {e}")
             return False
+    
+    # === FUNCIÓN PARA VALIDAR NOMBRE (solo letras) ===
+    def validar_nombre(nombre):
+        # Permite letras, espacios y algunos caracteres especiales comunes en nombres
+        patron = r'^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\'-]+$'
+        return bool(re.match(patron, nombre)) and len(nombre) >= 2
+    
+    # === FUNCIÓN PARA CALCULAR EDAD DESDE FECHA DE NACIMIENTO ===
+    def calcular_edad(fecha_nacimiento_str):
+        try:
+            fecha_nacimiento = datetime.strptime(fecha_nacimiento_str, '%Y-%m-%d')
+            hoy = datetime.now()
+            edad = hoy.year - fecha_nacimiento.year - ((hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day))
+            return edad
+        except:
+            return None
     
     # === PÁGINA CARRUSEL (modificada para solo mostrar imágenes) ===
     if path == '/carrusel':
@@ -270,11 +289,11 @@ def application(environ, start_response):
                     </div>
                     '''
                     
-                    # BOTÓN PARA IR A LA PÁGINA 404
+                    # BOTÓN PARA IR A LA PÁGINA DE ERROR
                     imagenes_html += '''
                     <div style="text-align: center; margin: 30px 0;">
-                        <a href="/pagina_no_existe" class="btn-error-404">
-                            Ir a Página 404
+                        <a href="/pagina_error" class="btn-error-404">
+                            Ir a Página de Error de Prueba
                         </a>
                     </div>
                     '''
@@ -407,8 +426,8 @@ def application(environ, start_response):
         .btn-error-404 {{
             display: inline-block;
             padding: 15px 30px;
-            background: #dc3545;
-            color: white;
+            background: #ffc107;
+            color: #212529;
             border: none;
             border-radius: 5px;
             cursor: pointer;
@@ -418,8 +437,8 @@ def application(environ, start_response):
             transition: background 0.3s;
         }}
         .btn-error-404:hover {{
-            background: #c82333;
-            color: white;
+            background: #e0a800;
+            color: #212529;
             text-decoration: none;
         }}
         .sin-imagenes {{
@@ -449,6 +468,7 @@ def application(environ, start_response):
             color: #555;
         }}
         input[type="text"],
+        input[type="date"],
         textarea,
         input[type="file"] {{
             width: 95%;
@@ -532,7 +552,7 @@ def application(environ, start_response):
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
                 <li>Elimina imágenes haciendo click en "Eliminar"</li>
                 <li>Cada imagen puede tener un título y descripción</li>
-                <li>Prueba el botón "Ir a Página 404" para ver la página de error</li>
+                <li>Prueba el botón "Ir a Página de Error" para ver una página de prueba</li>
             </ul>
         </div>
         
@@ -745,6 +765,13 @@ def application(environ, start_response):
                 <h3>Carrusel de Imágenes</h3>
                 <p>Galería interactiva de imágenes</p>
                 <a href="/carrusel">Ir a Carrusel →</a>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">⚠</div>
+                <h3>Página de Error</h3>
+                <p>Página de prueba con mensaje de error</p>
+                <a href="/pagina_error">Ir a Página Error →</a>
             </div>
         </div>
         
@@ -1125,7 +1152,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA ===
+    # === PÁGINA FORMULARIO CON RECAPTCHA (MODIFICADA) ===
     elif path == '/formulario':
         mensaje = ""
         
@@ -1141,7 +1168,7 @@ def application(environ, start_response):
                 
                 # Obtener campos
                 nombre = fs.getvalue('nombre', '').strip()
-                edad = fs.getvalue('edad', '').strip()
+                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()  # CAMBIADO: Ahora es fecha_nacimiento
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
@@ -1166,13 +1193,26 @@ def application(environ, start_response):
                 # Validaciones simples
                 errores = []
                 
+                # Validar nombre (solo letras)
                 if not nombre:
                     errores.append("Nombre es requerido")
+                elif not validar_nombre(nombre):
+                    errores.append("El nombre solo puede contener letras, espacios y algunos caracteres especiales (como apóstrofes o guiones)")
                 
-                if not edad:
-                    errores.append("Edad es requerida")
-                elif not edad.isdigit():
-                    errores.append("Edad debe ser un número")
+                # Validar fecha de nacimiento (CAMBIADO: ahora es fecha)
+                if not fecha_nacimiento:
+                    errores.append("Fecha de nacimiento es requerida")
+                else:
+                    # Calcular edad desde fecha de nacimiento
+                    edad_calculada = calcular_edad(fecha_nacimiento)
+                    if edad_calculada is None:
+                        errores.append("Fecha de nacimiento no válida")
+                    elif edad_calculada < 1:
+                        errores.append("La fecha de nacimiento debe ser válida (edad mínima: 1 año)")
+                    elif edad_calculada > 120:
+                        errores.append("La fecha de nacimiento debe ser válida (edad máxima: 120 años)")
+                    else:
+                        edad = edad_calculada  # Guardamos la edad calculada
                 
                 if not correo:
                     errores.append("Correo es requerido")
@@ -1199,17 +1239,18 @@ def application(environ, start_response):
                         <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                     </div>'''
                 else:
-                    # Guardar en PostgreSQL
+                    # Guardar en PostgreSQL (edad se calcula automáticamente)
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
                             
-                            # Crear tabla si no existe
+                            # Crear tabla si no existe (AHORA CON FECHA_NACIMIENTO)
                             cur.execute('''
                                 CREATE TABLE IF NOT EXISTS formulario_simple (
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
+                                    fecha_nacimiento DATE,
                                     edad INTEGER,
                                     correo VARCHAR(100),
                                     imagen_nombre VARCHAR(255),
@@ -1219,12 +1260,12 @@ def application(environ, start_response):
                                 )
                             ''')
                             
-                            # Insertar datos
+                            # Insertar datos (AHORA CON FECHA_NACIMIENTO y EDAD)
                             cur.execute(
                                 """INSERT INTO formulario_simple 
-                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
-                                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                   (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                                (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
                             
                             conn.commit()
@@ -1234,7 +1275,8 @@ def application(environ, start_response):
                             mensaje = f'''<div class="exito">
                                 <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Edad:</strong> {edad} años</p>
+                                <p><strong>Fecha de Nacimiento:</strong> {fecha_nacimiento}</p>
+                                <p><strong>Edad calculada:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
@@ -1257,7 +1299,7 @@ def application(environ, start_response):
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    SELECT id, nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, fecha 
                     FROM formulario_simple 
                     ORDER BY fecha DESC 
                     LIMIT 10
@@ -1279,8 +1321,9 @@ def application(environ, start_response):
                     '''
                     
                     for reg in registros:
-                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
+                        id_reg, nombre_reg, fecha_nacimiento_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
                         fecha_str = str(fecha)[:16]
+                        fecha_nacimiento_str = str(fecha_nacimiento_reg)
                         
                         # Obtener imagen en base64 para mostrar
                         img_html = ""
@@ -1307,6 +1350,7 @@ def application(environ, start_response):
                         registros_html += f'''<div class="registro">
                             <div class="registro-info">
                                 <h4>{nombre_reg}</h4>
+                                <p><strong>Fecha Nacimiento:</strong> {fecha_nacimiento_str}</p>
                                 <p><strong>Edad:</strong> {edad_reg} años</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
                                 <p><small>Registrado: {fecha_str}</small></p>
@@ -1327,7 +1371,7 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON RECAPTCHA
+        # HTML del formulario CON RECAPTCHA (MODIFICADO)
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1363,6 +1407,7 @@ def application(environ, start_response):
             color: #555;
         }}
         input[type="text"],
+        input[type="date"],
         input[type="email"],
         input[type="number"],
         input[type="file"] {{
@@ -1501,22 +1546,25 @@ def application(environ, start_response):
         
         {mensaje if mensaje else ''}
         
-        <form method="POST" enctype="multipart/form-data" id="formulario">
+        <form method="POST" enctype="multipart/form-data" id="formulario" onsubmit="return validarFormulario()">
             <div class="form-group">
                 <!-- Columna izquierda -->
                 <div>
-                    <!-- Nombre -->
+                    <!-- Nombre (SOLO LETRAS) -->
                     <div class="campo">
                         <label>Nombre completo <span class="requerido">*</span></label>
-                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
-                        <div class="info">Tu nombre completo</div>
+                        <input type="text" name="nombre" id="nombre" placeholder="Ej: Juan Pérez" required
+                               oninput="validarNombre(this)">
+                        <div class="info">Solo letras, espacios y algunos caracteres especiales (no números)</div>
+                        <div id="nombre-error" style="color: #dc3545; font-size: 14px; display: none;"></div>
                     </div>
                     
-                    <!-- Edad -->
+                    <!-- Fecha de Nacimiento (CAMBIADO de Edad) -->
                     <div class="campo">
-                        <label>Edad <span class="requerido">*</span></label>
-                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
-                        <div class="info">Entre 1 y 120 años</div>
+                        <label>Fecha de Nacimiento <span class="requerido">*</span></label>
+                        <input type="date" name="fecha_nacimiento" id="fecha_nacimiento" required
+                               max="''' + datetime.now().strftime('%Y-%m-%d') + '''">
+                        <div class="info">Selecciona tu fecha de nacimiento (se calculará tu edad automáticamente)</div>
                     </div>
                 </div>
                 
@@ -1565,13 +1613,64 @@ def application(environ, start_response):
     </div>
     
     <script>
+        // Función para validar nombre en tiempo real
+        function validarNombre(input) {{
+            const nombre = input.value;
+            const errorDiv = document.getElementById('nombre-error');
+            const patron = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\\'-]+$/;
+            
+            if (nombre.length > 0 && !patron.test(nombre)) {{
+                errorDiv.textContent = 'El nombre solo puede contener letras, espacios y algunos caracteres especiales.';
+                errorDiv.style.display = 'block';
+                input.style.borderColor = '#dc3545';
+            }} else {{
+                errorDiv.style.display = 'none';
+                input.style.borderColor = '#ddd';
+            }}
+        }}
+        
         // Validar formulario antes de enviar
         document.getElementById('formulario').addEventListener('submit', function(e) {{
+            const nombre = document.getElementById('nombre').value;
+            const fechaNacimiento = document.getElementById('fecha_nacimiento').value;
             const recaptchaResponse = grecaptcha.getResponse();
             
+            let errores = [];
+            
+            // Validar nombre
+            const patron = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s\\'-]+$/;
+            if (!patron.test(nombre)) {{
+                errores.push('El nombre solo puede contener letras, espacios y algunos caracteres especiales.');
+            }}
+            
+            // Validar fecha de nacimiento
+            if (!fechaNacimiento) {{
+                errores.push('La fecha de nacimiento es requerida.');
+            }} else {{
+                const fechaNac = new Date(fechaNacimiento);
+                const hoy = new Date();
+                const edad = hoy.getFullYear() - fechaNac.getFullYear();
+                const mes = hoy.getMonth() - fechaNac.getMonth();
+                
+                if (mes < 0 || (mes === 0 && hoy.getDate() < fechaNac.getDate())) {{
+                    edad--;
+                }}
+                
+                if (edad < 1) {{
+                    errores.push('La fecha de nacimiento debe ser válida (edad mínima: 1 año).');
+                }} else if (edad > 120) {{
+                    errores.push('La fecha de nacimiento debe ser válida (edad máxima: 120 años).');
+                }}
+            }}
+            
+            // Validar reCAPTCHA
             if (recaptchaResponse.length === 0) {{
+                errores.push('Por favor, completa el reCAPTCHA.');
+            }}
+            
+            if (errores.length > 0) {{
                 e.preventDefault();
-                alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
+                alert('Errores encontrados:\\n\\n' + errores.join('\\n'));
                 return false;
             }}
             
@@ -1590,6 +1689,13 @@ def application(environ, start_response):
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Enviar Formulario';
             }}
+            
+            // Establecer fecha máxima como hoy para fecha de nacimiento
+            const fechaInput = document.getElementById('fecha_nacimiento');
+            if (fechaInput) {{
+                const hoy = new Date();
+                fechaInput.max = hoy.toISOString().split('T')[0];
+            }}
         }};
     </script>
 </body>
@@ -1598,7 +1704,152 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA 404 ===
+    # === PÁGINA DE ERROR DE PRUEBA (NUEVA) ===
+    elif path == '/pagina_error':
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Página de Error de Prueba</title>
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{ 
+            color: #333; 
+            text-align: center;
+            margin-bottom: 40px;
+        }}
+        .mensaje-error {{
+            background: #fff3cd;
+            color: #856404;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 30px 0;
+            border-left: 6px solid #ffc107;
+            text-align: center;
+        }}
+        .contenido {{
+            background: #e9ecef;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 30px 0;
+        }}
+        .instrucciones {{
+            background: #e7f3ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }}
+        .btn-volver {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px;
+            transition: background 0.3s;
+        }}
+        .btn-volver:hover {{
+            background: #0056b3;
+        }}
+        .btn-prueba {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px;
+            transition: background 0.3s;
+        }}
+        .btn-prueba:hover {{
+            background: #218838;
+        }}
+        .codigo-error {{
+            background: #343a40;
+            color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 20px 0;
+            overflow-x: auto;
+        }}
+        .botones-container {{
+            text-align: center;
+            margin-top: 40px;
+        }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <h1>Página de Error de Prueba</h1>
+        
+        <div class="mensaje-error">
+            <h2>⚠ Esta es una página de prueba para errores</h2>
+            <p>Esta página está diseñada para simular y probar el manejo de errores en la aplicación.</p>
+            <p><strong>Nota:</strong> Este no es un error real, es solo una página de demostración.</p>
+        </div>
+        
+        <div class="contenido">
+            <h3>Propósito de esta página:</h3>
+            <p>Esta página sirve para:</p>
+            <ul>
+                <li>Probar el manejo de rutas en la aplicación</li>
+                <li>Demostrar el diseño de páginas de error</li>
+                <li>Proporcionar un ejemplo de estructura de página</li>
+                <li>Permitir pruebas de navegación entre páginas</li>
+            </ul>
+            
+            <div class="instrucciones">
+                <h4>Información importante:</h4>
+                <p>Si llegaste aquí por error, puedes usar los botones de abajo para regresar a las páginas principales.</p>
+                <p>Esta página está accesible desde el menú de navegación como "Página Error".</p>
+            </div>
+            
+            <h3>Ejemplo de código de error simulado:</h3>
+            <div class="codigo-error">
+                HTTP/1.1 200 OK<br>
+                Content-Type: text/html<br>
+                Status: Página de Prueba - No es un error real<br>
+                Message: Esta es una página de demostración para pruebas
+            </div>
+        </div>
+        
+        <div class="botones-container">
+            <a href="/" class="btn-volver">🏠 Volver al Inicio</a>
+            <a href="/formulario" class="btn-prueba">📋 Ir al Formulario</a>
+            <a href="/carrusel" class="btn-prueba">🖼️ Ir al Carrusel</a>
+            <a href="/calculadora" class="btn-prueba">🧮 Ir a la Calculadora</a>
+        </div>
+        
+        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+            <p><strong>Recordatorio:</strong> El formulario ahora tiene validación para que el nombre solo acepte letras y el campo de edad se cambió a fecha de nacimiento.</p>
+        </div>
+    </div>
+</body>
+</html>'''
+        
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+    
+    # === PÁGINA 404 REAL ===
     else:
         html = f'''<!DOCTYPE html>
 <html>
@@ -1659,17 +1910,13 @@ def application(environ, start_response):
     {navegacion()}
     <div class="container">
         <h1>404</h1>
-        <h2>Página no encontrada</h2>
+        <h2>Página no encontrada - Error Real</h2>
         
         <div class="error-message">
-            <p><strong>Lo sentimos, la página que buscas no existe.</strong></p>
-            <p>La ruta solicitada <code>{path}</code> no se encuentra en este servidor.</p>
-            <p>Posibles causas:</p>
-            <ul>
-                <li>La URL puede estar mal escrita</li>
-                <li>La página ha sido movida o eliminada</li>
-                <li>Has seguido un enlace incorrecto</li>
-            </ul>
+            <p><strong>¡Error real!</strong> La página que buscas no existe en el servidor.</p>
+            <p>La ruta solicitada <code>{path}</code> no se encuentra.</p>
+            <p>Esta es una página de error 404 real, no la página de prueba.</p>
+            <p>Si querías ver la página de prueba, ve a <a href="/pagina_error">/pagina_error</a></p>
         </div>
         
         <p>Puedes regresar a la página de inicio o usar la navegación superior.</p>
