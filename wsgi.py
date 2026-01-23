@@ -1166,8 +1166,13 @@ def application(environ, start_response):
                 # Validaciones simples
                 errores = []
                 
+                # ✅✅✅ VALIDACIÓN MODIFICADA: NOMBRE SOLO LETRAS (con espacios y acentos)
                 if not nombre:
                     errores.append("Nombre es requerido")
+                else:
+                    nombre_limpio = nombre.replace(" ", "")
+                    if not nombre_limpio.isalpha():
+                        errores.append("Nombre solo debe contener letras")
                 
                 if not edad:
                     errores.append("Edad es requerida")
