@@ -9,6 +9,8 @@ import json
 from urllib.parse import urlparse, parse_qs
 import cgi
 import io
+import re
+from datetime import datetime, date
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -23,7 +25,6 @@ def application(environ, start_response):
     # === CONFIGURACIÓN RECAPTCHA ===
     RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Clave de prueba (funciona en localhost)
     RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Secreto de prueba
-    # Para producción, obtén tus propias claves en: https://www.google.com/recaptcha/admin
     
     # === NAVEGACIÓN ===
     def navegacion():
@@ -48,29 +49,37 @@ def application(environ, start_response):
             )
         except:
             return None
+
+    # === VALIDACIONES NUEVAS ===
+    def validar_nombre_solo_letras(nombre: str) -> bool:
+        # Permite letras, espacios y acentos (incluye Ñ/ñ)
+        patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$"
+        return bool(re.match(patron, nombre)) and any(ch.isalpha() for ch in nombre)
+
+    def parsear_fecha_nacimiento(fecha_str: str):
+        # Espera YYYY-MM-DD (input type="date")
+        try:
+            return datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        except:
+            return None
+
+    def calcular_edad_desde_fecha(fecha_nac: date) -> int:
+        hoy = date.today()
+        edad = hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
+        return edad
     
     # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
     def validar_recaptcha(recaptcha_response):
         try:
-            # URL de verificación de reCAPTCHA
             url = 'https://www.google.com/recaptcha/api/siteverify'
-            
-            # Datos a enviar
             data = urllib.parse.urlencode({
                 'secret': RECAPTCHA_SECRET_KEY,
                 'response': recaptcha_response
             }).encode()
-            
-            # Crear request
             req = urllib.request.Request(url, data=data)
-            
-            # Enviar request y obtener respuesta
             response = urllib.request.urlopen(req)
             result = json.loads(response.read().decode())
-            
-            # Retornar si es válido
             return result.get('success', False)
-            
         except Exception as e:
             print(f"Error validando reCAPTCHA: {e}")
             return False
@@ -79,20 +88,16 @@ def application(environ, start_response):
     if path == '/carrusel':
         mensaje = ""
         
-        # Procesar POST (agregar nueva imagen al carrusel)
         if method == 'POST':
             try:
-                # Parsear formulario multipart
                 fs = cgi.FieldStorage(
                     fp=environ['wsgi.input'],
                     environ=environ,
                     keep_blank_values=True
                 )
                 
-                # Verificar si es para eliminar
                 eliminar_id = fs.getvalue('eliminar_id', '').strip()
                 if eliminar_id:
-                    # ELIMINAR IMAGEN
                     conn = conectar_bd()
                     if conn:
                         try:
@@ -108,11 +113,9 @@ def application(environ, start_response):
                         except Exception as e:
                             mensaje = f'<div class="error">Error al eliminar: {str(e)}</div>'
                 else:
-                    # AGREGAR NUEVA IMAGEN
                     titulo = fs.getvalue('titulo', '').strip()
                     descripcion = fs.getvalue('descripcion', '').strip()
                     
-                    # Obtener archivo
                     imagen_file = fs['imagen']
                     imagen_data = None
                     imagen_nombre = ""
@@ -121,7 +124,6 @@ def application(environ, start_response):
                     if imagen_file.filename:
                         imagen_nombre = imagen_file.filename
                         imagen_data = imagen_file.file.read()
-                        # Determinar tipo de imagen
                         try:
                             imagen_tipo = imghdr.what(None, h=imagen_data)
                             if not imagen_tipo:
@@ -129,7 +131,6 @@ def application(environ, start_response):
                         except:
                             imagen_tipo = "desconocido"
                     
-                    # Validaciones
                     errores = []
                     
                     if not titulo:
@@ -137,7 +138,7 @@ def application(environ, start_response):
                     
                     if not imagen_data:
                         errores.append("Debe subir una imagen")
-                    elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
+                    elif len(imagen_data) > 5 * 1024 * 1024:
                         errores.append("La imagen es demasiado grande (máximo 5MB)")
                     elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
                         errores.append("Solo se permiten imágenes JPG, PNG o GIF")
@@ -148,13 +149,10 @@ def application(environ, start_response):
                             <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                         </div>'''
                     else:
-                        # Guardar en PostgreSQL
                         conn = conectar_bd()
                         if conn:
                             try:
                                 cur = conn.cursor()
-                                
-                                # Crear tabla si no existe
                                 cur.execute('''
                                     CREATE TABLE IF NOT EXISTS carrusel_imagenes (
                                         id SERIAL PRIMARY KEY,
@@ -166,8 +164,6 @@ def application(environ, start_response):
                                         fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                     )
                                 ''')
-                                
-                                # Insertar datos
                                 cur.execute(
                                     """INSERT INTO carrusel_imagenes 
                                        (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data) 
@@ -193,7 +189,6 @@ def application(environ, start_response):
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
-        # Obtener imágenes del carrusel
         imagenes_html = ""
         conn = conectar_bd()
         if conn:
@@ -209,7 +204,6 @@ def application(environ, start_response):
                 conn.close()
                 
                 if imagenes:
-                    # Carrusel de imágenes
                     imagenes_html += '''
                     <div class="carrusel-container">
                         <h3>Carrusel de Imágenes</h3>
@@ -219,7 +213,6 @@ def application(environ, start_response):
                     for i, img in enumerate(imagenes):
                         id_img, titulo_img, desc_img, img_nombre, img_tipo, fecha = img
                         
-                        # Obtener imagen en base64 para mostrar
                         img_base64 = ""
                         conn2 = conectar_bd()
                         if conn2:
@@ -236,17 +229,13 @@ def application(environ, start_response):
                                 pass
                         
                         if img_base64:
-                            # Determinar si es la primera imagen (activa)
                             activa = "active" if i == 0 else ""
-                            
-                            # MODIFICACIÓN: Solo mostrar la imagen, sin texto ni botón eliminar
                             imagenes_html += f'''
                             <div class="carrusel-item {activa}" data-id="{id_img}">
                                 <div class="imagen-contenedor">
                                     <img src="data:image/{img_tipo};base64,{img_base64}" 
                                          alt="{titulo_img}"
                                          class="carrusel-imagen">
-                                    <!-- Se removió la sección de información y el botón eliminar -->
                                 </div>
                             </div>
                             '''
@@ -254,7 +243,6 @@ def application(environ, start_response):
                     imagenes_html += '''
                         </div>
                         
-                        <!-- Controles del carrusel -->
                         <div class="carrusel-controls">
                             <button class="carrusel-btn prev" onclick="carruselPrev()">◀</button>
                             <div class="carrusel-indicators" id="indicators"></div>
@@ -263,14 +251,12 @@ def application(environ, start_response):
                     </div>
                     '''
                     
-                    # Contador de imágenes
                     imagenes_html += f'''
                     <div class="contador-imagenes">
                         <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
                     '''
                     
-                    # BOTÓN PARA IR A LA PÁGINA 404
                     imagenes_html += '''
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="/pagina_no_existe" class="btn-error-404">
@@ -292,7 +278,6 @@ def application(environ, start_response):
         else:
             imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del carrusel
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -567,12 +552,10 @@ def application(environ, start_response):
     </div>
     
     <script>
-        // Variables del carrusel
         let currentSlide = 0;
         const slides = document.querySelectorAll('.carrusel-item');
         const indicatorsContainer = document.getElementById('indicators');
         
-        // Crear indicadores
         function crearIndicadores() {{
             if (!indicatorsContainer || slides.length === 0) return;
             
@@ -586,11 +569,9 @@ def application(environ, start_response):
             }}
         }}
         
-        // Mostrar slide específico
         function showSlide(index) {{
             if (slides.length === 0) return;
             
-            // Asegurar que el índice esté dentro de los límites
             if (index >= slides.length) {{
                 currentSlide = 0;
             }} else if (index < 0) {{
@@ -599,37 +580,30 @@ def application(environ, start_response):
                 currentSlide = index;
             }}
             
-            // Ocultar todos los slides
             slides.forEach(slide => {{
                 slide.classList.remove('active');
             }});
             
-            // Mostrar slide actual
             slides[currentSlide].classList.add('active');
             
-            // Actualizar indicadores
             const indicators = document.querySelectorAll('.indicator');
             indicators.forEach((indicator, i) => {{
                 indicator.classList.toggle('active', i === currentSlide);
             }});
         }}
         
-        // Slide siguiente
         function carruselNext() {{
             showSlide(currentSlide + 1);
         }}
         
-        // Slide anterior
         function carruselPrev() {{
             showSlide(currentSlide - 1);
         }}
         
-        // Ir a slide específico
         function goToSlide(index) {{
             showSlide(index);
         }}
         
-        // Auto-avance del carrusel (cada 5 segundos)
         let carruselInterval;
         function iniciarAutoPlay() {{
             if (slides.length > 1) {{
@@ -643,19 +617,16 @@ def application(environ, start_response):
             }}
         }}
         
-        // Inicializar carrusel
         document.addEventListener('DOMContentLoaded', function() {{
             crearIndicadores();
             iniciarAutoPlay();
             
-            // Pausar auto-play cuando el mouse está sobre el carrusel
             const carrusel = document.getElementById('carrusel');
             if (carrusel) {{
                 carrusel.addEventListener('mouseenter', detenerAutoPlay);
                 carrusel.addEventListener('mouseleave', iniciarAutoPlay);
             }}
             
-            // Navegación con teclado
             document.addEventListener('keydown', function(e) {{
                 if (e.key === 'ArrowLeft') {{
                     carruselPrev();
@@ -665,7 +636,6 @@ def application(environ, start_response):
             }});
         }});
         
-        // Confirmar eliminación
         function confirmarEliminacion(id) {{
             return confirm('¿Estás seguro de que quieres eliminar esta imagen del carrusel?');
         }}
@@ -764,16 +734,13 @@ def application(environ, start_response):
         resultado_suma = ""
         resultado_division = ""
         
-        # Procesar formulario de calculadora
         if method == 'POST':
             try:
-                # Obtener datos del formulario
                 content_length = int(environ.get('CONTENT_LENGTH', 0))
                 if content_length > 0:
                     post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
                     params = parse_qs(post_data)
                     
-                    # PROCESAR SUMA
                     try:
                         suma1 = params.get('suma1', [''])[0]
                         suma2 = params.get('suma2', [''])[0]
@@ -788,7 +755,6 @@ def application(environ, start_response):
                     except Exception as e:
                         resultado_suma = f"<div class='resultado-error'>Error en suma: {str(e)}</div>"
                     
-                    # PROCESAR DIVISIÓN
                     try:
                         div1 = params.get('div1', [''])[0]
                         div2 = params.get('div2', [''])[0]
@@ -809,7 +775,6 @@ def application(environ, start_response):
             except Exception as e:
                 resultado_suma = f"<div class='resultado-error'>Error general: {str(e)}</div>"
         
-        # HTML de la calculadora
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -912,7 +877,6 @@ def application(environ, start_response):
         <h1>Calculadora</h1>
         
         <div class="calculadora-grid">
-            <!-- SUMA -->
             <div class="operacion suma">
                 <h2>Suma</h2>
                 <form method="POST">
@@ -929,7 +893,6 @@ def application(environ, start_response):
                 {resultado_suma if resultado_suma else ''}
             </div>
             
-            <!-- DIVISIÓN -->
             <div class="operacion division">
                 <h2>División</h2>
                 <form method="POST">
@@ -1039,7 +1002,6 @@ def application(environ, start_response):
                 start_response('200 OK', headers)
                 return [html.encode('utf-8')]
         
-        # Si es GET, mostrar formulario de confirmación
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1125,28 +1087,26 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA ===
+    # === PÁGINA FORMULARIO CON RECAPTCHA (MODIFICADA) ===
     elif path == '/formulario':
         mensaje = ""
         
-        # Procesar POST (formulario con archivos y reCAPTCHA)
         if method == 'POST':
             try:
-                # Parsear formulario multipart
                 fs = cgi.FieldStorage(
                     fp=environ['wsgi.input'],
                     environ=environ,
                     keep_blank_values=True
                 )
                 
-                # Obtener campos
+                # Campos
                 nombre = fs.getvalue('nombre', '').strip()
-                edad = fs.getvalue('edad', '').strip()
+                fecha_nacimiento_str = fs.getvalue('fecha_nacimiento', '').strip()
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
                 
-                # Obtener archivo
+                # Archivo
                 imagen_file = fs['imagen']
                 imagen_data = None
                 imagen_nombre = ""
@@ -1155,7 +1115,6 @@ def application(environ, start_response):
                 if imagen_file.filename:
                     imagen_nombre = imagen_file.filename
                     imagen_data = imagen_file.file.read()
-                    # Determinar tipo de imagen
                     try:
                         imagen_tipo = imghdr.what(None, h=imagen_data)
                         if not imagen_tipo:
@@ -1163,35 +1122,46 @@ def application(environ, start_response):
                     except:
                         imagen_tipo = "desconocido"
                 
-                # Validaciones simples
                 errores = []
                 
-                # ✅✅✅ VALIDACIÓN MODIFICADA: NOMBRE SOLO LETRAS (con espacios y acentos)
+                # Nombre: SOLO LETRAS
                 if not nombre:
                     errores.append("Nombre es requerido")
+                elif not validar_nombre_solo_letras(nombre):
+                    errores.append("Nombre solo debe contener letras y espacios (sin números ni caracteres especiales)")
+                
+                # Fecha de nacimiento (reemplaza 'edad')
+                fecha_nacimiento = None
+                if not fecha_nacimiento_str:
+                    errores.append("Fecha de nacimiento es requerida")
                 else:
-                    nombre_limpio = nombre.replace(" ", "")
-                    if not nombre_limpio.isalpha():
-                        errores.append("Nombre solo debe contener letras")
+                    fecha_nacimiento = parsear_fecha_nacimiento(fecha_nacimiento_str)
+                    if not fecha_nacimiento:
+                        errores.append("Fecha de nacimiento no es válida")
+                    else:
+                        hoy = date.today()
+                        if fecha_nacimiento > hoy:
+                            errores.append("La fecha de nacimiento no puede ser futura")
+                        else:
+                            edad_calc = calcular_edad_desde_fecha(fecha_nacimiento)
+                            if edad_calc < 0 or edad_calc > 120:
+                                errores.append("La fecha de nacimiento no corresponde a una edad válida (0 a 120)")
                 
-                if not edad:
-                    errores.append("Edad es requerida")
-                elif not edad.isdigit():
-                    errores.append("Edad debe ser un número")
-                
+                # Correo
                 if not correo:
                     errores.append("Correo es requerido")
                 elif correo != correo_confirmar:
                     errores.append("Los correos no coinciden")
                 
+                # Imagen
                 if not imagen_data:
                     errores.append("Debe subir una imagen")
-                elif len(imagen_data) > 5 * 1024 * 1024:  # 5MB máximo
+                elif len(imagen_data) > 5 * 1024 * 1024:
                     errores.append("La imagen es demasiado grande (máximo 5MB)")
                 elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
                     errores.append("Solo se permiten imágenes JPG, PNG o GIF")
                 
-                # Validar reCAPTCHA
+                # reCAPTCHA
                 if not recaptcha_response:
                     errores.append("Por favor, completa el reCAPTCHA")
                 else:
@@ -1204,18 +1174,17 @@ def application(environ, start_response):
                         <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                     </div>'''
                 else:
-                    # Guardar en PostgreSQL
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
                             
-                            # Crear tabla si no existe
+                            # Tabla (ahora guarda fecha_nacimiento)
                             cur.execute('''
                                 CREATE TABLE IF NOT EXISTS formulario_simple (
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
-                                    edad INTEGER,
+                                    fecha_nacimiento DATE,
                                     correo VARCHAR(100),
                                     imagen_nombre VARCHAR(255),
                                     imagen_tipo VARCHAR(20),
@@ -1223,23 +1192,27 @@ def application(environ, start_response):
                                     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                 )
                             ''')
+
+                            # Si tu tabla ya existía con columna "edad", esto intenta agregar la nueva columna sin romper:
+                            cur.execute('ALTER TABLE formulario_simple ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;')
                             
-                            # Insertar datos
                             cur.execute(
                                 """INSERT INTO formulario_simple 
-                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data) 
                                    VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
                             
                             conn.commit()
                             cur.close()
                             conn.close()
-                            
+
+                            edad_mostrar = calcular_edad_desde_fecha(fecha_nacimiento)
                             mensaje = f'''<div class="exito">
                                 <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Edad:</strong> {edad} años</p>
+                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento_str}</p>
+                                <p><strong>Edad:</strong> {edad_mostrar} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
@@ -1255,14 +1228,21 @@ def application(environ, start_response):
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
         
-        # Obtener registros anteriores
+        # Registros (ahora muestra fecha_nacimiento y edad calculada)
         registros_html = ""
         conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    SELECT 
+                        id, 
+                        nombre, 
+                        fecha_nacimiento,
+                        correo, 
+                        imagen_nombre, 
+                        imagen_tipo, 
+                        fecha 
                     FROM formulario_simple 
                     ORDER BY fecha DESC 
                     LIMIT 10
@@ -1284,10 +1264,19 @@ def application(environ, start_response):
                     '''
                     
                     for reg in registros:
-                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
-                        fecha_str = str(fecha)[:16]
+                        id_reg, nombre_reg, fecha_nac_reg, correo_reg, img_nombre, img_tipo, fecha_registro = reg
+                        fecha_str = str(fecha_registro)[:16]
+
+                        edad_reg = ""
+                        fecha_nac_str = ""
+                        if fecha_nac_reg:
+                            try:
+                                # fecha_nac_reg ya viene como date
+                                fecha_nac_str = str(fecha_nac_reg)
+                                edad_reg = calcular_edad_desde_fecha(fecha_nac_reg)
+                            except:
+                                pass
                         
-                        # Obtener imagen en base64 para mostrar
                         img_html = ""
                         conn2 = conectar_bd()
                         if conn2:
@@ -1312,7 +1301,8 @@ def application(environ, start_response):
                         registros_html += f'''<div class="registro">
                             <div class="registro-info">
                                 <h4>{nombre_reg}</h4>
-                                <p><strong>Edad:</strong> {edad_reg} años</p>
+                                <p><strong>Fecha de nacimiento:</strong> {fecha_nac_str if fecha_nac_str else 'No registrada'}</p>
+                                <p><strong>Edad:</strong> {str(edad_reg) + " años" if str(edad_reg) != "" else 'No disponible'}</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
                                 <p><small>Registrado: {fecha_str}</small></p>
                             </div>
@@ -1332,7 +1322,6 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON RECAPTCHA
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1369,7 +1358,7 @@ def application(environ, start_response):
         }}
         input[type="text"],
         input[type="email"],
-        input[type="number"],
+        input[type="date"],
         input[type="file"] {{
             width: 95%;
             padding: 10px;
@@ -1508,33 +1497,27 @@ def application(environ, start_response):
         
         <form method="POST" enctype="multipart/form-data" id="formulario">
             <div class="form-group">
-                <!-- Columna izquierda -->
                 <div>
-                    <!-- Nombre -->
                     <div class="campo">
                         <label>Nombre completo <span class="requerido">*</span></label>
                         <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
-                        <div class="info">Tu nombre completo</div>
+                        <div class="info">Solo letras y espacios</div>
                     </div>
                     
-                    <!-- Edad -->
                     <div class="campo">
-                        <label>Edad <span class="requerido">*</span></label>
-                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
-                        <div class="info">Entre 1 y 120 años</div>
+                        <label>Fecha de nacimiento <span class="requerido">*</span></label>
+                        <input type="date" name="fecha_nacimiento" required>
+                        <div class="info">Selecciona tu fecha de nacimiento</div>
                     </div>
                 </div>
                 
-                <!-- Columna derecha -->
                 <div>
-                    <!-- Correo -->
                     <div class="campo">
                         <label>Correo electrónico <span class="requerido">*</span></label>
                         <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
                         <div class="info">Cualquier correo válido</div>
                     </div>
                     
-                    <!-- Confirmar Correo -->
                     <div class="campo">
                         <label>Confirmar correo <span class="requerido">*</span></label>
                         <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
@@ -1543,14 +1526,12 @@ def application(environ, start_response):
                 </div>
             </div>
             
-            <!-- Imagen -->
             <div class="campo">
                 <label>Subir imagen <span class="requerido">*</span></label>
                 <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
                 <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
             </div>
             
-            <!-- reCAPTCHA -->
             <div class="recaptcha-container">
                 <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
                 <div class="recaptcha-nota">
@@ -1560,7 +1541,6 @@ def application(environ, start_response):
                 </div>
             </div>
             
-            <!-- Botón -->
             <button type="submit" id="btn-submit">Enviar Formulario</button>
         </form>
         
@@ -1570,25 +1550,20 @@ def application(environ, start_response):
     </div>
     
     <script>
-        // Validar formulario antes de enviar
         document.getElementById('formulario').addEventListener('submit', function(e) {{
             const recaptchaResponse = grecaptcha.getResponse();
-            
             if (recaptchaResponse.length === 0) {{
                 e.preventDefault();
                 alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
                 return false;
             }}
             
-            // Deshabilitar botón para evitar envíos múltiples
             const submitBtn = document.getElementById('btn-submit');
             submitBtn.disabled = true;
             submitBtn.innerHTML = 'Enviando...';
-            
             return true;
         }});
         
-        // Restaurar botón si hay error
         window.onload = function() {{
             const submitBtn = document.getElementById('btn-submit');
             if (submitBtn) {{
