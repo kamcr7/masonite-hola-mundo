@@ -9,7 +9,6 @@ import json
 from urllib.parse import urlparse, parse_qs
 import cgi
 import io
-from datetime import datetime, date
 
 def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
@@ -33,7 +32,6 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Formulario</a>
             <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Carrusel</a>
-            <a href="/pagina_404" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Página 404</a>
         </nav>'''
     
     # === FUNCIONES COMUNES ===
@@ -271,6 +269,15 @@ def application(environ, start_response):
                         <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
                     </div>
                     '''
+                    
+                    # BOTÓN PARA IR A LA PÁGINA 404
+                    imagenes_html += '''
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="/pagina_no_existe" class="btn-error-404">
+                            Ir a Página 404
+                        </a>
+                    </div>
+                    '''
                 else:
                     imagenes_html = '''
                     <div class="sin-imagenes">
@@ -397,6 +404,24 @@ def application(environ, start_response):
             background: #e7f3ff;
             border-radius: 5px;
         }}
+        .btn-error-404 {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            transition: background 0.3s;
+        }}
+        .btn-error-404:hover {{
+            background: #c82333;
+            color: white;
+            text-decoration: none;
+        }}
         .sin-imagenes {{
             text-align: center;
             padding: 60px 20px;
@@ -507,6 +532,7 @@ def application(environ, start_response):
                 <li>Navega entre imágenes usando los botones ◀ ▶</li>
                 <li>Elimina imágenes haciendo click en "Eliminar"</li>
                 <li>Cada imagen puede tener un título y descripción</li>
+                <li>Prueba el botón "Ir a Página 404" para ver la página de error</li>
             </ul>
         </div>
         
@@ -719,13 +745,6 @@ def application(environ, start_response):
                 <h3>Carrusel de Imágenes</h3>
                 <p>Galería interactiva de imágenes</p>
                 <a href="/carrusel">Ir a Carrusel →</a>
-            </div>
-            
-            <div class="feature">
-                <div class="feature-icon">404</div>
-                <h3>Página 404</h3>
-                <p>Página de error personalizada</p>
-                <a href="/pagina_404">Ir a Página 404 →</a>
             </div>
         </div>
         
@@ -1106,7 +1125,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA FORMULARIO CON RECAPTCHA (MODIFICADA) ===
+    # === PÁGINA FORMULARIO CON RECAPTCHA ===
     elif path == '/formulario':
         mensaje = ""
         
@@ -1122,7 +1141,7 @@ def application(environ, start_response):
                 
                 # Obtener campos
                 nombre = fs.getvalue('nombre', '').strip()
-                fecha_nacimiento = fs.getvalue('fecha_nacimiento', '').strip()
+                edad = fs.getvalue('edad', '').strip()
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
                 recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
@@ -1147,29 +1166,13 @@ def application(environ, start_response):
                 # Validaciones simples
                 errores = []
                 
-                # Validar nombre - solo letras y espacios
                 if not nombre:
                     errores.append("Nombre es requerido")
-                elif any(char.isdigit() for char in nombre):
-                    errores.append("El nombre no puede contener números")
                 
-                # Validar fecha de nacimiento
-                if not fecha_nacimiento:
-                    errores.append("Fecha de nacimiento es requerida")
-                else:
-                    try:
-                        fecha_nac = datetime.strptime(fecha_nacimiento, '%Y-%m-%d')
-                        hoy = date.today()
-                        edad = hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
-                        
-                        if edad < 0:
-                            errores.append("La fecha de nacimiento no puede ser futura")
-                        elif edad > 120:
-                            errores.append("La edad no puede ser mayor a 120 años")
-                        elif edad < 1:
-                            errores.append("La edad debe ser al menos 1 año")
-                    except ValueError:
-                        errores.append("Formato de fecha inválido. Use YYYY-MM-DD")
+                if not edad:
+                    errores.append("Edad es requerida")
+                elif not edad.isdigit():
+                    errores.append("Edad debe ser un número")
                 
                 if not correo:
                     errores.append("Correo es requerido")
@@ -1196,23 +1199,17 @@ def application(environ, start_response):
                         <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
                     </div>'''
                 else:
-                    # Calcular edad para guardar en BD
-                    fecha_nac = datetime.strptime(fecha_nacimiento, '%Y-%m-%d')
-                    hoy = date.today()
-                    edad_calculada = hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
-                    
                     # Guardar en PostgreSQL
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
                             
-                            # Crear tabla si no existe (actualizada para fecha_nacimiento)
+                            # Crear tabla si no existe
                             cur.execute('''
                                 CREATE TABLE IF NOT EXISTS formulario_simple (
                                     id SERIAL PRIMARY KEY,
                                     nombre VARCHAR(100),
-                                    fecha_nacimiento DATE,
                                     edad INTEGER,
                                     correo VARCHAR(100),
                                     imagen_nombre VARCHAR(255),
@@ -1225,9 +1222,9 @@ def application(environ, start_response):
                             # Insertar datos
                             cur.execute(
                                 """INSERT INTO formulario_simple 
-                                   (nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
-                                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                                (nombre, fecha_nacimiento, edad_calculada, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                   (nombre, edad, correo, imagen_nombre, imagen_tipo, imagen_data) 
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                                (nombre, int(edad), correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
                             
                             conn.commit()
@@ -1237,8 +1234,7 @@ def application(environ, start_response):
                             mensaje = f'''<div class="exito">
                                 <h3>¡Registro exitoso!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento}</p>
-                                <p><strong>Edad calculada:</strong> {edad_calculada} años</p>
+                                <p><strong>Edad:</strong> {edad} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
                                 <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
@@ -1261,7 +1257,7 @@ def application(environ, start_response):
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, nombre, fecha_nacimiento, edad, correo, imagen_nombre, imagen_tipo, fecha 
+                    SELECT id, nombre, edad, correo, imagen_nombre, imagen_tipo, fecha 
                     FROM formulario_simple 
                     ORDER BY fecha DESC 
                     LIMIT 10
@@ -1283,9 +1279,8 @@ def application(environ, start_response):
                     '''
                     
                     for reg in registros:
-                        id_reg, nombre_reg, fecha_nac_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
+                        id_reg, nombre_reg, edad_reg, correo_reg, img_nombre, img_tipo, fecha = reg
                         fecha_str = str(fecha)[:16]
-                        fecha_nac_formatted = str(fecha_nac_reg) if fecha_nac_reg else "No especificada"
                         
                         # Obtener imagen en base64 para mostrar
                         img_html = ""
@@ -1312,7 +1307,6 @@ def application(environ, start_response):
                         registros_html += f'''<div class="registro">
                             <div class="registro-info">
                                 <h4>{nombre_reg}</h4>
-                                <p><strong>Fecha nacimiento:</strong> {fecha_nac_formatted}</p>
                                 <p><strong>Edad:</strong> {edad_reg} años</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
                                 <p><small>Registrado: {fecha_str}</small></p>
@@ -1333,7 +1327,7 @@ def application(environ, start_response):
         else:
             registros_html = '<p class="error">No hay conexión a la base de datos</p>'
         
-        # HTML del formulario CON RECAPTCHA (MODIFICADO)
+        # HTML del formulario CON RECAPTCHA
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1370,7 +1364,7 @@ def application(environ, start_response):
         }}
         input[type="text"],
         input[type="email"],
-        input[type="date"],
+        input[type="number"],
         input[type="file"] {{
             width: 95%;
             padding: 10px;
@@ -1514,19 +1508,15 @@ def application(environ, start_response):
                     <!-- Nombre -->
                     <div class="campo">
                         <label>Nombre completo <span class="requerido">*</span></label>
-                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" 
-                               pattern="[A-Za-záéíóúÁÉÍÓÚñÑ\s]+" 
-                               title="Solo letras y espacios" required>
-                        <div class="info">Solo letras y espacios (no números)</div>
+                        <input type="text" name="nombre" placeholder="Ej: Juan Pérez" required>
+                        <div class="info">Tu nombre completo</div>
                     </div>
                     
-                    <!-- Fecha de nacimiento -->
+                    <!-- Edad -->
                     <div class="campo">
-                        <label>Fecha de nacimiento <span class="requerido">*</span></label>
-                        <input type="date" name="fecha_nacimiento" required 
-                               max="{date.today().strftime('%Y-%m-%d')}"
-                               min="{(date.today().replace(year=date.today().year - 120)).strftime('%Y-%m-%d')}">
-                        <div class="info">Formato: AAAA-MM-DD (entre 1 y 120 años)</div>
+                        <label>Edad <span class="requerido">*</span></label>
+                        <input type="number" name="edad" placeholder="Ej: 25" min="1" max="120" required>
+                        <div class="info">Entre 1 y 120 años</div>
                     </div>
                 </div>
                 
@@ -1585,47 +1575,12 @@ def application(environ, start_response):
                 return false;
             }}
             
-            // Validar nombre (solo letras)
-            const nombreInput = document.querySelector('input[name="nombre"]');
-            const nombreValue = nombreInput.value.trim();
-            const nombreRegex = /^[A-Za-záéíóúÁÉÍÓÚñÑ\s]+$/;
-            
-            if (!nombreRegex.test(nombreValue)) {{
-                e.preventDefault();
-                alert('El nombre solo puede contener letras y espacios.');
-                nombreInput.focus();
-                return false;
-            }}
-            
-            // Validar fecha de nacimiento
-            const fechaInput = document.querySelector('input[name="fecha_nacimiento"]');
-            if (fechaInput.value) {{
-                const fechaNac = new Date(fechaInput.value);
-                const hoy = new Date();
-                const edad = hoy.getFullYear() - fechaNac.getFullYear();
-                
-                if (edad < 1 || edad > 120) {{
-                    e.preventDefault();
-                    alert('La edad debe estar entre 1 y 120 años.');
-                    fechaInput.focus();
-                    return false;
-                }}
-            }}
-            
             // Deshabilitar botón para evitar envíos múltiples
             const submitBtn = document.getElementById('btn-submit');
             submitBtn.disabled = true;
             submitBtn.innerHTML = 'Enviando...';
             
             return true;
-        }});
-        
-        // Validar nombre en tiempo real
-        document.querySelector('input[name="nombre"]').addEventListener('input', function(e) {{
-            const regex = /^[A-Za-záéíóúÁÉÍÓÚñÑ\s]*$/;
-            if (!regex.test(this.value)) {{
-                this.value = this.value.replace(/[^A-Za-záéíóúÁÉÍÓÚñÑ\s]/g, '');
-            }}
         }});
         
         // Restaurar botón si hay error
@@ -1643,168 +1598,7 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
     
-    # === PÁGINA 404 PERSONALIZADA (como página normal) ===
-    elif path == '/pagina_404':
-        html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Página 404 - Página no encontrada</title>
-    <style>
-        body {{ 
-            font-family: Arial, sans-serif; 
-            max-width: 900px; 
-            margin: 40px auto; 
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{ 
-            color: #333; 
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .error-container {{
-            text-align: center;
-            padding: 40px;
-            margin: 30px 0;
-            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
-            border-radius: 10px;
-            border-left: 6px solid #dc3545;
-        }}
-        .error-code {{
-            font-size: 120px;
-            color: #dc3545;
-            font-weight: bold;
-            margin: 0;
-            line-height: 1;
-        }}
-        .error-title {{
-            font-size: 32px;
-            color: #721c24;
-            margin: 20px 0;
-        }}
-        .error-message {{
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 30px 0;
-            text-align: left;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }}
-        .suggestions {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 40px 0;
-        }}
-        .suggestion {{
-            background: #e9ecef;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }}
-        .suggestion-icon {{
-            font-size: 40px;
-            margin-bottom: 15px;
-            color: #6c757d;
-        }}
-        .btn-volver {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            margin: 20px 10px;
-            transition: background 0.3s;
-        }}
-        .btn-volver:hover {{
-            background: #0056b3;
-        }}
-        .btn-home {{
-            background: #28a745;
-        }}
-        .btn-home:hover {{
-            background: #218838;
-        }}
-        .btn-report {{
-            background: #6c757d;
-        }}
-        .btn-report:hover {{
-            background: #5a6268;
-        }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>Página 404 - Error Controlado</h1>
-        
-        <div class="error-container">
-            <div class="error-code">404</div>
-            <h2 class="error-title">Página no encontrada</h2>
-            <p>Esta es una página de error 404 controlada que puedes visitar directamente.</p>
-        </div>
-        
-        <div class="error-message">
-            <h3>¿Qué significa el error 404?</h3>
-            <p>Un error 404 indica que el servidor no pudo encontrar el recurso solicitado. Esto puede ocurrir por varias razones:</p>
-            <ul>
-                <li>La URL puede estar mal escrita o tener errores de tipeo</li>
-                <li>La página ha sido movida o eliminada</li>
-                <li>El enlace que seguiste puede estar desactualizado</li>
-                <li>Problemas temporales del servidor</li>
-            </ul>
-            <p><strong>Nota:</strong> Esta es una página 404 controlada. Si intentas acceder a una ruta que realmente no existe, verás esta misma página pero con el mensaje de error correspondiente.</p>
-        </div>
-        
-        <div class="suggestions">
-            <div class="suggestion">
-                <div class="suggestion-icon">🔍</div>
-                <h4>Verifica la URL</h4>
-                <p>Asegúrate de que la dirección web esté escrita correctamente.</p>
-            </div>
-            
-            <div class="suggestion">
-                <div class="suggestion-icon">↩️</div>
-                <h4>Usa la navegación</h4>
-                <p>Utiliza los enlaces de navegación en la parte superior.</p>
-            </div>
-            
-            <div class="suggestion">
-                <div class="suggestion-icon">🏠</div>
-                <h4>Vuelve al inicio</h4>
-                <p>Regresa a la página principal y navega desde allí.</p>
-            </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 40px;">
-            <a href="/" class="btn-volver btn-home">🏠 Volver al Inicio</a>
-            <a href="/formulario" class="btn-volver">📋 Ir al Formulario</a>
-            <a href="/carrusel" class="btn-volver">🖼️ Ir al Carrusel</a>
-        </div>
-        
-        <div style="text-align: center; margin-top: 30px; padding: 20px; background: #e7f3ff; border-radius: 8px;">
-            <h3>¿Necesitas ayuda?</h3>
-            <p>Si crees que esto es un error o necesitas asistencia, por favor contacta al administrador del sitio.</p>
-            <p style="margin-top: 10px;"><strong>Prueba una ruta que no existe:</strong> <a href="/ruta_inexistente_123">/ruta_inexistente_123</a></p>
-        </div>
-    </div>
-</body>
-</html>'''
-        
-        start_response('200 OK', headers)
-        return [html.encode('utf-8')]
-    
-    # === PÁGINA 404 PARA RUTAS REALMENTE NO EXISTENTES ===
+    # === PÁGINA 404 ===
     else:
         html = f'''<!DOCTYPE html>
 <html>
@@ -1876,13 +1670,11 @@ def application(environ, start_response):
                 <li>La página ha sido movida o eliminada</li>
                 <li>Has seguido un enlace incorrecto</li>
             </ul>
-            <p style="margin-top: 15px;"><strong>Nota:</strong> Existe una página 404 controlada que puedes visitar en <a href="/pagina_404">/pagina_404</a></p>
         </div>
         
         <p>Puedes regresar a la página de inicio o usar la navegación superior.</p>
         
         <a href="/" class="btn-volver">Volver al Inicio</a>
-        <a href="/pagina_404" class="btn-volver" style="background: #6c757d; margin-left: 10px;">Ver Página 404 Controlada</a>
     </div>
 </body>
 </html>'''
