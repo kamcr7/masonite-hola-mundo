@@ -15,17 +15,13 @@ def application(environ, start_response):
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
 
-    # Headers UTF-8
     headers = [('Content-Type', 'text/html; charset=utf-8')]
 
-    # === CONFIGURACIÓN ===
     DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
 
-    # === CONFIGURACIÓN RECAPTCHA ===
-    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Clave de prueba
-    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Secreto de prueba
+    RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
+    RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
-    # === NAVEGACIÓN ===
     def navegacion():
         return '''<nav style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
             <a href="/" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Inicio</a>
@@ -36,7 +32,6 @@ def application(environ, start_response):
             <a href="/simular_404" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Simular 404</a>
         </nav>'''
 
-    # === FUNCIONES COMUNES ===
     def conectar_bd():
         try:
             result = urlparse(DATABASE_URL)
@@ -51,7 +46,6 @@ def application(environ, start_response):
         except:
             return None
 
-    # === VALIDACIONES ===
     def validar_nombre_solo_letras(nombre: str) -> bool:
         patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$"
         return bool(re.fullmatch(patron, nombre))
@@ -66,7 +60,6 @@ def application(environ, start_response):
         hoy = date.today()
         return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
 
-    # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
     def validar_recaptcha(recaptcha_response):
         try:
             url = 'https://www.google.com/recaptcha/api/siteverify'
@@ -92,73 +85,88 @@ def application(environ, start_response):
             try:
                 fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
 
-                imagen_file = fs['imagen']
-                imagen_data = None
-                imagen_nombre = ""
-                imagen_tipo = ""
-
-                if hasattr(imagen_file, "filename") and imagen_file.filename:
-                    imagen_nombre = imagen_file.filename
-                    imagen_data = imagen_file.file.read()
-                    try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
-                    except:
-                        imagen_tipo = "desconocido"
-
-                errores = []
-                if not imagen_data:
-                    errores.append("Debe subir una imagen")
-                elif len(imagen_data) > 5 * 1024 * 1024:
-                    errores.append("La imagen es demasiado grande (máximo 5MB)")
-                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
-
-                if errores:
-                    mensaje = f'''<div class="error"><h3>Errores encontrados:</h3>
-                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
-                else:
-                    # Guardar con titulo = nombre de archivo (automático)
-                    titulo = imagen_nombre if imagen_nombre else "Imagen"
-                    descripcion = ""
-
+                eliminar_id = (fs.getvalue('eliminar_id') or '').strip()
+                if eliminar_id:
                     conn = conectar_bd()
                     if conn:
                         try:
                             cur = conn.cursor()
-                            cur.execute('''
-                                CREATE TABLE IF NOT EXISTS carrusel_imagenes (
-                                    id SERIAL PRIMARY KEY,
-                                    titulo VARCHAR(100),
-                                    descripcion TEXT,
-                                    imagen_nombre VARCHAR(255),
-                                    imagen_tipo VARCHAR(20),
-                                    imagen_data BYTEA,
-                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                )
-                            ''')
-                            cur.execute(
-                                """INSERT INTO carrusel_imagenes
-                                   (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data)
-                                   VALUES (%s, %s, %s, %s, %s)""",
-                                (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
-                            )
+                            cur.execute("DELETE FROM carrusel_imagenes WHERE id = %s", (eliminar_id,))
                             conn.commit()
                             cur.close()
                             conn.close()
-
-                            mensaje = f'''<div class="exito">
-                                <h3>¡Imagen agregada al carrusel!</h3>
-                                <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                            </div>'''
+                            mensaje = "<div class='exito'><h3>Imagen eliminada</h3><p>Se eliminó correctamente.</p></div>"
                         except Exception as e:
-                            mensaje = f'<div class="error">Error al guardar: {str(e)}</div>'
+                            mensaje = f"<div class='error'>Error al eliminar: {str(e)}</div>"
                     else:
-                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
+                        mensaje = "<div class='error'>Error de conexión a la base de datos</div>"
+                else:
+                    imagen_file = fs['imagen']
+                    imagen_data = None
+                    imagen_nombre = ""
+                    imagen_tipo = ""
+
+                    if hasattr(imagen_file, "filename") and imagen_file.filename:
+                        imagen_nombre = imagen_file.filename
+                        imagen_data = imagen_file.file.read()
+                        try:
+                            imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
+                        except:
+                            imagen_tipo = "desconocido"
+
+                    errores = []
+                    if not imagen_data:
+                        errores.append("Debe subir una imagen")
+                    elif len(imagen_data) > 5 * 1024 * 1024:
+                        errores.append("La imagen es demasiado grande (máximo 5MB)")
+                    elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
+                        errores.append("Solo se permiten imágenes JPG, PNG o GIF")
+
+                    if errores:
+                        mensaje = f'''<div class="error"><h3>Errores encontrados:</h3>
+                            <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
+                    else:
+                        titulo = imagen_nombre if imagen_nombre else "Imagen"
+                        descripcion = ""
+
+                        conn = conectar_bd()
+                        if conn:
+                            try:
+                                cur = conn.cursor()
+                                cur.execute('''
+                                    CREATE TABLE IF NOT EXISTS carrusel_imagenes (
+                                        id SERIAL PRIMARY KEY,
+                                        titulo VARCHAR(100),
+                                        descripcion TEXT,
+                                        imagen_nombre VARCHAR(255),
+                                        imagen_tipo VARCHAR(20),
+                                        imagen_data BYTEA,
+                                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                    )
+                                ''')
+                                cur.execute(
+                                    """INSERT INTO carrusel_imagenes
+                                       (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data)
+                                       VALUES (%s, %s, %s, %s, %s)""",
+                                    (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                                )
+                                conn.commit()
+                                cur.close()
+                                conn.close()
+
+                                mensaje = f'''<div class="exito">
+                                    <h3>¡Imagen agregada!</h3>
+                                    <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
+                                </div>'''
+                            except Exception as e:
+                                mensaje = f'<div class="error">Error al guardar: {str(e)}</div>'
+                        else:
+                            mensaje = '<div class="error">Error de conexión a la base de datos</div>'
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
         # Obtener imágenes
-        imagenes_html = ""
+        imagenes = []
         conn = conectar_bd()
         if conn:
             try:
@@ -171,59 +179,66 @@ def application(environ, start_response):
                 imagenes = cur.fetchall()
                 cur.close()
                 conn.close()
+            except:
+                imagenes = []
 
-                if imagenes:
-                    imagenes_html += '''
-                    <div class="carrusel-container">
-                        <h3>Carrusel de Imágenes</h3>
-                        <div class="carrusel" id="carrusel">
-                    '''
+        imagenes_html = ""
+        if imagenes:
+            imagenes_html += '''
+            <div class="carrusel-container">
+                <h3>Carrusel de Imágenes</h3>
+                <div class="carrusel" id="carrusel">
+            '''
 
-                    for i, img in enumerate(imagenes):
-                        id_img, titulo_img, img_tipo, fecha = img
+            for i, img in enumerate(imagenes):
+                id_img, titulo_img, img_tipo, fecha = img
 
-                        img_base64 = ""
-                        conn2 = conectar_bd()
-                        if conn2:
-                            try:
-                                cur2 = conn2.cursor()
-                                cur2.execute("SELECT imagen_data FROM carrusel_imagenes WHERE id = %s", (id_img,))
-                                img_data = cur2.fetchone()[0]
-                                cur2.close()
-                                conn2.close()
-                                if img_data:
-                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                            except:
-                                pass
+                img_base64 = ""
+                conn2 = conectar_bd()
+                if conn2:
+                    try:
+                        cur2 = conn2.cursor()
+                        cur2.execute("SELECT imagen_data, imagen_nombre FROM carrusel_imagenes WHERE id = %s", (id_img,))
+                        row = cur2.fetchone()
+                        cur2.close()
+                        conn2.close()
+                        if row and row[0]:
+                            img_data = row[0]
+                            img_nombre = row[1] if row[1] else ""
+                            img_base64 = base64.b64encode(img_data).decode('utf-8')
+                        else:
+                            img_nombre = ""
+                    except:
+                        img_nombre = ""
 
-                        if img_base64:
-                            activa = "active" if i == 0 else ""
-                            imagenes_html += f'''
-                            <div class="carrusel-item {activa}">
-                                <img src="data:image/{img_tipo};base64,{img_base64}" class="carrusel-imagen" alt="{titulo_img}">
-                            </div>
-                            '''
-
-                    imagenes_html += '''
-                        </div>
-                        <div class="carrusel-controls">
-                            <button class="carrusel-btn prev" onclick="carruselPrev()">◀</button>
-                            <div class="carrusel-indicators" id="indicators"></div>
-                            <button class="carrusel-btn next" onclick="carruselNext()">▶</button>
-                        </div>
+                if img_base64:
+                    activa = "active" if i == 0 else ""
+                    imagenes_html += f'''
+                    <div class="carrusel-item {activa}">
+                        <img src="data:image/{img_tipo};base64,{img_base64}" class="carrusel-imagen" alt="{titulo_img}">
+                        <form method="POST" style="margin-top: 15px;" onsubmit="return confirm('¿Eliminar esta imagen?');">
+                            <input type="hidden" name="eliminar_id" value="{id_img}">
+                            <button type="submit" class="btn-eliminar">Eliminar</button>
+                        </form>
                     </div>
                     '''
-                else:
-                    imagenes_html = '''
-                    <div class="sin-imagenes">
-                        <h3>No hay imágenes en el carrusel</h3>
-                        <p>Agrega tu primera imagen usando el formulario de abajo.</p>
-                    </div>
-                    '''
-            except Exception as e:
-                imagenes_html = f'<p class="error">Error cargando imágenes: {str(e)}</p>'
+
+            imagenes_html += '''
+                </div>
+                <div class="carrusel-controls">
+                    <button class="carrusel-btn prev" onclick="carruselPrev()">◀</button>
+                    <div class="carrusel-indicators" id="indicators"></div>
+                    <button class="carrusel-btn next" onclick="carruselNext()">▶</button>
+                </div>
+            </div>
+            '''
         else:
-            imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
+            imagenes_html = '''
+            <div class="sin-imagenes">
+                <h3>No hay imágenes en el carrusel</h3>
+                <p>Agrega tu primera imagen usando el formulario de abajo.</p>
+            </div>
+            '''
 
         html = f'''<!DOCTYPE html>
 <html>
@@ -251,6 +266,8 @@ def application(environ, start_response):
         input[type="file"] {{ width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background:white; }}
         .btn-agregar {{ width:100%; padding: 14px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; }}
         .btn-agregar:hover {{ background:#218838; }}
+        .btn-eliminar {{ padding: 10px 18px; background:#dc3545; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; }}
+        .btn-eliminar:hover {{ background:#c82333; }}
         .exito {{ background:#d4edda; color:#155724; padding:15px; border-radius:6px; border-left:4px solid #28a745; margin: 15px 0; }}
         .error {{ background:#f8d7da; color:#721c24; padding:15px; border-radius:6px; border-left:4px solid #dc3545; margin: 15px 0; }}
         .sin-imagenes {{ text-align:center; padding: 30px; background:#e9ecef; border-radius:10px; }}
@@ -321,8 +338,7 @@ def application(environ, start_response):
         return [html.encode('utf-8')]
 
     # =========================================
-    # ========= NUEVA PÁGINA: SIMULAR 404 ======
-    # (una ruta REAL que muestra la pantalla 404)
+    # ========= SIMULAR 404 (SIN RECUADRO) =====
     # =========================================
     if path == '/simular_404':
         html = f'''<!DOCTYPE html>
@@ -346,18 +362,11 @@ def application(environ, start_response):
             text-align: center;
         }}
         h1 {{ color: #dc3545; font-size: 48px; margin-bottom: 10px; }}
-        h2 {{ color: #333; margin-bottom: 25px; }}
-        .msg {{
-            background: #f8d7da;
-            color: #721c24;
-            padding: 18px;
-            border-radius: 8px;
-            border-left: 4px solid #dc3545;
-            text-align: left;
-        }}
+        h2 {{ color: #333; margin-bottom: 20px; }}
+        p {{ color:#555; font-size:16px; line-height:1.5; }}
         .btn {{
             display: inline-block;
-            margin-top: 20px;
+            margin-top: 25px;
             padding: 14px 26px;
             background: #007bff;
             color: white;
@@ -373,10 +382,7 @@ def application(environ, start_response):
     <div class="container">
         <h1>404</h1>
         <h2>Simulación de página no encontrada</h2>
-        <div class="msg">
-            <p><strong>Esta es una simulación.</strong></p>
-            <p>La ruta simulada es <code>/simular_404</code> (existe), pero responde como 404 para probar tu pantalla.</p>
-        </div>
+        <p>Esta ruta <code>/simular_404</code> existe, pero responde como <strong>404</strong> para que pruebes tu pantalla.</p>
         <a href="/" class="btn">Volver al Inicio</a>
     </div>
 </body>
@@ -385,8 +391,7 @@ def application(environ, start_response):
         return [html.encode('utf-8')]
 
     # ==================================================
-    # ===== NUEVA PÁGINA: SOLO NOMBRE + reCAPTCHA =======
-    #      Guarda nombres y los muestra abajo
+    # ===== NOMBRE + reCAPTCHA (sin cambios) ============
     # ==================================================
     if path == '/nombre_recaptcha':
         mensaje = ""
@@ -440,7 +445,6 @@ def application(environ, start_response):
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
-        # Lista de nombres guardados
         lista_html = ""
         conn = conectar_bd()
         if conn:
@@ -603,126 +607,51 @@ def application(environ, start_response):
                     post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
                     params = parse_qs(post_data)
 
-                    # SUMA
                     try:
                         suma1 = params.get('suma1', [''])[0]
                         suma2 = params.get('suma2', [''])[0]
-                        if suma1 and suma2:
-                            num1 = float(suma1)
-                            num2 = float(suma2)
-                            resultado_suma = f"<div class='resultado-exito'><strong>Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
-                        else:
-                            resultado_suma = "<div class='resultado-error'>Ingresa ambos números para la suma</div>"
+                        num1 = float(suma1)
+                        num2 = float(suma2)
+                        resultado_suma = f"<div class='resultado-exito'><strong>Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
                     except:
                         resultado_suma = "<div class='resultado-error'>Ingresa números válidos para la suma</div>"
 
-                    # DIVISIÓN
                     try:
                         div1 = params.get('div1', [''])[0]
                         div2 = params.get('div2', [''])[0]
-                        if div1 and div2:
-                            num3 = float(div1)
-                            num4 = float(div2)
-                            if num4 == 0:
-                                resultado_division = "<div class='resultado-error'>No se puede dividir entre cero</div>"
-                            else:
-                                resultado_division = f"<div class='resultado-exito'><strong>Resultado:</strong> {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
+                        num3 = float(div1)
+                        num4 = float(div2)
+                        if num4 == 0:
+                            resultado_division = "<div class='resultado-error'>No se puede dividir entre cero</div>"
                         else:
-                            resultado_division = "<div class='resultado-error'>Ingresa ambos números para la división</div>"
+                            resultado_division = f"<div class='resultado-exito'><strong>Resultado:</strong> {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
                     except:
                         resultado_division = "<div class='resultado-error'>Ingresa números válidos para la división</div>"
             except Exception as e:
                 resultado_suma = f"<div class='resultado-error'>Error: {str(e)}</div>"
 
         html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Calculadora</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
-        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        h1 {{ text-align: center; margin-bottom: 30px; }}
-        .grid {{ display:grid; grid-template-columns: 1fr 1fr; gap: 25px; }}
-        .box {{ background:#f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid; }}
-        .suma {{ border-color:#28a745; }}
-        .div {{ border-color:#dc3545; }}
-        .campo {{ margin: 12px 0; }}
-        input[type="text"] {{ width: 92%; padding: 10px; border:1px solid #ddd; border-radius:6px; }}
-        .btn {{ width:100%; padding: 12px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; }}
-        .btn:hover {{ background:#0056b3; }}
-        .resultado-exito {{ background:#d4edda; color:#155724; padding:12px; border-radius:6px; margin-top:12px; border-left:4px solid #28a745; }}
-        .resultado-error {{ background:#f8d7da; color:#721c24; padding:12px; border-radius:6px; margin-top:12px; border-left:4px solid #dc3545; }}
-        @media (max-width: 768px) {{ .grid {{ grid-template-columns: 1fr; }} }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>Calculadora</h1>
-
-        <div class="grid">
-            <div class="box suma">
-                <h2>Suma</h2>
-                <form method="POST">
-                    <div class="campo"><label>Primer número:</label><input type="text" name="suma1" required></div>
-                    <div class="campo"><label>Segundo número:</label><input type="text" name="suma2" required></div>
-                    <button class="btn" type="submit">Calcular</button>
-                </form>
-                {resultado_suma if resultado_suma else ''}
-            </div>
-
-            <div class="box div">
-                <h2>División</h2>
-                <form method="POST">
-                    <div class="campo"><label>Dividendo:</label><input type="text" name="div1" required></div>
-                    <div class="campo"><label>Divisor:</label><input type="text" name="div2" required></div>
-                    <button class="btn" type="submit">Calcular</button>
-                </form>
-                {resultado_division if resultado_division else ''}
-            </div>
-        </div>
-    </div>
-</body>
-</html>'''
-        start_response('200 OK', headers)
-        return [html.encode('utf-8')]
-
-    # =================================
-    # ===== BORRAR REGISTROS FORM ======
-    # =================================
-    elif path == '/borrar_registros':
-        if method == 'POST':
-            try:
-                conn = conectar_bd()
-                if conn:
-                    cur = conn.cursor()
-                    cur.execute('DELETE FROM formulario_simple')
-                    conn.commit()
-                    cur.close()
-                    conn.close()
-                    html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Borrado</title></head>
-<body>{navegacion()}<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
-<h2 style="color:#28a745;">Registros borrados</h2><a href="/formulario">Volver</a></div></body></html>'''
-                else:
-                    html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error</title></head>
-<body>{navegacion()}<h2>Error de conexión</h2><a href="/formulario">Volver</a></body></html>'''
-                start_response('200 OK', headers)
-                return [html.encode('utf-8')]
-            except Exception as e:
-                html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error</title></head>
-<body>{navegacion()}<h2>Error</h2><p>{str(e)}</p><a href="/formulario">Volver</a></body></html>'''
-                start_response('200 OK', headers)
-                return [html.encode('utf-8')]
-
-        html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Confirmar borrado</title></head>
-<body>{navegacion()}<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
-<h2>¿Borrar TODOS los registros?</h2>
-<form method="POST" action="/borrar_registros">
-<button type="submit" style="background:#dc3545;color:white;padding:12px 20px;border:none;border-radius:6px;cursor:pointer;">Sí, borrar</button>
-</form>
-<p style="margin-top:15px;"><a href="/formulario">Cancelar</a></p>
-</div></body></html>'''
+<html><head><meta charset="UTF-8"><title>Calculadora</title></head>
+<body>{navegacion()}<div style="max-width:900px;margin:40px auto;background:white;padding:30px;border-radius:10px;">
+<h1 style="text-align:center;">Calculadora</h1>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+<div style="background:#f8f9fa;padding:20px;border-radius:10px;border-left:4px solid #28a745;">
+<h2>Suma</h2>
+<form method="POST">
+<input name="suma1" placeholder="Ej: 10" required style="width:95%;padding:10px;margin:8px 0;">
+<input name="suma2" placeholder="Ej: 5" required style="width:95%;padding:10px;margin:8px 0;">
+<button style="width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;">Calcular</button>
+</form>{resultado_suma}
+</div>
+<div style="background:#f8f9fa;padding:20px;border-radius:10px;border-left:4px solid #dc3545;">
+<h2>División</h2>
+<form method="POST">
+<input name="div1" placeholder="Ej: 10" required style="width:95%;padding:10px;margin:8px 0;">
+<input name="div2" placeholder="Ej: 2" required style="width:95%;padding:10px;margin:8px 0;">
+<button style="width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;">Calcular</button>
+</form>{resultado_division}
+</div>
+</div></div></body></html>'''
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
@@ -755,7 +684,6 @@ def application(environ, start_response):
                         imagen_tipo = "desconocido"
 
                 errores = []
-
                 if not nombre:
                     errores.append("Nombre es requerido")
                 elif not validar_nombre_solo_letras(nombre):
@@ -836,162 +764,19 @@ def application(environ, start_response):
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
-        # Obtener registros (últimos 10)
-        registros_html = ""
-        conn = conectar_bd()
-        if conn:
-            try:
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT id, nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, fecha
-                    FROM formulario_simple
-                    ORDER BY fecha DESC
-                    LIMIT 10
-                """)
-                registros = cur.fetchall()
-                cur.close()
-                conn.close()
-
-                if registros:
-                    registros_html = '''
-                    <div class="registros">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                            <h3>Registros guardados:</h3>
-                            <a href="/borrar_registros" style="background:#dc3545; color:white; padding:8px 14px; border-radius:6px; text-decoration:none; font-size:14px;">
-                                Borrar todos
-                            </a>
-                        </div>
-                        <div class="lista-registros">
-                    '''
-
-                    for reg in registros:
-                        id_reg, nombre_reg, fecha_nac_reg, correo_reg, img_nombre, img_tipo, fecha_registro = reg
-                        fecha_str = str(fecha_registro)[:16]
-                        fecha_nac_str = str(fecha_nac_reg) if fecha_nac_reg else ""
-                        edad_reg = calcular_edad_desde_fecha(fecha_nac_reg) if fecha_nac_reg else ""
-
-                        img_html = ""
-                        conn2 = conectar_bd()
-                        if conn2:
-                            try:
-                                cur2 = conn2.cursor()
-                                cur2.execute("SELECT imagen_data FROM formulario_simple WHERE id = %s", (id_reg,))
-                                img_data = cur2.fetchone()[0]
-                                cur2.close()
-                                conn2.close()
-                                if img_data:
-                                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                                    img_html = f'''<div class="imagen-preview">
-                                        <img src="data:image/{img_tipo};base64,{img_base64}"
-                                             alt="{img_nombre}"
-                                             style="max-width:150px; max-height:150px; border-radius:8px;">
-                                        <p><small>{img_nombre}</small></p>
-                                    </div>'''
-                            except:
-                                img_html = '<p><small>Imagen no disponible</small></p>'
-
-                        registros_html += f'''<div class="registro">
-                            <div class="registro-info">
-                                <h4>{nombre_reg}</h4>
-                                <p><strong>Fecha nac.:</strong> {fecha_nac_str}</p>
-                                <p><strong>Edad:</strong> {str(edad_reg) + " años" if edad_reg != "" else "No disponible"}</p>
-                                <p><strong>Correo:</strong> {correo_reg}</p>
-                                <p><small>Registrado: {fecha_str}</small></p>
-                            </div>
-                            {img_html}
-                        </div>'''
-
-                    registros_html += '</div></div>'
-                else:
-                    registros_html = '<div class="sin-registros"><p>No hay registros aún.</p></div>'
-            except Exception as e:
-                registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
-        else:
-            registros_html = '<p class="error">No hay conexión a la base de datos</p>'
-
-        html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Formulario</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
-        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        h1 {{ text-align:center; margin-bottom:25px; }}
-        .form-group {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }}
-        .campo {{ margin: 16px 0; }}
-        label {{ font-weight:bold; display:block; margin-bottom:8px; }}
-        input[type="text"], input[type="email"], input[type="date"], input[type="file"] {{
-            width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px;
-        }}
-        .btn {{ width:100%; padding: 14px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; }}
-        .btn:hover {{ background:#218838; }}
-        .exito {{ background:#d4edda; color:#155724; padding:15px; border-radius:6px; border-left:4px solid #28a745; margin: 15px 0; }}
-        .error {{ background:#f8d7da; color:#721c24; padding:15px; border-radius:6px; border-left:4px solid #dc3545; margin: 15px 0; }}
-        .registro {{ display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:20px; border-radius:10px; margin:12px 0; border-left:4px solid #007bff; }}
-        .imagen-preview {{ text-align:center; margin-left:15px; }}
-        .lista-registros {{ max-height: 520px; overflow-y:auto; padding: 10px; }}
-        .sin-registros {{ text-align:center; padding: 20px; background:#e9ecef; border-radius:10px; }}
-        @media (max-width:768px) {{
-            .form-group {{ grid-template-columns:1fr; }}
-            .registro {{ flex-direction:column; text-align:center; }}
-            .imagen-preview {{ margin-left:0; margin-top:12px; }}
-        }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>Formulario (sin reCAPTCHA)</h1>
-
-        {mensaje if mensaje else ''}
-
-        <form method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <div>
-                    <div class="campo">
-                        <label>Nombre *</label>
-                        <input type="text"
-                               name="nombre"
-                               placeholder="Ej: Juan Pérez"
-                               required
-                               oninput="this.value = this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g, '')">
-                    </div>
-
-                    <div class="campo">
-                        <label>Fecha de nacimiento *</label>
-                        <input type="date" name="fecha_nacimiento" required>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="campo">
-                        <label>Correo *</label>
-                        <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
-                    </div>
-
-                    <div class="campo">
-                        <label>Confirmar correo *</label>
-                        <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
-                    </div>
-                </div>
-            </div>
-
-            <div class="campo">
-                <label>Subir imagen *</label>
-                <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-            </div>
-
-            <button class="btn" type="submit">Guardar</button>
-        </form>
-
-        <hr style="margin:30px 0; border:none; border-top:2px solid #dee2e6;">
-
-        {registros_html}
-    </div>
-</body>
-</html>'''
-
+        html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Formulario</title></head>
+<body>{navegacion()}<div style="max-width:900px;margin:40px auto;background:white;padding:30px;border-radius:10px;">
+<h1 style="text-align:center;">Formulario (sin reCAPTCHA)</h1>{mensaje}
+<form method="POST" enctype="multipart/form-data">
+<input name="nombre" placeholder="Nombre" required
+ oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')"
+ style="width:95%;padding:10px;margin:8px 0;">
+<input type="date" name="fecha_nacimiento" required style="width:95%;padding:10px;margin:8px 0;">
+<input type="email" name="correo" placeholder="Correo" required style="width:95%;padding:10px;margin:8px 0;">
+<input type="email" name="correo_confirmar" placeholder="Confirmar correo" required style="width:95%;padding:10px;margin:8px 0;">
+<input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required style="width:95%;padding:10px;margin:8px 0;">
+<button style="width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;font-weight:bold;">Guardar</button>
+</form></div></body></html>'''
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
@@ -1001,26 +786,12 @@ def application(environ, start_response):
     else:
         html = f'''<!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>404 - Página no encontrada</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 100px auto; padding: 40px; background: #f8f9fa; }}
-        .container {{ background: white; padding: 60px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); text-align: center; }}
-        h1 {{ color: #dc3545; font-size: 48px; margin-bottom: 20px; }}
-        .btn-volver {{ display:inline-block; padding: 14px 26px; background:#007bff; color:white; text-decoration:none; border-radius:6px; font-weight:bold; margin-top: 15px; }}
-        .btn-volver:hover {{ background:#0056b3; }}
-    </style>
-</head>
-<body>
-    {navegacion()}
-    <div class="container">
-        <h1>404</h1>
-        <h2>Página no encontrada</h2>
-        <p>La ruta solicitada <code>{path}</code> no existe.</p>
-        <a class="btn-volver" href="/">Volver al Inicio</a>
-    </div>
-</body>
-</html>'''
+<head><meta charset="UTF-8"><title>404</title></head>
+<body>{navegacion()}<div style="max-width:800px;margin:80px auto;background:white;padding:50px;border-radius:10px;text-align:center;">
+<h1 style="color:#dc3545;font-size:48px;">404</h1>
+<h2>Página no encontrada</h2>
+<p>La ruta solicitada <code>{path}</code> no existe.</p>
+<a href="/" style="display:inline-block;padding:12px 22px;background:#007bff;color:white;text-decoration:none;border-radius:6px;font-weight:bold;">Volver al Inicio</a>
+</div></body></html>'''
         start_response('404 Not Found', headers)
         return [html.encode('utf-8')]
