@@ -8,7 +8,6 @@ import urllib.parse
 import json
 from urllib.parse import urlparse, parse_qs
 import cgi
-import io
 import re
 from datetime import datetime, date
 
@@ -29,10 +28,12 @@ def application(environ, start_response):
     # === NAVEGACIÓN ===
     def navegacion():
         return '''<nav style="background: #343a40; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
-            <a href="/" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Inicio</a>
-            <a href="/calculadora" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Calculadora</a>
-            <a href="/formulario" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Formulario</a>
-            <a href="/carrusel" style="color: white; margin: 0 15px; text-decoration: none; font-weight: bold;">Carrusel</a>
+            <a href="/" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Inicio</a>
+            <a href="/calculadora" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Calculadora</a>
+            <a href="/formulario" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Formulario</a>
+            <a href="/carrusel" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Carrusel</a>
+            <a href="/nombre_recaptcha" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Nombre + reCAPTCHA</a>
+            <a href="/simular_404" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Simular 404</a>
         </nav>'''
 
     # === FUNCIONES COMUNES ===
@@ -50,12 +51,11 @@ def application(environ, start_response):
         except:
             return None
 
-    # === VALIDACIONES (NOMBRE SOLO LETRAS) ===
+    # === VALIDACIONES ===
     def validar_nombre_solo_letras(nombre: str) -> bool:
         patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$"
         return bool(re.fullmatch(patron, nombre))
 
-    # === FECHA NACIMIENTO / EDAD ===
     def parsear_fecha_nacimiento(fecha_str: str):
         try:
             return datetime.strptime(fecha_str, "%Y-%m-%d").date()
@@ -64,8 +64,7 @@ def application(environ, start_response):
 
     def calcular_edad_desde_fecha(fecha_nac: date) -> int:
         hoy = date.today()
-        edad = hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
-        return edad
+        return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
 
     # === FUNCIÓN PARA VALIDAR RECAPTCHA ===
     def validar_recaptcha(recaptcha_response):
@@ -83,22 +82,16 @@ def application(environ, start_response):
             print(f"Error validando reCAPTCHA: {e}")
             return False
 
-    # =========================================================
-    # ===================  PÁGINA CARRUSEL  ===================
-    #    CAMBIO: Solo pide imagen (sin título/descripcion)
-    # =========================================================
+    # =========================
+    # ======== CARRUSEL =======
+    # =========================
     if path == '/carrusel':
         mensaje = ""
 
         if method == 'POST':
             try:
-                fs = cgi.FieldStorage(
-                    fp=environ['wsgi.input'],
-                    environ=environ,
-                    keep_blank_values=True
-                )
+                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
 
-                # AGREGAR NUEVA IMAGEN (SIN TÍTULO/DESCRIPCIÓN)
                 imagen_file = fs['imagen']
                 imagen_data = None
                 imagen_nombre = ""
@@ -108,13 +101,10 @@ def application(environ, start_response):
                     imagen_nombre = imagen_file.filename
                     imagen_data = imagen_file.file.read()
                     try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data)
-                        if not imagen_tipo:
-                            imagen_tipo = "desconocido"
+                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
                     except:
                         imagen_tipo = "desconocido"
 
-                # Validaciones
                 errores = []
                 if not imagen_data:
                     errores.append("Debe subir una imagen")
@@ -124,12 +114,10 @@ def application(environ, start_response):
                     errores.append("Solo se permiten imágenes JPG, PNG o GIF")
 
                 if errores:
-                    mensaje = f'''<div class="error">
-                        <h3>Errores encontrados:</h3>
-                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
-                    </div>'''
+                    mensaje = f'''<div class="error"><h3>Errores encontrados:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
                 else:
-                    # Guardar en PostgreSQL (titulo/descripcion se guardan automáticos)
+                    # Guardar con titulo = nombre de archivo (automático)
                     titulo = imagen_nombre if imagen_nombre else "Imagen"
                     descripcion = ""
 
@@ -148,14 +136,12 @@ def application(environ, start_response):
                                     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                 )
                             ''')
-
                             cur.execute(
                                 """INSERT INTO carrusel_imagenes
                                    (titulo, descripcion, imagen_nombre, imagen_tipo, imagen_data)
                                    VALUES (%s, %s, %s, %s, %s)""",
                                 (titulo, descripcion, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
-
                             conn.commit()
                             cur.close()
                             conn.close()
@@ -168,7 +154,6 @@ def application(environ, start_response):
                             mensaje = f'<div class="error">Error al guardar: {str(e)}</div>'
                     else:
                         mensaje = '<div class="error">Error de conexión a la base de datos</div>'
-
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
@@ -179,7 +164,7 @@ def application(environ, start_response):
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, titulo, descripcion, imagen_nombre, imagen_tipo, fecha
+                    SELECT id, titulo, imagen_tipo, fecha
                     FROM carrusel_imagenes
                     ORDER BY fecha DESC
                 """)
@@ -195,7 +180,7 @@ def application(environ, start_response):
                     '''
 
                     for i, img in enumerate(imagenes):
-                        id_img, titulo_img, desc_img, img_nombre, img_tipo, fecha = img
+                        id_img, titulo_img, img_tipo, fecha = img
 
                         img_base64 = ""
                         conn2 = conectar_bd()
@@ -214,12 +199,8 @@ def application(environ, start_response):
                         if img_base64:
                             activa = "active" if i == 0 else ""
                             imagenes_html += f'''
-                            <div class="carrusel-item {activa}" data-id="{id_img}">
-                                <div class="imagen-contenedor">
-                                    <img src="data:image/{img_tipo};base64,{img_base64}"
-                                         alt="{titulo_img}"
-                                         class="carrusel-imagen">
-                                </div>
+                            <div class="carrusel-item {activa}">
+                                <img src="data:image/{img_tipo};base64,{img_base64}" class="carrusel-imagen" alt="{titulo_img}">
                             </div>
                             '''
 
@@ -232,12 +213,6 @@ def application(environ, start_response):
                         </div>
                     </div>
                     '''
-
-                    imagenes_html += f'''
-                    <div class="contador-imagenes">
-                        <p>Total de imágenes en el carrusel: <strong>{len(imagenes)}</strong></p>
-                    </div>
-                    '''
                 else:
                     imagenes_html = '''
                     <div class="sin-imagenes">
@@ -245,65 +220,57 @@ def application(environ, start_response):
                         <p>Agrega tu primera imagen usando el formulario de abajo.</p>
                     </div>
                     '''
-
             except Exception as e:
                 imagenes_html = f'<p class="error">Error cargando imágenes: {str(e)}</p>'
         else:
             imagenes_html = '<p class="error">No hay conexión a la base de datos</p>'
 
-        # HTML carrusel (formulario SOLO imagen)
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Carrusel de Imágenes</title>
+    <title>Carrusel</title>
     <style>
         body {{ font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
         .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        h1 {{ color: #333; text-align: center; margin-bottom: 40px; }}
-        .carrusel-container {{ margin: 40px 0; padding: 20px; background: #f8f9fa; border-radius: 10px; }}
-        .carrusel {{ position: relative; overflow: hidden; border-radius: 10px; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
-        .carrusel-item {{ display: none; padding: 30px; text-align: center; }}
-        .carrusel-item.active {{ display: block; }}
-        .imagen-contenedor {{ display: flex; flex-direction: column; align-items: center; gap: 20px; }}
-        .carrusel-imagen {{ max-width: 100%; max-height: 500px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }}
-        .carrusel-controls {{ display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 10px; }}
-        .carrusel-btn {{ background: #007bff; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }}
-        .carrusel-btn:hover {{ background: #0056b3; }}
-        .carrusel-indicators {{ display: flex; gap: 10px; justify-content: center; flex: 1; }}
-        .indicator {{ width: 12px; height: 12px; border-radius: 50%; background: #ccc; cursor: pointer; transition: background 0.3s; }}
-        .indicator.active {{ background: #007bff; }}
-        .contador-imagenes {{ text-align: center; margin: 20px 0; padding: 15px; background: #e7f3ff; border-radius: 5px; }}
-        .sin-imagenes {{ text-align: center; padding: 60px 20px; background: #e9ecef; border-radius: 10px; margin: 40px 0; }}
-        .form-agregar {{ background: #f8f9fa; padding: 30px; border-radius: 10px; margin-top: 40px; }}
-        .campo {{ margin: 20px 0; }}
-        label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #555; }}
-        input[type="file"] {{ width: 95%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; background: white; }}
-        .btn-agregar {{ padding: 15px 30px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 18px; font-weight: bold; width: 100%; margin-top: 20px; }}
-        .btn-agregar:hover {{ background: #218838; }}
-        .exito {{ background: #d4edda; color: #155724; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745; }}
-        .error {{ background: #f8d7da; color: #721c24; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc3545; }}
-        .info {{ font-size: 14px; color: #6c757d; margin-top: 5px; }}
+        h1 {{ text-align:center; margin-bottom:30px; }}
+        .carrusel-container {{ margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 10px; }}
+        .carrusel {{ position: relative; overflow: hidden; border-radius: 10px; background: white; }}
+        .carrusel-item {{ display:none; text-align:center; padding:20px; }}
+        .carrusel-item.active {{ display:block; }}
+        .carrusel-imagen {{ max-width:100%; max-height:520px; border-radius:10px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }}
+        .carrusel-controls {{ display:flex; justify-content:space-between; align-items:center; margin-top: 15px; }}
+        .carrusel-btn {{ background:#007bff; color:white; border:none; border-radius:50%; width:50px; height:50px; font-size:20px; cursor:pointer; }}
+        .carrusel-btn:hover {{ background:#0056b3; }}
+        .carrusel-indicators {{ display:flex; gap:10px; justify-content:center; flex:1; }}
+        .indicator {{ width:12px; height:12px; border-radius:50%; background:#ccc; cursor:pointer; }}
+        .indicator.active {{ background:#007bff; }}
+        .form-agregar {{ background:#f8f9fa; padding: 25px; border-radius: 10px; margin-top: 30px; }}
+        .campo {{ margin: 15px 0; }}
+        label {{ font-weight: bold; display:block; margin-bottom:8px; }}
+        input[type="file"] {{ width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background:white; }}
+        .btn-agregar {{ width:100%; padding: 14px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; }}
+        .btn-agregar:hover {{ background:#218838; }}
+        .exito {{ background:#d4edda; color:#155724; padding:15px; border-radius:6px; border-left:4px solid #28a745; margin: 15px 0; }}
+        .error {{ background:#f8d7da; color:#721c24; padding:15px; border-radius:6px; border-left:4px solid #dc3545; margin: 15px 0; }}
+        .sin-imagenes {{ text-align:center; padding: 30px; background:#e9ecef; border-radius:10px; }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
         <h1>Carrusel de Imágenes</h1>
-
         {mensaje if mensaje else ''}
-
         {imagenes_html}
 
         <div class="form-agregar">
-            <h3>Agregar Nueva Imagen al Carrusel</h3>
+            <h3>Agregar imagen</h3>
             <form method="POST" enctype="multipart/form-data">
                 <div class="campo">
-                    <label>Seleccionar imagen <span style="color:#dc3545">*</span></label>
+                    <label>Seleccionar imagen *</label>
                     <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-                    <div class="info">Formatos: JPG, PNG, GIF (máximo 5MB)</div>
                 </div>
-                <button type="submit" class="btn-agregar">Agregar al Carrusel</button>
+                <button class="btn-agregar" type="submit">Agregar</button>
             </form>
         </div>
     </div>
@@ -317,54 +284,34 @@ def application(environ, start_response):
             if (!indicatorsContainer || slides.length === 0) return;
             indicatorsContainer.innerHTML = '';
             for (let i = 0; i < slides.length; i++) {{
-                const indicator = document.createElement('div');
-                indicator.className = 'indicator';
-                if (i === currentSlide) indicator.classList.add('active');
-                indicator.onclick = () => goToSlide(i);
-                indicatorsContainer.appendChild(indicator);
+                const d = document.createElement('div');
+                d.className = 'indicator';
+                if (i === currentSlide) d.classList.add('active');
+                d.onclick = () => goToSlide(i);
+                indicatorsContainer.appendChild(d);
             }}
         }}
 
         function showSlide(index) {{
             if (slides.length === 0) return;
-
             if (index >= slides.length) currentSlide = 0;
             else if (index < 0) currentSlide = slides.length - 1;
             else currentSlide = index;
 
-            slides.forEach(slide => slide.classList.remove('active'));
+            slides.forEach(s => s.classList.remove('active'));
             slides[currentSlide].classList.add('active');
 
-            const indicators = document.querySelectorAll('.indicator');
-            indicators.forEach((indicator, i) => indicator.classList.toggle('active', i === currentSlide));
+            const inds = document.querySelectorAll('.indicator');
+            inds.forEach((ind, i) => ind.classList.toggle('active', i === currentSlide));
         }}
 
         function carruselNext() {{ showSlide(currentSlide + 1); }}
         function carruselPrev() {{ showSlide(currentSlide - 1); }}
-        function goToSlide(index) {{ showSlide(index); }}
-
-        let carruselInterval;
-        function iniciarAutoPlay() {{
-            if (slides.length > 1) carruselInterval = setInterval(carruselNext, 5000);
-        }}
-        function detenerAutoPlay() {{
-            if (carruselInterval) clearInterval(carruselInterval);
-        }}
+        function goToSlide(i) {{ showSlide(i); }}
 
         document.addEventListener('DOMContentLoaded', function() {{
             crearIndicadores();
-            iniciarAutoPlay();
-
-            const carrusel = document.getElementById('carrusel');
-            if (carrusel) {{
-                carrusel.addEventListener('mouseenter', detenerAutoPlay);
-                carrusel.addEventListener('mouseleave', iniciarAutoPlay);
-            }}
-
-            document.addEventListener('keydown', function(e) {{
-                if (e.key === 'ArrowLeft') carruselPrev();
-                else if (e.key === 'ArrowRight') carruselNext();
-            }});
+            showSlide(0);
         }});
     </script>
 </body>
@@ -373,69 +320,229 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =========================================================
-    # ===================  PÁGINA INICIO  =====================
-    #  CAMBIO: Botón "Ir a Página 404" EN INICIO (NO carrusel)
-    # =========================================================
+    # =========================================
+    # ========= NUEVA PÁGINA: SIMULAR 404 ======
+    # (una ruta REAL que muestra la pantalla 404)
+    # =========================================
+    if path == '/simular_404':
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Simulación 404</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 100px auto;
+            padding: 40px;
+            background: #f8f9fa;
+        }}
+        .container {{
+            background: white;
+            padding: 60px;
+            border-radius: 10px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }}
+        h1 {{ color: #dc3545; font-size: 48px; margin-bottom: 10px; }}
+        h2 {{ color: #333; margin-bottom: 25px; }}
+        .msg {{
+            background: #f8d7da;
+            color: #721c24;
+            padding: 18px;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+            text-align: left;
+        }}
+        .btn {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 14px 26px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }}
+        .btn:hover {{ background:#0056b3; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <h1>404</h1>
+        <h2>Simulación de página no encontrada</h2>
+        <div class="msg">
+            <p><strong>Esta es una simulación.</strong></p>
+            <p>La ruta simulada es <code>/simular_404</code> (existe), pero responde como 404 para probar tu pantalla.</p>
+        </div>
+        <a href="/" class="btn">Volver al Inicio</a>
+    </div>
+</body>
+</html>'''
+        start_response('404 Not Found', headers)
+        return [html.encode('utf-8')]
+
+    # ==================================================
+    # ===== NUEVA PÁGINA: SOLO NOMBRE + reCAPTCHA =======
+    #      Guarda nombres y los muestra abajo
+    # ==================================================
+    if path == '/nombre_recaptcha':
+        mensaje = ""
+
+        if method == 'POST':
+            try:
+                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
+
+                nombre = fs.getvalue('nombre', '').strip()
+                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
+
+                errores = []
+                if not nombre:
+                    errores.append("Nombre es requerido")
+                elif not validar_nombre_solo_letras(nombre):
+                    errores.append("Nombre solo debe contener letras y espacios (sin números ni símbolos)")
+
+                if not recaptcha_response:
+                    errores.append("Por favor, completa el reCAPTCHA")
+                elif not validar_recaptcha(recaptcha_response):
+                    errores.append("El reCAPTCHA no es válido. Intenta de nuevo.")
+
+                if errores:
+                    mensaje = f'''<div class="error"><h3>Errores:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
+                else:
+                    conn = conectar_bd()
+                    if conn:
+                        try:
+                            cur = conn.cursor()
+                            cur.execute('''
+                                CREATE TABLE IF NOT EXISTS nombres_recaptcha (
+                                    id SERIAL PRIMARY KEY,
+                                    nombre VARCHAR(100),
+                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            ''')
+                            cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre,))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                            mensaje = f'''<div class="exito">
+                                <h3>¡Nombre guardado!</h3>
+                                <p><strong>Nombre:</strong> {nombre}</p>
+                            </div>'''
+                        except Exception as e:
+                            mensaje = f'<div class="error">Error guardando en BD: {str(e)}</div>'
+                    else:
+                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
+            except Exception as e:
+                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
+
+        # Lista de nombres guardados
+        lista_html = ""
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT nombre, fecha FROM nombres_recaptcha ORDER BY fecha DESC LIMIT 15")
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
+
+                if rows:
+                    items = ""
+                    for n, f in rows:
+                        items += f"<li><strong>{n}</strong> <small style='color:#6c757d;'>({str(f)[:16]})</small></li>"
+                    lista_html = f"""
+                    <div class="lista">
+                        <h3>Nombres ingresados (últimos 15)</h3>
+                        <ul>{items}</ul>
+                    </div>
+                    """
+                else:
+                    lista_html = "<div class='lista'><p>No hay nombres aún.</p></div>"
+            except Exception as e:
+                lista_html = f"<div class='error'>Error cargando nombres: {str(e)}</div>"
+        else:
+            lista_html = "<div class='error'>No hay conexión a la base de datos</div>"
+
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Nombre + reCAPTCHA</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ text-align:center; margin-bottom:25px; }}
+        .campo {{ margin: 18px 0; }}
+        label {{ font-weight:bold; display:block; margin-bottom:8px; }}
+        input[type="text"] {{ width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; }}
+        .recaptcha-container {{ margin: 20px 0; padding: 18px; background: #f8f9fa; border-radius: 8px; text-align:center; }}
+        .btn {{ width: 100%; padding: 14px; border:none; border-radius: 6px; background:#28a745; color:white; font-size: 16px; font-weight:bold; cursor:pointer; }}
+        .btn:hover {{ background:#218838; }}
+        .exito {{ background:#d4edda; color:#155724; padding:15px; border-radius:6px; border-left:4px solid #28a745; margin: 15px 0; }}
+        .error {{ background:#f8d7da; color:#721c24; padding:15px; border-radius:6px; border-left:4px solid #dc3545; margin: 15px 0; }}
+        .lista {{ margin-top: 30px; padding: 20px; background:#f8f9fa; border-radius:10px; }}
+        ul {{ margin: 10px 0 0; }}
+    </style>
+</head>
+<body>
+    {navegacion()}
+    <div class="container">
+        <h1>Solo Nombre + reCAPTCHA</h1>
+
+        {mensaje if mensaje else ''}
+
+        <form method="POST">
+            <div class="campo">
+                <label>Nombre *</label>
+                <input type="text"
+                       name="nombre"
+                       placeholder="Ej: Juan Pérez"
+                       required
+                       oninput="this.value = this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g, '')">
+            </div>
+
+            <div class="recaptcha-container">
+                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
+            </div>
+
+            <button class="btn" type="submit">Guardar nombre</button>
+        </form>
+
+        {lista_html}
+    </div>
+</body>
+</html>'''
+
+        start_response('200 OK', headers)
+        return [html.encode('utf-8')]
+
+    # =========================
+    # ========= INICIO =========
+    # =========================
     if path == '/' and method == 'GET':
         html = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Inicio - Aplicación Masonite</title>
+    <title>Inicio</title>
     <style>
-        body {{
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{
-            color: #333;
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .features {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }}
-        .feature {{
-            background: #e9ecef;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }}
-        .feature-icon {{
-            font-size: 40px;
-            margin-bottom: 15px;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #333; text-align: center; margin-bottom: 30px; }}
+        .features {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }}
+        .feature {{ background: #e9ecef; padding: 20px; border-radius: 8px; text-align: center; }}
+        .feature-icon {{ font-size: 40px; margin-bottom: 15px; }}
         .btn-error-404 {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            text-decoration: none;
-            transition: background 0.3s;
+            display: inline-block; padding: 14px 26px; background: #dc3545; color: white;
+            border-radius: 6px; text-decoration: none; font-weight: bold;
         }}
-        .btn-error-404:hover {{
-            background: #c82333;
-            color: white;
-            text-decoration: none;
-        }}
+        .btn-error-404:hover {{ background:#c82333; }}
     </style>
 </head>
 <body>
@@ -447,42 +554,44 @@ def application(environ, start_response):
             <div class="feature">
                 <div class="feature-icon">+</div>
                 <h3>Calculadora</h3>
-                <p>Operaciones básicas de suma y división</p>
-                <a href="/calculadora">Ir a Calculadora →</a>
+                <p>Operaciones básicas</p>
+                <a href="/calculadora">Ir →</a>
             </div>
 
             <div class="feature">
                 <div class="feature-icon">✓</div>
-                <h3>Formulario con Imágenes</h3>
-                <p>Registra datos y sube imágenes</p>
-                <a href="/formulario">Ir a Formulario →</a>
+                <h3>Formulario</h3>
+                <p>Registra datos y sube imagen (SIN reCAPTCHA)</p>
+                <a href="/formulario">Ir →</a>
             </div>
 
             <div class="feature">
                 <div class="feature-icon">▢</div>
-                <h3>Carrusel de Imágenes</h3>
-                <p>Galería interactiva de imágenes</p>
-                <a href="/carrusel">Ir a Carrusel →</a>
+                <h3>Carrusel</h3>
+                <p>Sube imágenes al carrusel</p>
+                <a href="/carrusel">Ir →</a>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <h3>Nombre + reCAPTCHA</h3>
+                <p>Solo guarda nombres con reCAPTCHA</p>
+                <a href="/nombre_recaptcha">Ir →</a>
             </div>
         </div>
 
-        <div style="text-align: center; margin-top: 10px; padding: 20px; background: #e7f3ff; border-radius: 8px;">
-            <h3>Seguridad mejorada</h3>
-            <p>Ahora el formulario cuenta con protección reCAPTCHA para prevenir spam.</p>
-        </div>
-
-        <!-- ✅ BOTÓN 404 EN INICIO -->
-        <div style="text-align: center; margin-top: 30px;">
-            <a href="/pagina_no_existe" class="btn-error-404">Ir a Página 404</a>
+        <div style="text-align:center; margin-top: 20px;">
+            <a class="btn-error-404" href="/simular_404">Simular pantalla 404</a>
         </div>
     </div>
 </body>
 </html>'''
-
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =================== CALCULADORA (igual) ===================
+    # =========================
+    # ======== CALCULADORA =====
+    # =========================
     elif path == '/calculadora':
         resultado_suma = ""
         resultado_division = ""
@@ -494,6 +603,7 @@ def application(environ, start_response):
                     post_data = environ['wsgi.input'].read(content_length).decode('utf-8')
                     params = parse_qs(post_data)
 
+                    # SUMA
                     try:
                         suma1 = params.get('suma1', [''])[0]
                         suma2 = params.get('suma2', [''])[0]
@@ -503,11 +613,10 @@ def application(environ, start_response):
                             resultado_suma = f"<div class='resultado-exito'><strong>Resultado:</strong> {num1} + {num2} = {num1 + num2}</div>"
                         else:
                             resultado_suma = "<div class='resultado-error'>Ingresa ambos números para la suma</div>"
-                    except ValueError:
-                        resultado_suma = "<div class='resultado-error'>Error: Ingresa números válidos para la suma</div>"
-                    except Exception as e:
-                        resultado_suma = f"<div class='resultado-error'>Error en suma: {str(e)}</div>"
+                    except:
+                        resultado_suma = "<div class='resultado-error'>Ingresa números válidos para la suma</div>"
 
+                    # DIVISIÓN
                     try:
                         div1 = params.get('div1', [''])[0]
                         div2 = params.get('div2', [''])[0]
@@ -515,18 +624,15 @@ def application(environ, start_response):
                             num3 = float(div1)
                             num4 = float(div2)
                             if num4 == 0:
-                                resultado_division = "<div class='resultado-error'>Error: No se puede dividir entre cero</div>"
+                                resultado_division = "<div class='resultado-error'>No se puede dividir entre cero</div>"
                             else:
                                 resultado_division = f"<div class='resultado-exito'><strong>Resultado:</strong> {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
                         else:
                             resultado_division = "<div class='resultado-error'>Ingresa ambos números para la división</div>"
-                    except ValueError:
-                        resultado_division = "<div class='resultado-error'>Error: Ingresa números válidos para la división</div>"
-                    except Exception as e:
-                        resultado_division = f"<div class='resultado-error'>Error en división: {str(e)}</div>"
-
+                    except:
+                        resultado_division = "<div class='resultado-error'>Ingresa números válidos para la división</div>"
             except Exception as e:
-                resultado_suma = f"<div class='resultado-error'>Error general: {str(e)}</div>"
+                resultado_suma = f"<div class='resultado-error'>Error: {str(e)}</div>"
 
         html = f'''<!DOCTYPE html>
 <html>
@@ -536,20 +642,18 @@ def application(environ, start_response):
     <style>
         body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
         .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        h1 {{ color: #333; text-align: center; margin-bottom: 40px; }}
-        .calculadora-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }}
-        .operacion {{ background: #f8f9fa; padding: 30px; border-radius: 8px; border-left: 4px solid; }}
-        .suma {{ border-color: #28a745; }}
-        .division {{ border-color: #dc3545; }}
-        .operacion h2 {{ margin-top: 0; color: #333; text-align: center; }}
-        .campo {{ margin: 15px 0; }}
-        .campo label {{ display: block; margin-bottom: 8px; font-weight: bold; color: #555; }}
-        input[type="text"] {{ width: 90%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }}
-        .btn-calcular {{ padding: 12px 25px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }}
-        .btn-calcular:hover {{ background: #0056b3; }}
-        .resultado-exito {{ background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #28a745; }}
-        .resultado-error {{ background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #dc3545; }}
-        @media (max-width: 768px) {{ .calculadora-grid {{ grid-template-columns: 1fr; gap: 20px; }} }}
+        h1 {{ text-align: center; margin-bottom: 30px; }}
+        .grid {{ display:grid; grid-template-columns: 1fr 1fr; gap: 25px; }}
+        .box {{ background:#f8f9fa; padding: 25px; border-radius: 10px; border-left: 4px solid; }}
+        .suma {{ border-color:#28a745; }}
+        .div {{ border-color:#dc3545; }}
+        .campo {{ margin: 12px 0; }}
+        input[type="text"] {{ width: 92%; padding: 10px; border:1px solid #ddd; border-radius:6px; }}
+        .btn {{ width:100%; padding: 12px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; }}
+        .btn:hover {{ background:#0056b3; }}
+        .resultado-exito {{ background:#d4edda; color:#155724; padding:12px; border-radius:6px; margin-top:12px; border-left:4px solid #28a745; }}
+        .resultado-error {{ background:#f8d7da; color:#721c24; padding:12px; border-radius:6px; margin-top:12px; border-left:4px solid #dc3545; }}
+        @media (max-width: 768px) {{ .grid {{ grid-template-columns: 1fr; }} }}
     </style>
 </head>
 <body>
@@ -557,35 +661,23 @@ def application(environ, start_response):
     <div class="container">
         <h1>Calculadora</h1>
 
-        <div class="calculadora-grid">
-            <div class="operacion suma">
+        <div class="grid">
+            <div class="box suma">
                 <h2>Suma</h2>
                 <form method="POST">
-                    <div class="campo">
-                        <label>Primer número:</label>
-                        <input type="text" name="suma1" placeholder="Ej: 10" required>
-                    </div>
-                    <div class="campo">
-                        <label>Segundo número:</label>
-                        <input type="text" name="suma2" placeholder="Ej: 5" required>
-                    </div>
-                    <button type="submit" class="btn-calcular">Calcular Suma</button>
+                    <div class="campo"><label>Primer número:</label><input type="text" name="suma1" required></div>
+                    <div class="campo"><label>Segundo número:</label><input type="text" name="suma2" required></div>
+                    <button class="btn" type="submit">Calcular</button>
                 </form>
                 {resultado_suma if resultado_suma else ''}
             </div>
 
-            <div class="operacion division">
+            <div class="box div">
                 <h2>División</h2>
                 <form method="POST">
-                    <div class="campo">
-                        <label>Dividendo:</label>
-                        <input type="text" name="div1" placeholder="Ej: 10" required>
-                    </div>
-                    <div class="campo">
-                        <label>Divisor:</label>
-                        <input type="text" name="div2" placeholder="Ej: 2" required>
-                    </div>
-                    <button type="submit" class="btn-calcular">Calcular División</button>
+                    <div class="campo"><label>Dividendo:</label><input type="text" name="div1" required></div>
+                    <div class="campo"><label>Divisor:</label><input type="text" name="div2" required></div>
+                    <button class="btn" type="submit">Calcular</button>
                 </form>
                 {resultado_division if resultado_division else ''}
             </div>
@@ -593,11 +685,12 @@ def application(environ, start_response):
     </div>
 </body>
 </html>'''
-
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =================== BORRAR REGISTROS (sin cambios) ===================
+    # =================================
+    # ===== BORRAR REGISTROS FORM ======
+    # =================================
     elif path == '/borrar_registros':
         if method == 'POST':
             try:
@@ -608,64 +701,45 @@ def application(environ, start_response):
                     conn.commit()
                     cur.close()
                     conn.close()
-
-                    html = f'''<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>Registros Borrados</title></head>
-<body>
-{navegacion()}
-<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
-    <h2 style="color:#28a745;">Todos los registros han sido borrados</h2>
-    <a href="/formulario">Volver al formulario</a>
-</div>
-</body></html>'''
+                    html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Borrado</title></head>
+<body>{navegacion()}<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
+<h2 style="color:#28a745;">Registros borrados</h2><a href="/formulario">Volver</a></div></body></html>'''
                 else:
                     html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error</title></head>
 <body>{navegacion()}<h2>Error de conexión</h2><a href="/formulario">Volver</a></body></html>'''
-
                 start_response('200 OK', headers)
                 return [html.encode('utf-8')]
             except Exception as e:
                 html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error</title></head>
-<body>{navegacion()}<h2>Error al borrar registros</h2><p>{str(e)}</p><a href="/formulario">Volver</a></body></html>'''
+<body>{navegacion()}<h2>Error</h2><p>{str(e)}</p><a href="/formulario">Volver</a></body></html>'''
                 start_response('200 OK', headers)
                 return [html.encode('utf-8')]
 
-        html = f'''<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>Borrar Registros</title></head>
-<body>
-{navegacion()}
-<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
-    <h2>¿Borrar TODOS los registros?</h2>
-    <form method="POST" action="/borrar_registros">
-        <button type="submit" style="background:#dc3545;color:white;padding:12px 20px;border:none;border-radius:6px;cursor:pointer;">
-            Sí, borrar
-        </button>
-    </form>
-    <p style="margin-top:20px;"><a href="/formulario">Cancelar</a></p>
-</div>
-</body></html>'''
+        html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Confirmar borrado</title></head>
+<body>{navegacion()}<div style="max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;text-align:center;">
+<h2>¿Borrar TODOS los registros?</h2>
+<form method="POST" action="/borrar_registros">
+<button type="submit" style="background:#dc3545;color:white;padding:12px 20px;border:none;border-radius:6px;cursor:pointer;">Sí, borrar</button>
+</form>
+<p style="margin-top:15px;"><a href="/formulario">Cancelar</a></p>
+</div></body></html>'''
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =================== FORMULARIO (nombre solo letras + fecha nacimiento) ===================
+    # ==========================================
+    # ========= FORMULARIO SIN reCAPTCHA ========
+    # ==========================================
     elif path == '/formulario':
         mensaje = ""
 
         if method == 'POST':
             try:
-                fs = cgi.FieldStorage(
-                    fp=environ['wsgi.input'],
-                    environ=environ,
-                    keep_blank_values=True
-                )
+                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
 
                 nombre = fs.getvalue('nombre', '').strip()
                 fecha_nacimiento_str = fs.getvalue('fecha_nacimiento', '').strip()
                 correo = fs.getvalue('correo', '').strip()
                 correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
-                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
 
                 imagen_file = fs['imagen']
                 imagen_data = None
@@ -676,9 +750,7 @@ def application(environ, start_response):
                     imagen_nombre = imagen_file.filename
                     imagen_data = imagen_file.file.read()
                     try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data)
-                        if not imagen_tipo:
-                            imagen_tipo = "desconocido"
+                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
                     except:
                         imagen_tipo = "desconocido"
 
@@ -697,13 +769,12 @@ def application(environ, start_response):
                     if not fecha_nacimiento:
                         errores.append("Fecha de nacimiento no es válida")
                     else:
-                        hoy = date.today()
-                        if fecha_nacimiento > hoy:
+                        if fecha_nacimiento > date.today():
                             errores.append("La fecha de nacimiento no puede ser futura")
                         else:
                             edad_calc = calcular_edad_desde_fecha(fecha_nacimiento)
                             if edad_calc < 0 or edad_calc > 120:
-                                errores.append("La fecha de nacimiento no corresponde a una edad válida (0 a 120)")
+                                errores.append("La fecha no corresponde a una edad válida (0 a 120)")
 
                 if not correo:
                     errores.append("Correo es requerido")
@@ -717,17 +788,9 @@ def application(environ, start_response):
                 elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
                     errores.append("Solo se permiten imágenes JPG, PNG o GIF")
 
-                if not recaptcha_response:
-                    errores.append("Por favor, completa el reCAPTCHA")
-                else:
-                    if not validar_recaptcha(recaptcha_response):
-                        errores.append("El reCAPTCHA no es válido. Por favor, inténtalo de nuevo.")
-
                 if errores:
-                    mensaje = f'''<div class="error">
-                        <h3>Errores encontrados:</h3>
-                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul>
-                    </div>'''
+                    mensaje = f'''<div class="error"><h3>Errores:</h3>
+                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
                 else:
                     conn = conectar_bd()
                     if conn:
@@ -753,7 +816,6 @@ def application(environ, start_response):
                                    VALUES (%s, %s, %s, %s, %s, %s)""",
                                 (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
                             )
-
                             conn.commit()
                             cur.close()
                             conn.close()
@@ -766,19 +828,15 @@ def application(environ, start_response):
                                 <p><strong>Edad:</strong> {edad_mostrar} años</p>
                                 <p><strong>Correo:</strong> {correo}</p>
                                 <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                                <p style="margin-top: 10px; color: #28a745; font-size: 14px;">
-                                    <strong>reCAPTCHA verificado correctamente</strong>
-                                </p>
                             </div>'''
                         except Exception as e:
                             mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
                     else:
                         mensaje = '<div class="error">Error de conexión a la base de datos</div>'
-
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
-        # Obtener registros
+        # Obtener registros (últimos 10)
         registros_html = ""
         conn = conectar_bd()
         if conn:
@@ -797,10 +855,10 @@ def application(environ, start_response):
                 if registros:
                     registros_html = '''
                     <div class="registros">
-                        <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 20px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                             <h3>Registros guardados:</h3>
-                            <a href="/borrar_registros" style="background:#dc3545; color:white; padding:8px 15px; text-decoration:none; border-radius:5px; font-size:14px;">
-                                Borrar todos los registros
+                            <a href="/borrar_registros" style="background:#dc3545; color:white; padding:8px 14px; border-radius:6px; text-decoration:none; font-size:14px;">
+                                Borrar todos
                             </a>
                         </div>
                         <div class="lista-registros">
@@ -826,7 +884,7 @@ def application(environ, start_response):
                                     img_html = f'''<div class="imagen-preview">
                                         <img src="data:image/{img_tipo};base64,{img_base64}"
                                              alt="{img_nombre}"
-                                             style="max-width:150px; max-height:150px; border-radius:5px;">
+                                             style="max-width:150px; max-height:150px; border-radius:8px;">
                                         <p><small>{img_nombre}</small></p>
                                     </div>'''
                             except:
@@ -835,7 +893,7 @@ def application(environ, start_response):
                         registros_html += f'''<div class="registro">
                             <div class="registro-info">
                                 <h4>{nombre_reg}</h4>
-                                <p><strong>Fecha de nacimiento:</strong> {fecha_nac_str}</p>
+                                <p><strong>Fecha nac.:</strong> {fecha_nac_str}</p>
                                 <p><strong>Edad:</strong> {str(edad_reg) + " años" if edad_reg != "" else "No disponible"}</p>
                                 <p><strong>Correo:</strong> {correo_reg}</p>
                                 <p><small>Registrado: {fecha_str}</small></p>
@@ -845,8 +903,7 @@ def application(environ, start_response):
 
                     registros_html += '</div></div>'
                 else:
-                    registros_html = '<div class="sin-registros"><p>No hay registros aún. ¡Sé el primero en registrarte!</p></div>'
-
+                    registros_html = '<div class="sin-registros"><p>No hay registros aún.</p></div>'
             except Exception as e:
                 registros_html = f'<p class="error">Error cargando registros: {str(e)}</p>'
         else:
@@ -856,123 +913,91 @@ def application(environ, start_response):
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Formulario con Imágenes y reCAPTCHA</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <title>Formulario</title>
     <style>
         body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
         .container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        h1 {{ color: #333; margin-bottom: 30px; text-align: center; }}
-        .campo {{ margin: 20px 0; }}
-        label {{ display:block; margin-bottom: 8px; font-weight:bold; color:#555; }}
-        input[type="text"], input[type="email"], input[type="date"], input[type="file"] {{
-            width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px;
-        }}
-        .info {{ font-size: 14px; color: #6c757d; margin-top: 5px; }}
-        button[type="submit"] {{ padding: 12px 30px; background:#28a745; color:white; border:none; border-radius:5px; cursor:pointer; font-size:16px; margin-top:20px; width:100%; }}
-        button[type="submit"]:hover {{ background:#218838; }}
-        .exito {{ background:#d4edda; color:#155724; padding:20px; border-radius:5px; margin:20px 0; border-left:4px solid #28a745; }}
-        .error {{ background:#f8d7da; color:#721c24; padding:20px; border-radius:5px; margin:20px 0; border-left:4px solid #dc3545; }}
-        hr {{ margin:40px 0; border:none; border-top:2px solid #dee2e6; }}
-        .registro {{ display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:20px; border-radius:8px; margin:15px 0; border-left:4px solid #007bff; }}
-        .imagen-preview {{ text-align:center; margin-left:20px; }}
-        .lista-registros {{ max-height:500px; overflow-y:auto; padding:10px; }}
+        h1 {{ text-align:center; margin-bottom:25px; }}
         .form-group {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }}
-        .sin-registros {{ text-align:center; padding:30px; background:#e9ecef; border-radius:8px; color:#6c757d; }}
-        .recaptcha-container {{ margin:20px 0; padding:20px; background:#f8f9fa; border-radius:5px; text-align:center; }}
-        .g-recaptcha {{ display:inline-block; }}
+        .campo {{ margin: 16px 0; }}
+        label {{ font-weight:bold; display:block; margin-bottom:8px; }}
+        input[type="text"], input[type="email"], input[type="date"], input[type="file"] {{
+            width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px;
+        }}
+        .btn {{ width:100%; padding: 14px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; }}
+        .btn:hover {{ background:#218838; }}
+        .exito {{ background:#d4edda; color:#155724; padding:15px; border-radius:6px; border-left:4px solid #28a745; margin: 15px 0; }}
+        .error {{ background:#f8d7da; color:#721c24; padding:15px; border-radius:6px; border-left:4px solid #dc3545; margin: 15px 0; }}
+        .registro {{ display:flex; justify-content:space-between; align-items:center; background:#f8f9fa; padding:20px; border-radius:10px; margin:12px 0; border-left:4px solid #007bff; }}
+        .imagen-preview {{ text-align:center; margin-left:15px; }}
+        .lista-registros {{ max-height: 520px; overflow-y:auto; padding: 10px; }}
+        .sin-registros {{ text-align:center; padding: 20px; background:#e9ecef; border-radius:10px; }}
         @media (max-width:768px) {{
             .form-group {{ grid-template-columns:1fr; }}
             .registro {{ flex-direction:column; text-align:center; }}
-            .imagen-preview {{ margin-left:0; margin-top:15px; }}
+            .imagen-preview {{ margin-left:0; margin-top:12px; }}
         }}
     </style>
 </head>
 <body>
     {navegacion()}
     <div class="container">
-        <h1>Formulario con Imágenes y reCAPTCHA</h1>
+        <h1>Formulario (sin reCAPTCHA)</h1>
 
         {mensaje if mensaje else ''}
 
-        <form method="POST" enctype="multipart/form-data" id="formulario">
+        <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <div>
                     <div class="campo">
-                        <label>Nombre completo <span style="color:#dc3545">*</span></label>
+                        <label>Nombre *</label>
                         <input type="text"
                                name="nombre"
                                placeholder="Ej: Juan Pérez"
                                required
                                oninput="this.value = this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g, '')">
-                        <div class="info">Solo letras y espacios</div>
                     </div>
 
                     <div class="campo">
-                        <label>Fecha de nacimiento <span style="color:#dc3545">*</span></label>
+                        <label>Fecha de nacimiento *</label>
                         <input type="date" name="fecha_nacimiento" required>
-                        <div class="info">Selecciona tu fecha de nacimiento</div>
                     </div>
                 </div>
 
                 <div>
                     <div class="campo">
-                        <label>Correo electrónico <span style="color:#dc3545">*</span></label>
+                        <label>Correo *</label>
                         <input type="email" name="correo" placeholder="Ej: usuario@correo.com" required>
                     </div>
 
                     <div class="campo">
-                        <label>Confirmar correo <span style="color:#dc3545">*</span></label>
+                        <label>Confirmar correo *</label>
                         <input type="email" name="correo_confirmar" placeholder="Repite tu correo" required>
                     </div>
                 </div>
             </div>
 
             <div class="campo">
-                <label>Subir imagen <span style="color:#dc3545">*</span></label>
+                <label>Subir imagen *</label>
                 <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-                <div class="info">Formatos aceptados: JPG, PNG, GIF (máximo 5MB)</div>
             </div>
 
-            <div class="recaptcha-container">
-                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
-            </div>
-
-            <button type="submit" id="btn-submit">Enviar Formulario</button>
+            <button class="btn" type="submit">Guardar</button>
         </form>
 
-        <hr>
+        <hr style="margin:30px 0; border:none; border-top:2px solid #dee2e6;">
 
         {registros_html}
     </div>
-
-    <script>
-        document.getElementById('formulario').addEventListener('submit', function(e) {{
-            const recaptchaResponse = grecaptcha.getResponse();
-            if (recaptchaResponse.length === 0) {{
-                e.preventDefault();
-                alert('Por favor, completa el reCAPTCHA antes de enviar el formulario.');
-                return false;
-            }}
-            const submitBtn = document.getElementById('btn-submit');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = 'Enviando...';
-            return true;
-        }});
-        window.onload = function() {{
-            const submitBtn = document.getElementById('btn-submit');
-            if (submitBtn) {{
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Enviar Formulario';
-            }}
-        }};
-    </script>
 </body>
 </html>'''
 
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =================== 404 ===================
+    # =========================
+    # ========== 404 ===========
+    # =========================
     else:
         html = f'''<!DOCTYPE html>
 <html>
@@ -980,33 +1005,11 @@ def application(environ, start_response):
     <meta charset="UTF-8">
     <title>404 - Página no encontrada</title>
     <style>
-        body {{
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 100px auto;
-            padding: 40px;
-            background: #f8f9fa;
-        }}
-        .container {{
-            background: white;
-            padding: 60px;
-            border-radius: 10px;
-            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
-            text-align: center;
-        }}
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 100px auto; padding: 40px; background: #f8f9fa; }}
+        .container {{ background: white; padding: 60px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); text-align: center; }}
         h1 {{ color: #dc3545; font-size: 48px; margin-bottom: 20px; }}
-        .btn-volver {{
-            display: inline-block;
-            padding: 15px 30px;
-            background: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            margin-top: 20px;
-        }}
-        .btn-volver:hover {{ background: #0056b3; }}
+        .btn-volver {{ display:inline-block; padding: 14px 26px; background:#007bff; color:white; text-decoration:none; border-radius:6px; font-weight:bold; margin-top: 15px; }}
+        .btn-volver:hover {{ background:#0056b3; }}
     </style>
 </head>
 <body>
@@ -1014,11 +1017,10 @@ def application(environ, start_response):
     <div class="container">
         <h1>404</h1>
         <h2>Página no encontrada</h2>
-        <p>La ruta solicitada <code>{path}</code> no se encuentra en este servidor.</p>
-        <a href="/" class="btn-volver">Volver al Inicio</a>
+        <p>La ruta solicitada <code>{path}</code> no existe.</p>
+        <a class="btn-volver" href="/">Volver al Inicio</a>
     </div>
 </body>
 </html>'''
-
         start_response('404 Not Found', headers)
         return [html.encode('utf-8')]
