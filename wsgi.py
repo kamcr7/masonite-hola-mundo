@@ -20,7 +20,6 @@ def application(environ, start_response):
     RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
     RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
-    # -------- NAV ----------
     def navegacion():
         return '''<nav style="background: #343a40; padding: 15px; margin: 20px auto 30px; border-radius: 5px; max-width: 1100px;">
             <a href="/" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Inicio</a>
@@ -126,7 +125,7 @@ h1 {{ text-align:center; }}
                     num2 = float(params.get('suma2', [''])[0])
                     resultado_suma = f"<div class='ok'>Resultado: {num1} + {num2} = {num1 + num2}</div>"
                 except:
-                    resultado_suma = "<div class='bad'>Ingresa números válidos para la suma</div>"
+                    resultado_suma = "<div class='bad'>Ingresa SOLO números válidos para la suma</div>"
 
                 try:
                     num3 = float(params.get('div1', [''])[0])
@@ -136,7 +135,7 @@ h1 {{ text-align:center; }}
                     else:
                         resultado_division = f"<div class='ok'>Resultado: {num3} ÷ {num4} = {num3 / num4:.2f}</div>"
                 except:
-                    resultado_division = "<div class='bad'>Ingresa números válidos para la división</div>"
+                    resultado_division = "<div class='bad'>Ingresa SOLO números válidos para la división</div>"
 
         html = f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Calculadora</title>
@@ -159,8 +158,9 @@ button{{width:100%;padding:12px;background:#007bff;color:white;border:none;borde
   <div class="box">
     <h3>Suma</h3>
     <form method="POST">
-      <input name="suma1" placeholder="10" required>
-      <input name="suma2" placeholder="5" required>
+      <!-- SOLO NÚMEROS -->
+      <input type="number" step="any" name="suma1" placeholder="10" required>
+      <input type="number" step="any" name="suma2" placeholder="5" required>
       <button>Calcular</button>
     </form>
     {resultado_suma}
@@ -168,8 +168,9 @@ button{{width:100%;padding:12px;background:#007bff;color:white;border:none;borde
   <div class="box">
     <h3>División</h3>
     <form method="POST">
-      <input name="div1" placeholder="10" required>
-      <input name="div2" placeholder="2" required>
+      <!-- SOLO NÚMEROS -->
+      <input type="number" step="any" name="div1" placeholder="10" required>
+      <input type="number" step="any" name="div2" placeholder="2" required>
       <button>Calcular</button>
     </form>
     {resultado_division}
@@ -190,86 +191,99 @@ button{{width:100%;padding:12px;background:#007bff;color:white;border:none;borde
             try:
                 fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
 
-                nombre = fs.getvalue('nombre', '').strip()
-                fecha_nacimiento_str = fs.getvalue('fecha_nacimiento', '').strip()
-                correo = fs.getvalue('correo', '').strip()
-                correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
-
-                imagen_file = fs['imagen']
-                imagen_data = None
-                imagen_nombre = ""
-                imagen_tipo = ""
-
-                if imagen_file.filename:
-                    imagen_nombre = imagen_file.filename
-                    imagen_data = imagen_file.file.read()
-                    try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
-                    except:
-                        imagen_tipo = "desconocido"
-
-                errores = []
-                if not nombre:
-                    errores.append("Nombre es requerido")
-                elif not validar_nombre_solo_letras(nombre):
-                    errores.append("Nombre solo debe tener letras y espacios")
-
-                fecha_nacimiento = None
-                if not fecha_nacimiento_str:
-                    errores.append("Fecha de nacimiento es requerida")
-                else:
-                    fecha_nacimiento = parsear_fecha_nacimiento(fecha_nacimiento_str)
-                    if not fecha_nacimiento:
-                        errores.append("Fecha de nacimiento no válida")
-                    elif fecha_nacimiento > date.today():
-                        errores.append("La fecha no puede ser futura")
-
-                if not correo:
-                    errores.append("Correo es requerido")
-                elif correo != correo_confirmar:
-                    errores.append("Los correos no coinciden")
-
-                if not imagen_data:
-                    errores.append("Debe subir una imagen")
-                elif len(imagen_data) > 5 * 1024 * 1024:
-                    errores.append("La imagen es demasiado grande (máximo 5MB)")
-                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    errores.append("Solo se permiten JPG/PNG/GIF")
-
-                if errores:
-                    mensaje = "<div class='bad'><ul>" + "".join(f"<li>{e}</li>" for e in errores) + "</ul></div>"
-                else:
+                # BOTÓN BORRAR REGISTROS
+                if (fs.getvalue('borrar_todo') or '').strip() == '1':
                     conn = conectar_bd()
                     if conn:
                         cur = conn.cursor()
-                        cur.execute('''
-                            CREATE TABLE IF NOT EXISTS formulario_simple (
-                                id SERIAL PRIMARY KEY,
-                                nombre VARCHAR(100),
-                                fecha_nacimiento DATE,
-                                correo VARCHAR(100),
-                                imagen_nombre VARCHAR(255),
-                                imagen_tipo VARCHAR(20),
-                                imagen_data BYTEA,
-                                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            )
-                        ''')
-                        cur.execute("ALTER TABLE formulario_simple ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;")
-
-                        cur.execute(
-                            """INSERT INTO formulario_simple
-                               (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data)
-                               VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
-                        )
+                        cur.execute("DELETE FROM formulario_simple")
                         conn.commit()
                         cur.close()
                         conn.close()
-
-                        edad_mostrar = calcular_edad_desde_fecha(fecha_nacimiento)
-                        mensaje = f"<div class='ok'><b>Guardado:</b> {nombre} (Edad: {edad_mostrar})</div>"
+                        mensaje = "<div class='ok'><b>Listo:</b> registros eliminados.</div>"
                     else:
                         mensaje = "<div class='bad'>Sin conexión a BD</div>"
+                else:
+                    nombre = fs.getvalue('nombre', '').strip()
+                    fecha_nacimiento_str = fs.getvalue('fecha_nacimiento', '').strip()
+                    correo = fs.getvalue('correo', '').strip()
+                    correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
+
+                    imagen_file = fs['imagen']
+                    imagen_data = None
+                    imagen_nombre = ""
+                    imagen_tipo = ""
+
+                    if imagen_file.filename:
+                        imagen_nombre = imagen_file.filename
+                        imagen_data = imagen_file.file.read()
+                        try:
+                            imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
+                        except:
+                            imagen_tipo = "desconocido"
+
+                    errores = []
+                    if not nombre:
+                        errores.append("Nombre es requerido")
+                    elif not validar_nombre_solo_letras(nombre):
+                        errores.append("Nombre solo debe tener letras y espacios")
+
+                    fecha_nacimiento = None
+                    if not fecha_nacimiento_str:
+                        errores.append("Fecha de nacimiento es requerida")
+                    else:
+                        fecha_nacimiento = parsear_fecha_nacimiento(fecha_nacimiento_str)
+                        if not fecha_nacimiento:
+                            errores.append("Fecha de nacimiento no válida")
+                        elif fecha_nacimiento > date.today():
+                            errores.append("La fecha no puede ser futura")
+
+                    if not correo:
+                        errores.append("Correo es requerido")
+                    elif correo != correo_confirmar:
+                        errores.append("Los correos no coinciden")
+
+                    if not imagen_data:
+                        errores.append("Debe subir una imagen")
+                    elif len(imagen_data) > 5 * 1024 * 1024:
+                        errores.append("La imagen es demasiado grande (máximo 5MB)")
+                    elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
+                        errores.append("Solo se permiten JPG/PNG/GIF")
+
+                    if errores:
+                        mensaje = "<div class='bad'><ul>" + "".join(f"<li>{e}</li>" for e in errores) + "</ul></div>"
+                    else:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute('''
+                                CREATE TABLE IF NOT EXISTS formulario_simple (
+                                    id SERIAL PRIMARY KEY,
+                                    nombre VARCHAR(100),
+                                    fecha_nacimiento DATE,
+                                    correo VARCHAR(100),
+                                    imagen_nombre VARCHAR(255),
+                                    imagen_tipo VARCHAR(20),
+                                    imagen_data BYTEA,
+                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            ''')
+                            cur.execute("ALTER TABLE formulario_simple ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;")
+
+                            cur.execute(
+                                """INSERT INTO formulario_simple
+                                   (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data)
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                                (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                            )
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                            edad_mostrar = calcular_edad_desde_fecha(fecha_nacimiento)
+                            mensaje = f"<div class='ok'><b>Guardado:</b> {nombre} (Edad: {edad_mostrar})</div>"
+                        else:
+                            mensaje = "<div class='bad'>Sin conexión a BD</div>"
             except Exception as e:
                 mensaje = f"<div class='bad'>Error: {str(e)}</div>"
 
@@ -280,7 +294,7 @@ button{{width:100%;padding:12px;background:#007bff;color:white;border:none;borde
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT id, nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, fecha
+                    SELECT id, nombre, fecha_nacimiento, correo, fecha
                     FROM formulario_simple
                     ORDER BY fecha DESC
                     LIMIT 10
@@ -292,10 +306,19 @@ button{{width:100%;padding:12px;background:#007bff;color:white;border:none;borde
                 if rows:
                     items = ""
                     for r in rows:
-                        rid, n, fn, c, img_nom, img_tipo, f = r
+                        rid, n, fn, c, f = r
                         edad = calcular_edad_desde_fecha(fn) if fn else ""
                         items += f"<div class='item'><b>{n}</b> — Edad: {edad} — {c}<br><small>{str(f)[:16]}</small></div>"
-                    registros_html = f"<h3>Registros guardados</h3><div class='list'>{items}</div>"
+                    registros_html = f"""
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                      <h3 style="margin:0;">Registros guardados</h3>
+                      <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros?');">
+                        <input type="hidden" name="borrar_todo" value="1">
+                        <button class="danger" type="submit">Borrar registros</button>
+                      </form>
+                    </div>
+                    <div class='list'>{items}</div>
+                    """
                 else:
                     registros_html = "<p>No hay registros aún.</p>"
             except Exception as e:
@@ -312,8 +335,10 @@ input{{width:95%;padding:10px;margin:8px 0;border:1px solid #ddd;border-radius:6
 button{{width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;font-weight:bold;}}
 .ok{{background:#d4edda;color:#155724;padding:12px;border-radius:6px;margin:15px 0;}}
 .bad{{background:#f8d7da;color:#721c24;padding:12px;border-radius:6px;margin:15px 0;}}
-.list{{background:#f8f9fa;padding:15px;border-radius:10px;}}
+.list{{background:#f8f9fa;padding:15px;border-radius:10px;margin-top:10px;}}
 .item{{background:white;padding:12px;border-radius:8px;margin:10px 0;border-left:4px solid #007bff;}}
+.danger{{width:auto;padding:10px 14px;background:#dc3545;}}
+.danger:hover{{background:#c82333;}}
 </style></head>
 <body>
 {navegacion()}
@@ -345,43 +370,58 @@ button{{width:100%;padding:12px;background:#28a745;color:white;border:none;borde
         if method == 'POST':
             try:
                 fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
-                nombre = fs.getvalue('nombre', '').strip()
-                recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
 
-                errores = []
-                if not nombre:
-                    errores.append("Nombre es requerido")
-                elif not validar_nombre_solo_letras(nombre):
-                    errores.append("Nombre solo debe tener letras y espacios")
-
-                if not recaptcha_response:
-                    errores.append("Completa el reCAPTCHA")
-                elif not validar_recaptcha(recaptcha_response):
-                    errores.append("reCAPTCHA inválido")
-
-                if errores:
-                    mensaje = "<div class='bad'><ul>" + "".join(f"<li>{e}</li>" for e in errores) + "</ul></div>"
-                else:
+                # BOTÓN BORRAR REGISTROS
+                if (fs.getvalue('borrar_todo') or '').strip() == '1':
                     conn = conectar_bd()
                     if conn:
                         cur = conn.cursor()
-                        cur.execute('''
-                            CREATE TABLE IF NOT EXISTS nombres_recaptcha (
-                                id SERIAL PRIMARY KEY,
-                                nombre VARCHAR(100),
-                                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            )
-                        ''')
-                        cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre,))
+                        cur.execute("DELETE FROM nombres_recaptcha")
                         conn.commit()
                         cur.close()
                         conn.close()
-                        mensaje = "<div class='ok'>Registro guardado</div>"
+                        mensaje = "<div class='ok'>Registros eliminados.</div>"
                     else:
                         mensaje = "<div class='bad'>Sin conexión a BD</div>"
+                else:
+                    nombre = fs.getvalue('nombre', '').strip()
+                    recaptcha_response = fs.getvalue('g-recaptcha-response', '').strip()
+
+                    errores = []
+                    if not nombre:
+                        errores.append("Nombre es requerido")
+                    elif not validar_nombre_solo_letras(nombre):
+                        errores.append("Nombre solo debe tener letras y espacios")
+
+                    if not recaptcha_response:
+                        errores.append("Completa el reCAPTCHA")
+                    elif not validar_recaptcha(recaptcha_response):
+                        errores.append("reCAPTCHA inválido")
+
+                    if errores:
+                        mensaje = "<div class='bad'><ul>" + "".join(f"<li>{e}</li>" for e in errores) + "</ul></div>"
+                    else:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute('''
+                                CREATE TABLE IF NOT EXISTS nombres_recaptcha (
+                                    id SERIAL PRIMARY KEY,
+                                    nombre VARCHAR(100),
+                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            ''')
+                            cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre,))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                            mensaje = "<div class='ok'>Registro guardado</div>"
+                        else:
+                            mensaje = "<div class='bad'>Sin conexión a BD</div>"
             except Exception as e:
                 mensaje = f"<div class='bad'>Error: {str(e)}</div>"
 
+        # lista
         lista_html = ""
         conn = conectar_bd()
         if conn:
@@ -391,7 +431,7 @@ button{{width:100%;padding:12px;background:#28a745;color:white;border:none;borde
             cur.close()
             conn.close()
             if rows:
-                lista_html = "<h3>Nombres ingresados (últimos 15)</h3><ul>" + "".join(
+                lista_html = "<ul>" + "".join(
                     f"<li><b>{n}</b> <small>({str(f)[:16]})</small></li>" for n, f in rows
                 ) + "</ul>"
             else:
@@ -408,6 +448,9 @@ button{{width:100%;padding:12px;background:#28a745;color:white;border:none;borde
 .ok{{background:#d4edda;color:#155724;padding:12px;border-radius:6px;margin:15px 0;}}
 .bad{{background:#f8d7da;color:#721c24;padding:12px;border-radius:6px;margin:15px 0;}}
 .recap{{background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;text-align:center;}}
+.danger{{width:auto;padding:10px 14px;background:#dc3545;border-radius:6px;border:none;color:white;font-weight:bold;cursor:pointer;}}
+.danger:hover{{background:#c82333;}}
+.headerRow{{display:flex;justify-content:space-between;align-items:center;gap:10px;}}
 </style></head>
 <body>
 {navegacion()}
@@ -420,7 +463,17 @@ button{{width:100%;padding:12px;background:#28a745;color:white;border:none;borde
   <div class="recap"><div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div></div>
   <button type="submit">Guardar</button>
 </form>
+
 <hr style="margin:30px 0;">
+
+<div class="headerRow">
+  <h3 style="margin:0;">Nombres ingresados (últimos 15)</h3>
+  <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros de Registro?');">
+    <input type="hidden" name="borrar_todo" value="1">
+    <button class="danger" type="submit">Borrar registros</button>
+  </form>
+</div>
+
 {lista_html}
 </div>
 </body></html>'''
@@ -588,14 +641,14 @@ input[type=file]{{width:95%;padding:10px;background:white;border:1px solid #ddd;
 <script>
 let idx = 0;
 const slides = document.querySelectorAll('.slide');
-function show(i){{
+function show(i){
   if(slides.length===0) return;
   slides.forEach(s=>s.classList.remove('active'));
   idx = (i+slides.length)%slides.length;
   slides[idx].classList.add('active');
-}}
-function next(){{ show(idx+1); }}
-function prev(){{ show(idx-1); }}
+}
+function next(){ show(idx+1); }
+function prev(){ show(idx-1); }
 document.addEventListener('DOMContentLoaded', ()=>show(0));
 </script>
 
