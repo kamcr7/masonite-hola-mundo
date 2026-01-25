@@ -28,7 +28,7 @@ def application(environ, start_response):
             <a href="/calculadora" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Calculadora</a>
             <a href="/formulario" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Formulario</a>
             <a href="/carrusel" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Carrusel</a>
-            <a href="/nombre_recaptcha" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Nombre + reCAPTCHA</a>
+            <a href="/nombre_recaptcha" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Registro</a>
             <a href="/simular_404" style="color: white; margin: 0 12px; text-decoration: none; font-weight: bold;">Simular 404</a>
         </nav>'''
 
@@ -165,7 +165,6 @@ def application(environ, start_response):
             except Exception as e:
                 mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
 
-        # Obtener imágenes
         imagenes = []
         conn = conectar_bd()
         if conn:
@@ -202,12 +201,9 @@ def application(environ, start_response):
                         row = cur2.fetchone()
                         cur2.close()
                         conn2.close()
+                        img_nombre = row[1] if row and row[1] else ""
                         if row and row[0]:
-                            img_data = row[0]
-                            img_nombre = row[1] if row[1] else ""
-                            img_base64 = base64.b64encode(img_data).decode('utf-8')
-                        else:
-                            img_nombre = ""
+                            img_base64 = base64.b64encode(row[0]).decode('utf-8')
                     except:
                         img_nombre = ""
 
@@ -276,7 +272,7 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>Carrusel de Imágenes</h1>
+        <h1>Carrusel</h1>
         {mensaje if mensaje else ''}
         {imagenes_html}
 
@@ -337,9 +333,9 @@ def application(environ, start_response):
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
-    # =========================================
-    # ========= SIMULAR 404 (SIN RECUADRO) =====
-    # =========================================
+    # ==========================
+    # ======= SIMULAR 404 =======
+    # ==========================
     if path == '/simular_404':
         html = f'''<!DOCTYPE html>
 <html>
@@ -390,9 +386,9 @@ def application(environ, start_response):
         start_response('404 Not Found', headers)
         return [html.encode('utf-8')]
 
-    # ==================================================
-    # ===== NOMBRE + reCAPTCHA (sin cambios) ============
-    # ==================================================
+    # ==================================
+    # ======= REGISTRO (reCAPTCHA) ======
+    # ==================================
     if path == '/nombre_recaptcha':
         mensaje = ""
 
@@ -435,7 +431,7 @@ def application(environ, start_response):
                             conn.close()
 
                             mensaje = f'''<div class="exito">
-                                <h3>¡Nombre guardado!</h3>
+                                <h3>¡Registro guardado!</h3>
                                 <p><strong>Nombre:</strong> {nombre}</p>
                             </div>'''
                         except Exception as e:
@@ -476,7 +472,7 @@ def application(environ, start_response):
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Nombre + reCAPTCHA</title>
+    <title>Registro</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         body {{ font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f8f9fa; }}
@@ -497,7 +493,7 @@ def application(environ, start_response):
 <body>
     {navegacion()}
     <div class="container">
-        <h1>Solo Nombre + reCAPTCHA</h1>
+        <h1>Registro</h1>
 
         {mensaje if mensaje else ''}
 
@@ -515,7 +511,7 @@ def application(environ, start_response):
                 <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
             </div>
 
-            <button class="btn" type="submit">Guardar nombre</button>
+            <button class="btn" type="submit">Guardar</button>
         </form>
 
         {lista_html}
@@ -565,7 +561,7 @@ def application(environ, start_response):
             <div class="feature">
                 <div class="feature-icon">✓</div>
                 <h3>Formulario</h3>
-                <p>Registra datos y sube imagen (SIN reCAPTCHA)</p>
+                <p>Registra datos y sube imagen</p>
                 <a href="/formulario">Ir →</a>
             </div>
 
@@ -578,8 +574,8 @@ def application(environ, start_response):
 
             <div class="feature">
                 <div class="feature-icon">🔒</div>
-                <h3>Nombre + reCAPTCHA</h3>
-                <p>Solo guarda nombres con reCAPTCHA</p>
+                <h3>Registro</h3>
+                <p>Guarda solo nombre con reCAPTCHA</p>
                 <a href="/nombre_recaptcha">Ir →</a>
             </div>
         </div>
@@ -652,131 +648,6 @@ def application(environ, start_response):
 </form>{resultado_division}
 </div>
 </div></div></body></html>'''
-        start_response('200 OK', headers)
-        return [html.encode('utf-8')]
-
-    # ==========================================
-    # ========= FORMULARIO SIN reCAPTCHA ========
-    # ==========================================
-    elif path == '/formulario':
-        mensaje = ""
-
-        if method == 'POST':
-            try:
-                fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
-
-                nombre = fs.getvalue('nombre', '').strip()
-                fecha_nacimiento_str = fs.getvalue('fecha_nacimiento', '').strip()
-                correo = fs.getvalue('correo', '').strip()
-                correo_confirmar = fs.getvalue('correo_confirmar', '').strip()
-
-                imagen_file = fs['imagen']
-                imagen_data = None
-                imagen_nombre = ""
-                imagen_tipo = ""
-
-                if imagen_file.filename:
-                    imagen_nombre = imagen_file.filename
-                    imagen_data = imagen_file.file.read()
-                    try:
-                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
-                    except:
-                        imagen_tipo = "desconocido"
-
-                errores = []
-                if not nombre:
-                    errores.append("Nombre es requerido")
-                elif not validar_nombre_solo_letras(nombre):
-                    errores.append("Nombre solo debe contener letras y espacios (sin números ni símbolos)")
-
-                fecha_nacimiento = None
-                if not fecha_nacimiento_str:
-                    errores.append("Fecha de nacimiento es requerida")
-                else:
-                    fecha_nacimiento = parsear_fecha_nacimiento(fecha_nacimiento_str)
-                    if not fecha_nacimiento:
-                        errores.append("Fecha de nacimiento no es válida")
-                    else:
-                        if fecha_nacimiento > date.today():
-                            errores.append("La fecha de nacimiento no puede ser futura")
-                        else:
-                            edad_calc = calcular_edad_desde_fecha(fecha_nacimiento)
-                            if edad_calc < 0 or edad_calc > 120:
-                                errores.append("La fecha no corresponde a una edad válida (0 a 120)")
-
-                if not correo:
-                    errores.append("Correo es requerido")
-                elif correo != correo_confirmar:
-                    errores.append("Los correos no coinciden")
-
-                if not imagen_data:
-                    errores.append("Debe subir una imagen")
-                elif len(imagen_data) > 5 * 1024 * 1024:
-                    errores.append("La imagen es demasiado grande (máximo 5MB)")
-                elif imagen_tipo not in ['jpeg', 'jpg', 'png', 'gif']:
-                    errores.append("Solo se permiten imágenes JPG, PNG o GIF")
-
-                if errores:
-                    mensaje = f'''<div class="error"><h3>Errores:</h3>
-                        <ul>{"".join(f'<li>{e}</li>' for e in errores)}</ul></div>'''
-                else:
-                    conn = conectar_bd()
-                    if conn:
-                        try:
-                            cur = conn.cursor()
-                            cur.execute('''
-                                CREATE TABLE IF NOT EXISTS formulario_simple (
-                                    id SERIAL PRIMARY KEY,
-                                    nombre VARCHAR(100),
-                                    fecha_nacimiento DATE,
-                                    correo VARCHAR(100),
-                                    imagen_nombre VARCHAR(255),
-                                    imagen_tipo VARCHAR(20),
-                                    imagen_data BYTEA,
-                                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                )
-                            ''')
-                            cur.execute('ALTER TABLE formulario_simple ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;')
-
-                            cur.execute(
-                                """INSERT INTO formulario_simple
-                                   (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data)
-                                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
-                            )
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-
-                            edad_mostrar = calcular_edad_desde_fecha(fecha_nacimiento)
-                            mensaje = f'''<div class="exito">
-                                <h3>¡Registro exitoso!</h3>
-                                <p><strong>Nombre:</strong> {nombre}</p>
-                                <p><strong>Fecha de nacimiento:</strong> {fecha_nacimiento_str}</p>
-                                <p><strong>Edad:</strong> {edad_mostrar} años</p>
-                                <p><strong>Correo:</strong> {correo}</p>
-                                <p><strong>Imagen:</strong> {imagen_nombre} ({imagen_tipo.upper()})</p>
-                            </div>'''
-                        except Exception as e:
-                            mensaje = f'<div class="error">Error al guardar en BD: {str(e)}</div>'
-                    else:
-                        mensaje = '<div class="error">Error de conexión a la base de datos</div>'
-            except Exception as e:
-                mensaje = f'<div class="error">Error procesando formulario: {str(e)}</div>'
-
-        html = f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Formulario</title></head>
-<body>{navegacion()}<div style="max-width:900px;margin:40px auto;background:white;padding:30px;border-radius:10px;">
-<h1 style="text-align:center;">Formulario (sin reCAPTCHA)</h1>{mensaje}
-<form method="POST" enctype="multipart/form-data">
-<input name="nombre" placeholder="Nombre" required
- oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')"
- style="width:95%;padding:10px;margin:8px 0;">
-<input type="date" name="fecha_nacimiento" required style="width:95%;padding:10px;margin:8px 0;">
-<input type="email" name="correo" placeholder="Correo" required style="width:95%;padding:10px;margin:8px 0;">
-<input type="email" name="correo_confirmar" placeholder="Confirmar correo" required style="width:95%;padding:10px;margin:8px 0;">
-<input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required style="width:95%;padding:10px;margin:8px 0;">
-<button style="width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;font-weight:bold;">Guardar</button>
-</form></div></body></html>'''
         start_response('200 OK', headers)
         return [html.encode('utf-8')]
 
