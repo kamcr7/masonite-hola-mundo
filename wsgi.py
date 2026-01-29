@@ -8,7 +8,7 @@ import json
 import cgi
 import re
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 DATABASE_URL = "postgresql://postgres:YmbYQizQXChKLoqdVAORJvZiJMDCbLTt@interchange.proxy.rlwy.net:31359/railway"
 
@@ -50,7 +50,7 @@ def application(environ, start_response):
 
     def validar_nombre_solo_letras(nombre):
         patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$"
-        return bool(re.fullmatch(patron, nombre or ""))
+        return bool(re.fullmatch(patron, (nombre or "").strip()))
 
     def parsear_fecha(fecha_str):
         try:
@@ -208,9 +208,12 @@ __BODY__
 
     # =========================================================
     # FORMULARIO + PRG (POST -> Redirect -> GET)
+    #   - Fecha nacimiento: NO permite hoy ni mañana (ni futuras)
     # =========================================================
     if path == "/formulario":
         mensaje = ""
+        hoy = date.today()
+        max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")  # ayer
 
         if method == "POST":
             try:
@@ -227,7 +230,6 @@ __BODY__
                         cur.close()
                         conn.close()
 
-                    # PRG: redirigir para que refresh no repita POST
                     start_response("303 See Other", [('Location', '/formulario')] + headers)
                     return [b""]
 
@@ -250,8 +252,10 @@ __BODY__
                     fecha_nac = parsear_fecha(fecha_str)
                     if not fecha_nac:
                         errores.append("Fecha de nacimiento inválida")
-                    elif fecha_nac > date.today():
-                        errores.append("La fecha no puede ser futura")
+                    else:
+                        # NUEVA REGLA: NO permitir hoy, mañana ni futuras => debe ser < hoy
+                        if fecha_nac >= hoy:
+                            errores.append("La fecha de nacimiento no puede ser la de hoy ni una futura")
 
                 if not correo:
                     errores.append("Correo es requerido")
@@ -278,7 +282,6 @@ __BODY__
                             errores.append("Solo JPG, PNG o GIF")
 
                 if errores:
-                    # si hay error, sí mostramos la página (no redirigimos) para que veas el mensaje
                     mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
                 else:
                     conn = conectar_bd()
@@ -293,14 +296,13 @@ __BODY__
                         cur.close()
                         conn.close()
 
-                    # PRG: redirect en éxito para que refresh NO duplique
                     start_response("303 See Other", [('Location', '/formulario')] + headers)
                     return [b""]
 
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # lista de registros (GET o POST con error)
+        # lista de registros
         registros_html = ""
         conn = conectar_bd()
         if conn:
@@ -345,7 +347,8 @@ __MENSAJE__
   <input name="nombre" placeholder="Nombre" required oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
 
   <label><b>Fecha de nacimiento</b></label>
-  <input type="date" name="fecha_nacimiento" required>
+  <input type="date" name="fecha_nacimiento" max="__MAX__" required>
+  <small>Debe ser anterior a hoy.</small>
 
   <label><b>Correo</b></label>
   <input type="email" name="correo" placeholder="Correo" required>
@@ -361,14 +364,14 @@ __MENSAJE__
 
 <hr>
 __REGS__
-""".replace("__MENSAJE__", mensaje).replace("__REGS__", registros_html)
+""".replace("__MENSAJE__", mensaje).replace("__REGS__", registros_html).replace("__MAX__", max_fecha)
 
         html = page("Formulario", body)
         start_response("200 OK", headers)
         return [html.encode("utf-8")]
 
     # =========================================================
-    # REGISTRO (nombre + recaptcha) + botón borrar
+    # REGISTRO (obligatorio nombre) + recaptcha
     # =========================================================
     if path == "/nombre_recaptcha":
         mensaje = ""
@@ -394,8 +397,9 @@ __REGS__
                     rec = (fs.getvalue("g-recaptcha-response") or "").strip()
 
                     errores = []
+                    # OBLIGATORIO nombre sí o sí
                     if not nombre:
-                        errores.append("Nombre es requerido")
+                        errores.append("Debes escribir un nombre para poder agregar.")
                     elif not validar_nombre_solo_letras(nombre):
                         errores.append("Nombre solo debe tener letras y espacios")
 
@@ -491,9 +495,10 @@ __LISTA__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CARRUSEL
+    # CARRUSEL + PRG (POST -> Redirect -> GET)
     # =========================================================
     if path == "/carrusel":
+        # PRG: si hay POST y todo salió bien, redirigimos y no se duplica al refrescar
         mensaje = ""
 
         if method == "POST":
@@ -510,43 +515,52 @@ __LISTA__
                         conn.commit()
                         cur.close()
                         conn.close()
-                        mensaje = "<div class='ok'>Imagen eliminada.</div>"
+
+                    # PRG redirect
+                    start_response("303 See Other", [('Location', '/carrusel')] + headers)
+                    return [b""]
+
+                # agregar
+                if "imagen" not in fs:
+                    mensaje = "<div class='bad'>Debes seleccionar una imagen</div>"
                 else:
-                    if "imagen" not in fs:
+                    img_file = fs["imagen"]
+                    if not getattr(img_file, "filename", ""):
                         mensaje = "<div class='bad'>Debes seleccionar una imagen</div>"
                     else:
-                        img_file = fs["imagen"]
-                        if not getattr(img_file, "filename", ""):
-                            mensaje = "<div class='bad'>Debes seleccionar una imagen</div>"
+                        img_nombre = img_file.filename
+                        img_data = img_file.file.read()
+                        img_tipo = imghdr.what(None, h=img_data) or "desconocido"
+
+                        errores = []
+                        if len(img_data) > 5 * 1024 * 1024:
+                            errores.append("Máximo 5MB")
+                        if img_tipo not in ["jpeg", "jpg", "png", "gif"]:
+                            errores.append("Solo JPG, PNG o GIF")
+
+                        if errores:
+                            mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
                         else:
-                            img_nombre = img_file.filename
-                            img_data = img_file.file.read()
-                            img_tipo = imghdr.what(None, h=img_data) or "desconocido"
+                            conn = conectar_bd()
+                            if conn:
+                                cur = conn.cursor()
+                                cur.execute("CREATE TABLE IF NOT EXISTS carrusel_imagenes (id SERIAL PRIMARY KEY, imagen_nombre VARCHAR(255), imagen_tipo VARCHAR(20), imagen_data BYTEA, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                                cur.execute(
+                                    "INSERT INTO carrusel_imagenes (imagen_nombre, imagen_tipo, imagen_data) VALUES (%s,%s,%s)",
+                                    (img_nombre, img_tipo, psycopg2.Binary(img_data))
+                                )
+                                conn.commit()
+                                cur.close()
+                                conn.close()
 
-                            errores = []
-                            if len(img_data) > 5 * 1024 * 1024:
-                                errores.append("Máximo 5MB")
-                            if img_tipo not in ["jpeg", "jpg", "png", "gif"]:
-                                errores.append("Solo JPG, PNG o GIF")
+                            # PRG redirect en éxito
+                            start_response("303 See Other", [('Location', '/carrusel')] + headers)
+                            return [b""]
 
-                            if errores:
-                                mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
-                            else:
-                                conn = conectar_bd()
-                                if conn:
-                                    cur = conn.cursor()
-                                    cur.execute("CREATE TABLE IF NOT EXISTS carrusel_imagenes (id SERIAL PRIMARY KEY, imagen_nombre VARCHAR(255), imagen_tipo VARCHAR(20), imagen_data BYTEA, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-                                    cur.execute(
-                                        "INSERT INTO carrusel_imagenes (imagen_nombre, imagen_tipo, imagen_data) VALUES (%s,%s,%s)",
-                                        (img_nombre, img_tipo, psycopg2.Binary(img_data))
-                                    )
-                                    conn.commit()
-                                    cur.close()
-                                    conn.close()
-                                    mensaje = "<div class='ok'>Imagen agregada.</div>"
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
+        # GET (o POST con error) render carrusel
         slides = ""
         conn = conectar_bd()
         if conn:
