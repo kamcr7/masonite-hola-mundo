@@ -152,7 +152,6 @@ __BODY__
                 post_data = environ["wsgi.input"].read(content_length).decode("utf-8") if content_length > 0 else ""
                 params = parse_qs(post_data)
 
-                # suma
                 try:
                     num1 = float(params.get("suma1", [""])[0])
                     num2 = float(params.get("suma2", [""])[0])
@@ -160,7 +159,6 @@ __BODY__
                 except:
                     resultado_suma = "<div class='bad'>Ingresa SOLO números válidos para la suma</div>"
 
-                # division
                 try:
                     num3 = float(params.get("div1", [""])[0])
                     num4 = float(params.get("div2", [""])[0])
@@ -209,7 +207,7 @@ __BODY__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # FORMULARIO (sin recaptcha) + botón borrar registros
+    # FORMULARIO + PRG (POST -> Redirect -> GET)
     # =========================================================
     if path == "/formulario":
         mensaje = ""
@@ -228,78 +226,81 @@ __BODY__
                         conn.commit()
                         cur.close()
                         conn.close()
-                        mensaje = "<div class='ok'>Registros eliminados.</div>"
-                    else:
-                        mensaje = "<div class='bad'>No hay conexión a BD</div>"
+
+                    # PRG: redirigir para que refresh no repita POST
+                    start_response("303 See Other", [('Location', '/formulario')] + headers)
+                    return [b""]
+
+                # guardar normal
+                nombre = (fs.getvalue("nombre") or "").strip()
+                fecha_str = (fs.getvalue("fecha_nacimiento") or "").strip()
+                correo = (fs.getvalue("correo") or "").strip()
+                correo2 = (fs.getvalue("correo_confirmar") or "").strip()
+
+                errores = []
+                if not nombre:
+                    errores.append("Nombre es requerido")
+                elif not validar_nombre_solo_letras(nombre):
+                    errores.append("Nombre solo debe tener letras y espacios")
+
+                fecha_nac = None
+                if not fecha_str:
+                    errores.append("Fecha de nacimiento es requerida")
                 else:
-                    nombre = (fs.getvalue("nombre") or "").strip()
-                    fecha_str = (fs.getvalue("fecha_nacimiento") or "").strip()
-                    correo = (fs.getvalue("correo") or "").strip()
-                    correo2 = (fs.getvalue("correo_confirmar") or "").strip()
+                    fecha_nac = parsear_fecha(fecha_str)
+                    if not fecha_nac:
+                        errores.append("Fecha de nacimiento inválida")
+                    elif fecha_nac > date.today():
+                        errores.append("La fecha no puede ser futura")
 
-                    errores = []
-                    if not nombre:
-                        errores.append("Nombre es requerido")
-                    elif not validar_nombre_solo_letras(nombre):
-                        errores.append("Nombre solo debe tener letras y espacios")
+                if not correo:
+                    errores.append("Correo es requerido")
+                elif correo != correo2:
+                    errores.append("Los correos no coinciden")
 
-                    fecha_nac = None
-                    if not fecha_str:
-                        errores.append("Fecha de nacimiento es requerida")
-                    else:
-                        fecha_nac = parsear_fecha(fecha_str)
-                        if not fecha_nac:
-                            errores.append("Fecha de nacimiento inválida")
-                        elif fecha_nac > date.today():
-                            errores.append("La fecha no puede ser futura")
+                imagen_data = None
+                imagen_nombre = ""
+                imagen_tipo = ""
 
-                    if not correo:
-                        errores.append("Correo es requerido")
-                    elif correo != correo2:
-                        errores.append("Los correos no coinciden")
-
-                    imagen_data = None
-                    imagen_nombre = ""
-                    imagen_tipo = ""
-
-                    if "imagen" not in fs:
+                if "imagen" not in fs:
+                    errores.append("Debe subir una imagen")
+                else:
+                    imagen_file = fs["imagen"]
+                    if not getattr(imagen_file, "filename", ""):
                         errores.append("Debe subir una imagen")
                     else:
-                        imagen_file = fs["imagen"]
-                        if not getattr(imagen_file, "filename", ""):
-                            errores.append("Debe subir una imagen")
-                        else:
-                            imagen_nombre = imagen_file.filename
-                            imagen_data = imagen_file.file.read()
-                            imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
-                            if len(imagen_data) > 5 * 1024 * 1024:
-                                errores.append("La imagen es demasiado grande (máximo 5MB)")
-                            if imagen_tipo not in ["jpeg", "jpg", "png", "gif"]:
-                                errores.append("Solo JPG, PNG o GIF")
+                        imagen_nombre = imagen_file.filename
+                        imagen_data = imagen_file.file.read()
+                        imagen_tipo = imghdr.what(None, h=imagen_data) or "desconocido"
+                        if len(imagen_data) > 5 * 1024 * 1024:
+                            errores.append("La imagen es demasiado grande (máximo 5MB)")
+                        if imagen_tipo not in ["jpeg", "jpg", "png", "gif"]:
+                            errores.append("Solo JPG, PNG o GIF")
 
-                    if errores:
-                        mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
-                    else:
-                        conn = conectar_bd()
-                        if conn:
-                            cur = conn.cursor()
-                            cur.execute("CREATE TABLE IF NOT EXISTS formulario_simple (id SERIAL PRIMARY KEY, nombre VARCHAR(100), fecha_nacimiento DATE, correo VARCHAR(120), imagen_nombre VARCHAR(255), imagen_tipo VARCHAR(20), imagen_data BYTEA, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-                            cur.execute(
-                                "INSERT INTO formulario_simple (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data) VALUES (%s,%s,%s,%s,%s,%s)",
-                                (nombre, fecha_nac, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
-                            )
-                            conn.commit()
-                            cur.close()
-                            conn.close()
+                if errores:
+                    # si hay error, sí mostramos la página (no redirigimos) para que veas el mensaje
+                    mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
+                else:
+                    conn = conectar_bd()
+                    if conn:
+                        cur = conn.cursor()
+                        cur.execute("CREATE TABLE IF NOT EXISTS formulario_simple (id SERIAL PRIMARY KEY, nombre VARCHAR(100), fecha_nacimiento DATE, correo VARCHAR(120), imagen_nombre VARCHAR(255), imagen_tipo VARCHAR(20), imagen_data BYTEA, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                        cur.execute(
+                            "INSERT INTO formulario_simple (nombre, fecha_nacimiento, correo, imagen_nombre, imagen_tipo, imagen_data) VALUES (%s,%s,%s,%s,%s,%s)",
+                            (nombre, fecha_nac, correo, imagen_nombre, imagen_tipo, psycopg2.Binary(imagen_data))
+                        )
+                        conn.commit()
+                        cur.close()
+                        conn.close()
 
-                            edad = calcular_edad(fecha_nac)
-                            mensaje = "<div class='ok'>Guardado: <b>%s</b> (Edad: %s)</div>" % (nombre, edad)
-                        else:
-                            mensaje = "<div class='bad'>No hay conexión a BD</div>"
+                    # PRG: redirect en éxito para que refresh NO duplique
+                    start_response("303 See Other", [('Location', '/formulario')] + headers)
+                    return [b""]
+
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # lista de registros
+        # lista de registros (GET o POST con error)
         registros_html = ""
         conn = conectar_bd()
         if conn:
@@ -367,7 +368,7 @@ __REGS__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # REGISTRO (nombre + recaptcha) + botón borrar registros
+    # REGISTRO (nombre + recaptcha) + botón borrar
     # =========================================================
     if path == "/nombre_recaptcha":
         mensaje = ""
@@ -376,7 +377,6 @@ __REGS__
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
 
-                # borrar todo
                 if (fs.getvalue("borrar_todo") or "").strip() == "1":
                     conn = conectar_bd()
                     if conn:
@@ -421,7 +421,6 @@ __REGS__
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # lista
         lista = ""
         conn = conectar_bd()
         if conn:
@@ -478,7 +477,7 @@ __LISTA__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # SIMULAR 404 (sin recuadro rojo)
+    # SIMULAR 404
     # =========================================================
     if path == "/simular_404":
         body = """
@@ -492,7 +491,7 @@ __LISTA__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CARRUSEL (subir + eliminar)
+    # CARRUSEL
     # =========================================================
     if path == "/carrusel":
         mensaje = ""
@@ -512,8 +511,6 @@ __LISTA__
                         cur.close()
                         conn.close()
                         mensaje = "<div class='ok'>Imagen eliminada.</div>"
-                    else:
-                        mensaje = "<div class='bad'>No hay conexión a BD</div>"
                 else:
                     if "imagen" not in fs:
                         mensaje = "<div class='bad'>Debes seleccionar una imagen</div>"
@@ -547,12 +544,9 @@ __LISTA__
                                     cur.close()
                                     conn.close()
                                     mensaje = "<div class='ok'>Imagen agregada.</div>"
-                                else:
-                                    mensaje = "<div class='bad'>No hay conexión a BD</div>"
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # cargar imagenes
         slides = ""
         conn = conectar_bd()
         if conn:
@@ -583,8 +577,6 @@ __LISTA__
                     slides = "<p>No hay imágenes aún.</p>"
             except Exception as e:
                 slides = "<div class='bad'>Error cargando carrusel: %s</div>" % str(e)
-        else:
-            slides = "<div class='bad'>No hay conexión a BD</div>"
 
         body = """
 <h1>Carrusel</h1>
