@@ -52,6 +52,10 @@ def application(environ, start_response):
         patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$"
         return bool(re.fullmatch(patron, (nombre or "").strip()))
 
+    def limpiar_espacios(nombre):
+        # quita espacios duplicados y recorta
+        return " ".join((nombre or "").strip().split())
+
     def parsear_fecha(fecha_str):
         try:
             return datetime.strptime(fecha_str, "%Y-%m-%d").date()
@@ -90,6 +94,7 @@ def application(environ, start_response):
     h1{text-align:center;margin-top:0;}
     .ok{background:#d4edda;color:#155724;padding:12px;border-radius:6px;margin:15px 0;}
     .bad{background:#f8d7da;color:#721c24;padding:12px;border-radius:6px;margin:15px 0;}
+    .info{background:#e7f3ff;color:#0b4f9c;padding:12px;border-radius:6px;margin:15px 0;border-left:4px solid #007bff;}
     input,textarea{width:95%;padding:10px;margin:8px 0;border:1px solid #ddd;border-radius:6px;font-size:16px;}
     button{padding:12px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;}
     .btn-primary{background:#28a745;color:white;width:100%;}
@@ -208,7 +213,7 @@ __BODY__
 
     # =========================================================
     # FORMULARIO + PRG (POST -> Redirect -> GET)
-    #   - Fecha nacimiento: NO permite hoy ni mañana (ni futuras)
+    #   - Fecha nacimiento: NO permite hoy ni futuras
     # =========================================================
     if path == "/formulario":
         mensaje = ""
@@ -233,7 +238,6 @@ __BODY__
                     start_response("303 See Other", [('Location', '/formulario')] + headers)
                     return [b""]
 
-                # guardar normal
                 nombre = (fs.getvalue("nombre") or "").strip()
                 fecha_str = (fs.getvalue("fecha_nacimiento") or "").strip()
                 correo = (fs.getvalue("correo") or "").strip()
@@ -253,7 +257,6 @@ __BODY__
                     if not fecha_nac:
                         errores.append("Fecha de nacimiento inválida")
                     else:
-                        # NUEVA REGLA: NO permitir hoy, mañana ni futuras => debe ser < hoy
                         if fecha_nac >= hoy:
                             errores.append("La fecha de nacimiento no puede ser la de hoy ni una futura")
 
@@ -302,7 +305,6 @@ __BODY__
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # lista de registros
         registros_html = ""
         conn = conectar_bd()
         if conn:
@@ -371,7 +373,7 @@ __REGS__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # REGISTRO (obligatorio nombre) + recaptcha
+    # REGISTRO + PRG + MAX 30 LETRAS
     # =========================================================
     if path == "/nombre_recaptcha":
         mensaje = ""
@@ -380,57 +382,65 @@ __REGS__
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
 
+                # borrar todo -> PRG
                 if (fs.getvalue("borrar_todo") or "").strip() == "1":
                     conn = conectar_bd()
                     if conn:
                         cur = conn.cursor()
-                        cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(100), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                        cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(30), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
                         cur.execute("DELETE FROM nombres_recaptcha")
                         conn.commit()
                         cur.close()
                         conn.close()
-                        mensaje = "<div class='ok'>Registros eliminados.</div>"
-                    else:
-                        mensaje = "<div class='bad'>No hay conexión a BD</div>"
+
+                    start_response("303 See Other", [('Location', '/nombre_recaptcha')] + headers)
+                    return [b""]
+
+                nombre_raw = (fs.getvalue("nombre") or "")
+                nombre = limpiar_espacios(nombre_raw)
+                rec = (fs.getvalue("g-recaptcha-response") or "").strip()
+
+                errores = []
+                if not nombre:
+                    errores.append("Debes escribir un nombre para poder agregar.")
                 else:
-                    nombre = (fs.getvalue("nombre") or "").strip()
-                    rec = (fs.getvalue("g-recaptcha-response") or "").strip()
-
-                    errores = []
-                    # OBLIGATORIO nombre sí o sí
-                    if not nombre:
-                        errores.append("Debes escribir un nombre para poder agregar.")
-                    elif not validar_nombre_solo_letras(nombre):
+                    if not validar_nombre_solo_letras(nombre):
                         errores.append("Nombre solo debe tener letras y espacios")
+                    if len(nombre) > 30:
+                        errores.append("Solo se permiten 30 letras máximo (no se aceptan más de 30 caracteres).")
 
-                    if not rec:
-                        errores.append("Completa el reCAPTCHA")
-                    elif not validar_recaptcha(rec):
-                        errores.append("reCAPTCHA inválido")
+                if not rec:
+                    errores.append("Completa el reCAPTCHA")
+                elif not validar_recaptcha(rec):
+                    errores.append("reCAPTCHA inválido")
 
-                    if errores:
-                        mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
-                    else:
-                        conn = conectar_bd()
-                        if conn:
-                            cur = conn.cursor()
-                            cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(100), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-                            cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre,))
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-                            mensaje = "<div class='ok'>Registro guardado.</div>"
-                        else:
-                            mensaje = "<div class='bad'>No hay conexión a BD</div>"
+                if errores:
+                    mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
+                else:
+                    conn = conectar_bd()
+                    if conn:
+                        cur = conn.cursor()
+                        # guardamos máximo 30 en DB también
+                        cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(30), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                        cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre[:30],))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+
+                    # PRG: evita duplicado por refresh
+                    start_response("303 See Other", [('Location', '/nombre_recaptcha')] + headers)
+                    return [b""]
+
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
+        # lista
         lista = ""
         conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(100), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+                cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(30), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
                 cur.execute("SELECT nombre, fecha FROM nombres_recaptcha ORDER BY fecha DESC LIMIT 15")
                 rows = cur.fetchall()
                 cur.close()
@@ -446,13 +456,15 @@ __REGS__
 
         body = """
 <h1>Registro</h1>
+<div class="info">Máximo 30 letras. Si escribes más, no se guardará.</div>
 __MENSAJE__
 
 <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 
 <form method="POST">
   <label><b>Nombre</b></label>
-  <input name="nombre" placeholder="Nombre" required oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
+  <input name="nombre" placeholder="Nombre" required maxlength="30"
+         oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
 
   <div style="background:#f8f9fa;padding:15px;border-radius:10px;margin:15px 0;text-align:center;">
     <div class="g-recaptcha" data-sitekey="__SITEKEY__"></div>
@@ -495,10 +507,9 @@ __LISTA__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CARRUSEL + PRG (POST -> Redirect -> GET)
+    # CARRUSEL + PRG
     # =========================================================
     if path == "/carrusel":
-        # PRG: si hay POST y todo salió bien, redirigimos y no se duplica al refrescar
         mensaje = ""
 
         if method == "POST":
@@ -516,11 +527,9 @@ __LISTA__
                         cur.close()
                         conn.close()
 
-                    # PRG redirect
                     start_response("303 See Other", [('Location', '/carrusel')] + headers)
                     return [b""]
 
-                # agregar
                 if "imagen" not in fs:
                     mensaje = "<div class='bad'>Debes seleccionar una imagen</div>"
                 else:
@@ -553,14 +562,12 @@ __LISTA__
                                 cur.close()
                                 conn.close()
 
-                            # PRG redirect en éxito
                             start_response("303 See Other", [('Location', '/carrusel')] + headers)
                             return [b""]
 
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # GET (o POST con error) render carrusel
         slides = ""
         conn = conectar_bd()
         if conn:
