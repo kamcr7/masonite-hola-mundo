@@ -54,7 +54,6 @@ def application(environ, start_response):
         return bool(re.fullmatch(patron, (nombre or "").strip()))
 
     def limpiar_espacios(nombre):
-        # quita espacios duplicados y recorta
         return " ".join((nombre or "").strip().split())
 
     def parsear_fecha(fecha_str):
@@ -217,19 +216,18 @@ __BODY__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # FORMULARIO + PRG (POST -> Redirect -> GET)
+    # FORMULARIO + PRG
     #   - Fecha nacimiento: NO permite hoy ni futuras
     # =========================================================
     if path == "/formulario":
         mensaje = ""
         hoy = date.today()
-        max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")  # ayer
+        max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")
 
         if method == "POST":
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
 
-                # borrar todo
                 if (fs.getvalue("borrar_todo") or "").strip() == "1":
                     conn = conectar_bd()
                     if conn:
@@ -387,7 +385,6 @@ __REGS__
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
 
-                # borrar todo -> PRG
                 if (fs.getvalue("borrar_todo") or "").strip() == "1":
                     conn = conectar_bd()
                     if conn:
@@ -425,21 +422,18 @@ __REGS__
                     conn = conectar_bd()
                     if conn:
                         cur = conn.cursor()
-                        # guardamos máximo 30 en DB también
                         cur.execute("CREATE TABLE IF NOT EXISTS nombres_recaptcha (id SERIAL PRIMARY KEY, nombre VARCHAR(30), fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
                         cur.execute("INSERT INTO nombres_recaptcha (nombre) VALUES (%s)", (nombre[:30],))
                         conn.commit()
                         cur.close()
                         conn.close()
 
-                    # PRG: evita duplicado por refresh
                     start_response("303 See Other", [('Location', '/nombre_recaptcha')] + headers)
                     return [b""]
 
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # lista
         lista = ""
         conn = conectar_bd()
         if conn:
@@ -650,13 +644,12 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CRUD PRODUCTOS (NUEVA PANTALLA) + PRG
-    #   - Crear / Editar / Eliminar / Listar
+    # NUEVA PANTALLA: CRUD PRODUCTOS (PRG)
     # =========================================================
     if path == "/crud_productos":
         mensaje = ""
 
-        # Crear tabla si no existe
+        # crear tabla si no existe
         conn = conectar_bd()
         if conn:
             try:
@@ -673,17 +666,14 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
                 cur.close()
                 conn.close()
             except:
-                try:
-                    conn.close()
-                except:
-                    pass
+                pass
 
         if method == "POST":
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
                 accion = (fs.getvalue("accion") or "").strip()
 
-                # ELIMINAR
+                # eliminar
                 if accion == "eliminar":
                     pid = (fs.getvalue("id") or "").strip()
                     if pid.isdigit():
@@ -698,7 +688,7 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
                     start_response("303 See Other", [('Location', '/crud_productos')] + headers)
                     return [b""]
 
-                # CREAR
+                # crear
                 if accion == "crear":
                     nombre = (fs.getvalue("nombre") or "").strip()
                     precio_str = (fs.getvalue("precio") or "").strip()
@@ -730,7 +720,7 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
                         start_response("303 See Other", [('Location', '/crud_productos')] + headers)
                         return [b""]
 
-                # EDITAR
+                # editar
                 if accion == "editar":
                     pid = (fs.getvalue("id") or "").strip()
                     nombre = (fs.getvalue("nombre") or "").strip()
@@ -768,7 +758,7 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
             except Exception as e:
                 mensaje = "<div class='bad'>Error: %s</div>" % str(e)
 
-        # GET: listar productos
+        # GET lista
         productos_html = "<p>No hay productos aún.</p>"
         conn = conectar_bd()
         if conn:
@@ -786,33 +776,32 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
 <div style="background:#f8f9fa;padding:14px;border-radius:10px;margin:12px 0;border-left:4px solid #007bff;">
   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
     <div>
-      <b>#__ID__</b> — <b>__NOMBRE__</b><br>
-      <small>Precio: <b>$__PRECIO__</b> — __FECHA__</small>
+      <b>#%s</b> — <b>%s</b><br>
+      <small>Precio: <b>$%s</b> — %s</small>
     </div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="btn-blue" style="width:auto;padding:10px 14px;" type="button"
-        onclick="toggleEdit('__ID__')">Editar</button>
+      <button class="btn-blue" style="width:auto;padding:10px 14px;" type="button" onclick="toggleEdit('%s')">Editar</button>
 
       <form method="POST" onsubmit="return confirm('¿Eliminar este producto?');">
         <input type="hidden" name="accion" value="eliminar">
-        <input type="hidden" name="id" value="__ID__">
+        <input type="hidden" name="id" value="%s">
         <button class="btn-danger" type="submit">Eliminar</button>
       </form>
     </div>
   </div>
 
-  <div id="edit___ID__" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #ddd;">
+  <div id="edit_%s" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #ddd;">
     <form method="POST">
       <input type="hidden" name="accion" value="editar">
-      <input type="hidden" name="id" value="__ID__">
-      <input name="nombre" value="__NOMBRE__" maxlength="80" required>
-      <input name="precio" value="__PRECIO__" required>
+      <input type="hidden" name="id" value="%s">
+      <input name="nombre" value="%s" maxlength="80" required>
+      <input name="precio" value="%s" required>
       <button class="btn-primary" type="submit">Guardar cambios</button>
     </form>
   </div>
 </div>
-""".replace("__ID__", str(pid)).replace("__NOMBRE__", str(nombre)).replace("__PRECIO__", str(precio)).replace("__FECHA__", str(fecha_reg)[:16])
+""" % (pid, nombre, precio, str(fecha_reg)[:16], pid, pid, pid, pid, nombre, precio)
                     productos_html = items
             except Exception as e:
                 productos_html = "<div class='bad'>Error cargando productos: %s</div>" % str(e)
@@ -844,7 +833,7 @@ __MENSAJE__
 __LISTA__
 
 <script>
-function toggleEdit(id) {
+function toggleEdit(id){
   var el = document.getElementById('edit_' + id);
   if(!el) return;
   el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
