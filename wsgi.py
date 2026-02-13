@@ -30,6 +30,7 @@ def application(environ, start_response):
   <a href="/formulario" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Formulario</a>
   <a href="/carrusel" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Carrusel</a>
   <a href="/nombre_recaptcha" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Registro</a>
+  <a href="/crud_productos" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">CRUD Productos</a>
   <a href="/simular_404" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Simular 404</a>
 </nav>
 """
@@ -134,6 +135,10 @@ __BODY__
   <div style="background:#e9ecef;padding:18px;border-radius:10px;text-align:center;">
     <h3>Registro</h3>
     <a href="/nombre_recaptcha">Ir →</a>
+  </div>
+  <div style="background:#e9ecef;padding:18px;border-radius:10px;text-align:center;">
+    <h3>CRUD Productos</h3>
+    <a href="/crud_productos">Ir →</a>
   </div>
 </div>
 <div style="text-align:center;margin-top:25px;">
@@ -641,6 +646,213 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
 """.replace("__MENSAJE__", mensaje).replace("__SLIDES__", slides)
 
         html = page("Carrusel", body)
+        start_response("200 OK", headers)
+        return [html.encode("utf-8")]
+
+    # =========================================================
+    # CRUD PRODUCTOS (NUEVA PANTALLA) + PRG
+    #   - Crear / Editar / Eliminar / Listar
+    # =========================================================
+    if path == "/crud_productos":
+        mensaje = ""
+
+        # Crear tabla si no existe
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS productos (
+                        id SERIAL PRIMARY KEY,
+                        nombre VARCHAR(80) NOT NULL,
+                        precio NUMERIC(10,2) NOT NULL,
+                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.commit()
+                cur.close()
+                conn.close()
+            except:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+        if method == "POST":
+            try:
+                fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
+                accion = (fs.getvalue("accion") or "").strip()
+
+                # ELIMINAR
+                if accion == "eliminar":
+                    pid = (fs.getvalue("id") or "").strip()
+                    if pid.isdigit():
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM productos WHERE id=%s", (pid,))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                    start_response("303 See Other", [('Location', '/crud_productos')] + headers)
+                    return [b""]
+
+                # CREAR
+                if accion == "crear":
+                    nombre = (fs.getvalue("nombre") or "").strip()
+                    precio_str = (fs.getvalue("precio") or "").strip()
+
+                    errores = []
+                    if not nombre:
+                        errores.append("El nombre es requerido.")
+                    if len(nombre) > 80:
+                        errores.append("El nombre no puede pasar de 80 caracteres.")
+
+                    try:
+                        precio = float(precio_str)
+                        if precio < 0:
+                            errores.append("El precio no puede ser negativo.")
+                    except:
+                        errores.append("El precio debe ser un número válido.")
+
+                    if errores:
+                        mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
+                    else:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("INSERT INTO productos (nombre, precio) VALUES (%s, %s)", (nombre, precio))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                        start_response("303 See Other", [('Location', '/crud_productos')] + headers)
+                        return [b""]
+
+                # EDITAR
+                if accion == "editar":
+                    pid = (fs.getvalue("id") or "").strip()
+                    nombre = (fs.getvalue("nombre") or "").strip()
+                    precio_str = (fs.getvalue("precio") or "").strip()
+
+                    errores = []
+                    if not pid.isdigit():
+                        errores.append("ID inválido.")
+                    if not nombre:
+                        errores.append("El nombre es requerido.")
+                    if len(nombre) > 80:
+                        errores.append("El nombre no puede pasar de 80 caracteres.")
+
+                    try:
+                        precio = float(precio_str)
+                        if precio < 0:
+                            errores.append("El precio no puede ser negativo.")
+                    except:
+                        errores.append("El precio debe ser un número válido.")
+
+                    if errores:
+                        mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
+                    else:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("UPDATE productos SET nombre=%s, precio=%s WHERE id=%s", (nombre, precio, pid))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                        start_response("303 See Other", [('Location', '/crud_productos')] + headers)
+                        return [b""]
+
+            except Exception as e:
+                mensaje = "<div class='bad'>Error: %s</div>" % str(e)
+
+        # GET: listar productos
+        productos_html = "<p>No hay productos aún.</p>"
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT id, nombre, precio, fecha FROM productos ORDER BY id DESC")
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
+
+                if rows:
+                    items = ""
+                    for (pid, nombre, precio, fecha_reg) in rows:
+                        items += """
+<div style="background:#f8f9fa;padding:14px;border-radius:10px;margin:12px 0;border-left:4px solid #007bff;">
+  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <div>
+      <b>#__ID__</b> — <b>__NOMBRE__</b><br>
+      <small>Precio: <b>$__PRECIO__</b> — __FECHA__</small>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-blue" style="width:auto;padding:10px 14px;" type="button"
+        onclick="toggleEdit('__ID__')">Editar</button>
+
+      <form method="POST" onsubmit="return confirm('¿Eliminar este producto?');">
+        <input type="hidden" name="accion" value="eliminar">
+        <input type="hidden" name="id" value="__ID__">
+        <button class="btn-danger" type="submit">Eliminar</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="edit___ID__" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #ddd;">
+    <form method="POST">
+      <input type="hidden" name="accion" value="editar">
+      <input type="hidden" name="id" value="__ID__">
+      <input name="nombre" value="__NOMBRE__" maxlength="80" required>
+      <input name="precio" value="__PRECIO__" required>
+      <button class="btn-primary" type="submit">Guardar cambios</button>
+    </form>
+  </div>
+</div>
+""".replace("__ID__", str(pid)).replace("__NOMBRE__", str(nombre)).replace("__PRECIO__", str(precio)).replace("__FECHA__", str(fecha_reg)[:16])
+                    productos_html = items
+            except Exception as e:
+                productos_html = "<div class='bad'>Error cargando productos: %s</div>" % str(e)
+        else:
+            productos_html = "<div class='bad'>No hay conexión a BD</div>"
+
+        body = """
+<h1>CRUD Productos</h1>
+__MENSAJE__
+
+<div style="background:#f8f9fa;padding:18px;border-radius:10px;">
+  <h3>Agregar producto</h3>
+  <form method="POST">
+    <input type="hidden" name="accion" value="crear">
+
+    <label><b>Nombre</b></label>
+    <input name="nombre" placeholder="Ej: Laptop" maxlength="80" required>
+
+    <label><b>Precio</b></label>
+    <input name="precio" placeholder="Ej: 199.99" required>
+
+    <button class="btn-primary" type="submit">Guardar</button>
+  </form>
+</div>
+
+<hr>
+
+<h3>Listado</h3>
+__LISTA__
+
+<script>
+function toggleEdit(id) {
+  var el = document.getElementById('edit_' + id);
+  if(!el) return;
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+</script>
+""".replace("__MENSAJE__", mensaje).replace("__LISTA__", productos_html)
+
+        html = page("CRUD Productos", body)
         start_response("200 OK", headers)
         return [html.encode("utf-8")]
 
