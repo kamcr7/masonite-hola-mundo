@@ -252,43 +252,162 @@ document.addEventListener('click', function(e){
     # =========================================================
     # INICIO
     # =========================================================
-    if path == "/" and method == "GET":
-        body = """
-<div class="simple-box">
-  <h1>Aplicación</h1>
-  <p style="color:#6b7280;margin-top:8px;">Elige una sección:</p>
+ if path == "/" and method == "GET":
+    body = """
+<div style="
+  background:linear-gradient(135deg, rgba(79,70,229,.10), rgba(37,99,235,.06));
+  border:1px solid #e5e7eb;
+  border-radius:18px;
+  padding:22px;
+  margin-top:6px;
+">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0;font-size:34px;">Aplicación</h1>
+      <p style="margin:6px 0 0;color:#6b7280;">Elige una sección para continuar.</p>
+    </div>
 
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px;">
-    <div style="background:#f9fafb;padding:18px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>Calculadora</h3>
-      <a href="/calculadora">Ir →</a>
-    </div>
-    <div style="background:#f9fafb;padding:18px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>Formulario</h3>
-      <a href="/formulario">Ir →</a>
-    </div>
-    <div style="background:#f9fafb;padding:18px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>Carrusel</h3>
-      <a href="/carrusel">Ir →</a>
-    </div>
-    <div style="background:#f9fafb;padding:18px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>Registro</h3>
-      <a href="/nombre_recaptcha">Ir →</a>
-    </div>
-    <div style="background:#f9fafb;padding:18px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>CRUD Personas</h3>
-      <a href="/crud_personas">Ir →</a>
+    <div style="
+      display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      background:#ffffffcc;border:1px solid #e5e7eb;border-radius:999px;
+      padding:10px 12px;
+    ">
+      <span style="font-size:18px;">🚀</span>
+      <span style="font-weight:800;color:#374151;">Acceso rápido</span>
+      <a href="/crud_personas" style="
+        text-decoration:none;
+        background:#4f46e5;color:#fff;
+        padding:10px 14px;border-radius:999px;
+        font-weight:800;
+        display:inline-flex;gap:8px;align-items:center;
+      ">Ir a CRUD Personas →</a>
     </div>
   </div>
 
-  <div style="margin-top:18px;">
-    <a href="/simular_404" class="btn-pill btn-danger" style="display:inline-block;text-decoration:none;">Simular pantalla 404</a>
+  <div style="
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    gap:16px;
+    margin-top:18px;
+  ">
+
+    <!-- Card -->
+    <a href="/calculadora" style="text-decoration:none;color:inherit;">
+      <div style="
+        background:#fff;
+        border:1px solid #eef2f7;
+        border-radius:16px;
+        padding:16px;
+        box-shadow:0 12px 35px rgba(16,24,40,.06);
+        transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+      " class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="
+              width:44px;height:44px;border-radius:14px;
+              background:#eef2ff;border:1px solid #e0e7ff;
+              display:flex;align-items:center;justify-content:center;
+              font-size:20px;
+            ">🧮</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Calculadora</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Suma y división con validación</div>
+            </div>
+          </div>
+          <div style="color:#4f46e5;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+    <a href="/formulario" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#ecfeff;border:1px solid #cffafe;display:flex;align-items:center;justify-content:center;font-size:20px;">📝</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Formulario</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Imagen + fecha válida + correo</div>
+            </div>
+          </div>
+          <div style="color:#2563eb;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+    <a href="/carrusel" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#fff7ed;border:1px solid #ffedd5;display:flex;align-items:center;justify-content:center;font-size:20px;">🖼️</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Carrusel</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Sube y administra imágenes</div>
+            </div>
+          </div>
+          <div style="color:#f97316;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+    <a href="/nombre_recaptcha" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#f0fdf4;border:1px solid #dcfce7;display:flex;align-items:center;justify-content:center;font-size:20px;">✅</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Registro</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">reCAPTCHA + máximo 30 letras</div>
+            </div>
+          </div>
+          <div style="color:#16a34a;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+    <a href="/crud_personas" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#eef2ff;border:1px solid #e0e7ff;display:flex;align-items:center;justify-content:center;font-size:20px;">👤</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">CRUD Personas</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Alta, edición, borrado + filtros</div>
+            </div>
+          </div>
+          <div style="color:#4f46e5;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+    <a href="/simular_404" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #fee2e2;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#fee2e2;border:1px solid #fecaca;display:flex;align-items:center;justify-content:center;font-size:20px;">⚠️</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Simular 404</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Prueba tu pantalla de error</div>
+            </div>
+          </div>
+          <div style="color:#ef4444;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
   </div>
 </div>
+
+<style>
+.homecard:hover{
+  transform:translateY(-2px);
+  box-shadow:0 18px 48px rgba(16,24,40,.10);
+  border-color:#dbeafe;
+}
+</style>
 """
-        html = page("Inicio", body)
-        start_response("200 OK", headers)
-        return [html.encode("utf-8")]
+    html = page("Inicio", body)
+    start_response("200 OK", headers)
+    return [html.encode("utf-8")]
 
     # =========================================================
     # CALCULADORA (solo números)
