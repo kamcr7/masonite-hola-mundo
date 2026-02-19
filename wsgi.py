@@ -10,10 +10,9 @@ import re
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, date, timedelta
 
-# ✅ TU BD (Neon)
+# ✅ Pega tu URL de Neon aquí (la que me diste)
 DATABASE_URL = "postgresql://neondb_owner:npg_V1CwlGHBK4Og@ep-crimson-recipe-ai9g12ym-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# ✅ keys de prueba (no production)
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
 RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
@@ -26,7 +25,7 @@ def application(environ, start_response):
     # -------------------- helpers --------------------
     def navegacion():
         return """
-<nav style="background:#343a40;padding:15px;margin:20px auto 20px;border-radius:8px;max-width:1200px;">
+<nav style="background:#343a40;padding:15px;margin:20px auto 30px;border-radius:10px;max-width:1100px;">
   <a href="/" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Inicio</a>
   <a href="/calculadora" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Calculadora</a>
   <a href="/formulario" style="color:white;margin:0 12px;text-decoration:none;font-weight:bold;">Formulario</a>
@@ -39,8 +38,16 @@ def application(environ, start_response):
 
     def conectar_bd():
         try:
-            # Neon acepta directo el DSN
-            return psycopg2.connect(DATABASE_URL, connect_timeout=5)
+            result = urlparse(DATABASE_URL)
+            return psycopg2.connect(
+                host=result.hostname,
+                database=result.path[1:],
+                user=result.username,
+                password=result.password,
+                port=result.port,
+                connect_timeout=8,
+                sslmode="require"
+            )
         except:
             return None
 
@@ -48,8 +55,8 @@ def application(environ, start_response):
         patron = r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$"
         return bool(re.fullmatch(patron, (nombre or "").strip()))
 
-    def limpiar_espacios(txt):
-        return " ".join((txt or "").strip().split())
+    def limpiar_espacios(texto):
+        return " ".join((texto or "").strip().split())
 
     def parsear_fecha(fecha_str):
         try:
@@ -77,6 +84,12 @@ def application(environ, start_response):
         except:
             return False
 
+    def html_escape(s):
+        s = (s or "")
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        s = s.replace('"', "&quot;").replace("'", "&#39;")
+        return s
+
     def page(title, body_html):
         return """<!DOCTYPE html>
 <html>
@@ -85,175 +98,62 @@ def application(environ, start_response):
   <title>__TITLE__</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body{font-family:Arial;margin:0;background:#f5f7fb;color:#111827;}
-    .wrap{max-width:1200px;margin:0 auto 50px;padding:0 14px;}
-    .card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 8px 30px rgba(16,24,40,.06);}
-    .container{padding:22px;}
-    h1{font-size:32px;margin:0;text-align:left;}
-    h2,h3{margin:0 0 10px;}
-    .ok{background:#d4edda;color:#155724;padding:12px;border-radius:10px;margin:15px 0;border:1px solid #c3e6cb;}
-    .bad{background:#fee2e2;color:#991b1b;padding:12px;border-radius:10px;margin:15px 0;border:1px solid #fecaca;}
-    .info{background:#eff6ff;color:#1e40af;padding:12px;border-radius:10px;margin:15px 0;border:1px solid #bfdbfe;}
-    input,textarea,select{width:100%;padding:12px 14px;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;font-size:15px;outline:none;box-sizing:border-box;}
-    input:focus,textarea:focus,select:focus{border-color:#93c5fd;box-shadow:0 0 0 4px rgba(59,130,246,.12);}
-    button{padding:12px 14px;border:none;border-radius:12px;font-weight:700;cursor:pointer;}
-    .btn-primary{background:#4f46e5;color:white;}
-    .btn-primary:hover{filter:brightness(.95);}
+    body{font-family:Arial;margin:0;background:#f5f7fb;}
+    .container{max-width:1100px;margin:0 auto 40px;background:white;padding:34px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08);}
+    h1{text-align:left;margin-top:0;}
+    .ok{background:#d4edda;color:#155724;padding:12px;border-radius:10px;margin:15px 0;}
+    .bad{background:#f8d7da;color:#721c24;padding:12px;border-radius:10px;margin:15px 0;}
+    .info{background:#e7f3ff;color:#0b4f9c;padding:12px;border-radius:10px;margin:15px 0;border-left:4px solid #007bff;}
+    input,textarea,select{width:100%;padding:12px;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;font-size:16px;box-sizing:border-box;background:#f8fafc;}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:#93c5fd;box-shadow:0 0 0 4px rgba(59,130,246,.15);background:#fff;}
+    button{padding:12px 14px;border:none;border-radius:12px;font-weight:bold;cursor:pointer;}
+    .btn-primary{background:#22c55e;color:white;}
     .btn-blue{background:#2563eb;color:white;}
-    .btn-blue:hover{filter:brightness(.95);}
     .btn-danger{background:#ef4444;color:white;}
-    .btn-danger:hover{filter:brightness(.95);}
-    .btn-ghost{background:#eef2ff;color:#4f46e5;}
-    .btn-ghost:hover{filter:brightness(.97);}
-    .btn-pill{border-radius:999px;padding:10px 14px;}
-    .btn-sm{padding:9px 12px;border-radius:10px;font-size:14px;}
-    hr{margin:26px 0;border:none;border-top:1px solid #eef2f7;}
-
-    /* ========= CRUD UI (similar al ejemplo) ========= */
-    .header-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 22px;border-bottom:1px solid #eef2f7;}
-    .searchbar{flex:1;display:flex;justify-content:center;position:relative;}
-    .searchbox{
-      width:min(680px, 100%);
-      background:#fff;
-      border:1px solid #e5e7eb;
-      border-radius:999px;
-      display:flex;
-      align-items:center;
-      padding:10px 12px;
-      gap:10px;
-      box-shadow:0 8px 25px rgba(16,24,40,.06);
-    }
-    .searchbox input{
-      border:none;outline:none;margin:0;padding:8px 6px;
-      border-radius:999px;background:transparent;
-      width:100%;
-    }
-    .iconbtn{
-      width:36px;height:36px;border-radius:999px;
-      display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid #e5e7eb;background:#fff;cursor:pointer;
-    }
-    .iconbtn:hover{background:#f9fafb;}
-
-    .filters{
-      position:absolute;
-      top:56px;
-      left:50%;
-      transform:translateX(-50%);
-      width:min(680px, 100%);
-      background:#fff;
-      border:1px solid #e5e7eb;
-      border-radius:14px;
-      box-shadow:0 20px 45px rgba(16,24,40,.14);
-      padding:14px;
-      display:none;
-      z-index:50;
-    }
-    .filters.show{display:block;}
-    .filters .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    .filters label{font-size:12px;color:#6b7280;font-weight:800;text-transform:uppercase;letter-spacing:.06em;}
-    .filters .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;}
-
-    table{width:100%;border-collapse:separate;border-spacing:0;}
-    thead th{
-      text-transform:uppercase;
-      font-size:12px;
-      letter-spacing:.06em;
-      color:#6b7280;
-      background:#f9fafb;
-      padding:14px 16px;
-      border-bottom:1px solid #eef2f7;
-    }
-    tbody td{
-      padding:18px 16px;
-      border-bottom:1px solid #eef2f7;
-      vertical-align:middle;
-    }
-    tbody tr:hover{background:#fbfdff;}
-    .actions{display:flex;gap:10px;justify-content:flex-start;flex-wrap:wrap;}
-    .btn-edit{background:#eef2ff;color:#4f46e5;}
-    .btn-edit:hover{filter:brightness(.97);}
-    .btn-del{background:#fee2e2;color:#ef4444;}
-    .btn-del:hover{filter:brightness(.97);}
-
-    .footerbar{
-      display:flex;align-items:center;justify-content:flex-end;gap:10px;
-      padding:16px 22px;
-    }
-    .pagepill{
-      background:#eef2f7;border:1px solid #e5e7eb;border-radius:999px;
-      padding:10px 14px;font-weight:700;color:#374151;
-    }
-
-    /* Modal */
-    .modal-backdrop{
-      position:fixed;inset:0;background:rgba(17,24,39,.45);
-      display:flex;align-items:center;justify-content:center;
-      padding:16px;
-      z-index:100;
-    }
-    .modal{
-      width:min(760px, 100%);
-      background:#fff;border-radius:16px;border:1px solid #e5e7eb;
-      box-shadow:0 25px 70px rgba(0,0,0,.2);
-      overflow:hidden;
-    }
-    .modal-head{
-      padding:16px 18px;border-bottom:1px solid #eef2f7;
-      display:flex;align-items:center;justify-content:space-between;
-      gap:10px;
-    }
-    .modal-title{font-size:20px;font-weight:900;margin:0;}
+    .btn-muted{background:#eef2ff;color:#4f46e5;}
+    .btn-danger:hover{background:#dc2626;}
+    hr{margin:30px 0;border:none;border-top:2px solid #f1f5f9;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .card{background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);}
+    .table-wrap{background:#fff;border:1px solid #eef2f7;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(16,24,40,.06);}
+    table{width:100%;border-collapse:collapse;}
+    th,td{padding:14px 14px;border-bottom:1px solid #eef2f7;text-align:left;}
+    th{background:#f8fafc;color:#64748b;font-size:13px;letter-spacing:.02em;text-transform:uppercase;}
+    tr:hover td{background:#fbfdff;}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:10px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:999px;}
+    .iconbtn{width:42px;height:42px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
+    .iconbtn:hover{background:#f8fafc;}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:1000;}
+    .modal{width:min(720px, 96vw);background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.25);overflow:hidden;}
+    .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px;border-bottom:1px solid #eef2f7;}
     .modal-body{padding:18px;}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px;}
-    .field{display:flex;flex-direction:column;}
-    .field label{font-weight:800;margin-top:6px;}
-    .hint{color:#6b7280;margin-top:4px;font-size:13px;}
-    .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;}
-
-    @media(max-width:820px){
-      .header-row{flex-direction:column;align-items:stretch;}
-      .searchbar{justify-content:stretch;}
-      .filters{left:0;transform:none;width:100%;}
-      .filters .row{grid-template-columns:1fr;}
+    .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:18px;border-top:1px solid #eef2f7;}
+    .btn-round{border-radius:999px;padding:10px 16px;}
+    @media(max-width:900px){
       .grid2{grid-template-columns:1fr;}
+      th:nth-child(2), td:nth-child(2){display:none;} /* en móvil oculta email si quieres (pero lo dejo visible abajo) */
     }
-
-    /* old container look for other pages */
-    .simple-box{background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 8px 30px rgba(16,24,40,.06);padding:22px;}
+    @media(max-width:700px){
+      th,td{padding:12px 10px;}
+      .container{padding:18px;}
+      .actions{gap:8px;}
+    }
   </style>
 </head>
 <body>
 __NAV__
-<div class="wrap">
+<div class="container">
 __BODY__
 </div>
-
-<script>
-function toggleFilters(){
-  var el = document.getElementById('filtersBox');
-  if(!el) return;
-  el.classList.toggle('show');
-}
-document.addEventListener('click', function(e){
-  var f = document.getElementById('filtersBox');
-  var btn = document.getElementById('filterBtn');
-  if(!f) return;
-  if(f.classList.contains('show')){
-    if(!f.contains(e.target) && btn && !btn.contains(e.target)){
-      f.classList.remove('show');
-    }
-  }
-});
-</script>
 </body>
 </html>""".replace("__TITLE__", title).replace("__NAV__", navegacion()).replace("__BODY__", body_html)
 
     # =========================================================
-    # INICIO
+    # INICIO (MEJOR DISEÑO)
     # =========================================================
- if path == "/" and method == "GET":
-    body = """
+    if path == "/" and method == "GET":
+        body = """
 <div style="
   background:linear-gradient(135deg, rgba(79,70,229,.10), rgba(37,99,235,.06));
   border:1px solid #e5e7eb;
@@ -291,24 +191,11 @@ document.addEventListener('click', function(e){
     margin-top:18px;
   ">
 
-    <!-- Card -->
     <a href="/calculadora" style="text-decoration:none;color:inherit;">
-      <div style="
-        background:#fff;
-        border:1px solid #eef2f7;
-        border-radius:16px;
-        padding:16px;
-        box-shadow:0 12px 35px rgba(16,24,40,.06);
-        transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-      " class="homecard">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
           <div style="display:flex;gap:12px;align-items:center;">
-            <div style="
-              width:44px;height:44px;border-radius:14px;
-              background:#eef2ff;border:1px solid #e0e7ff;
-              display:flex;align-items:center;justify-content:center;
-              font-size:20px;
-            ">🧮</div>
+            <div style="width:44px;height:44px;border-radius:14px;background:#eef2ff;border:1px solid #e0e7ff;display:flex;align-items:center;justify-content:center;font-size:20px;">🧮</div>
             <div>
               <div style="font-weight:900;font-size:18px;">Calculadora</div>
               <div style="color:#6b7280;font-size:13px;margin-top:2px;">Suma y división con validación</div>
@@ -398,19 +285,16 @@ document.addEventListener('click', function(e){
 </div>
 
 <style>
-.homecard:hover{
-  transform:translateY(-2px);
-  box-shadow:0 18px 48px rgba(16,24,40,.10);
-  border-color:#dbeafe;
-}
+.homecard{transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;}
+.homecard:hover{transform:translateY(-2px);box-shadow:0 18px 48px rgba(16,24,40,.10);border-color:#dbeafe;}
 </style>
 """
-    html = page("Inicio", body)
-    start_response("200 OK", headers)
-    return [html.encode("utf-8")]
+        html = page("Inicio", body)
+        start_response("200 OK", headers)
+        return [html.encode("utf-8")]
 
     # =========================================================
-    # CALCULADORA (solo números)
+    # CALCULADORA
     # =========================================================
     if path == "/calculadora":
         resultado_suma = ""
@@ -442,36 +326,28 @@ document.addEventListener('click', function(e){
                 resultado_suma = "<div class='bad'>Error: %s</div>" % str(e)
 
         body = """
-<div class="simple-box">
-  <h1>Calculadora</h1>
+<h1>Calculadora</h1>
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0;">Suma</h3>
+    <form method="POST">
+      <input type="number" step="any" name="suma1" placeholder="10" required>
+      <input type="number" step="any" name="suma2" placeholder="5" required>
+      <button class="btn-blue" style="width:100%;" type="submit">Calcular</button>
+    </form>
+    __SUMA__
+  </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;">
-    <div style="background:#f9fafb;padding:16px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>Suma</h3>
-      <form method="POST">
-        <input type="number" step="any" name="suma1" placeholder="10" required>
-        <input type="number" step="any" name="suma2" placeholder="5" required>
-        <button class="btn-blue" type="submit" style="width:100%;">Calcular</button>
-      </form>
-      __SUMA__
-    </div>
-
-    <div style="background:#f9fafb;padding:16px;border-radius:14px;border:1px solid #eef2f7;">
-      <h3>División</h3>
-      <form method="POST">
-        <input type="number" step="any" name="div1" placeholder="10" required>
-        <input type="number" step="any" name="div2" placeholder="2" required>
-        <button class="btn-blue" type="submit" style="width:100%;">Calcular</button>
-      </form>
-      __DIV__
-    </div>
+  <div class="card">
+    <h3 style="margin-top:0;">División</h3>
+    <form method="POST">
+      <input type="number" step="any" name="div1" placeholder="10" required>
+      <input type="number" step="any" name="div2" placeholder="2" required>
+      <button class="btn-blue" style="width:100%;" type="submit">Calcular</button>
+    </form>
+    __DIV__
   </div>
 </div>
-<style>
-@media(max-width:768px){
-  .simple-box > div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important;}
-}
-</style>
 """.replace("__SUMA__", resultado_suma).replace("__DIV__", resultado_div)
 
         html = page("Calculadora", body)
@@ -479,18 +355,17 @@ document.addEventListener('click', function(e){
         return [html.encode("utf-8")]
 
     # =========================================================
-    # FORMULARIO + PRG
+    # FORMULARIO
     # =========================================================
     if path == "/formulario":
         mensaje = ""
         hoy = date.today()
-        max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")
+        max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")  # ayer
 
         if method == "POST":
             try:
                 fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
 
-                # borrar todo
                 if (fs.getvalue("borrar_todo") or "").strip() == "1":
                     conn = conectar_bd()
                     if conn:
@@ -586,16 +461,16 @@ document.addEventListener('click', function(e){
                     items = ""
                     for (n, fn, c, f) in rows:
                         edad = calcular_edad(fn)
-                        items += "<div style='background:#fff;padding:12px;border-radius:12px;margin:10px 0;border:1px solid #eef2f7;'><b>%s</b> — Edad: %s — %s<br><small style='color:#6b7280'>%s</small></div>" % (n, edad, c, str(f)[:16])
+                        items += "<div style='background:#fff;padding:12px;border-radius:12px;margin:10px 0;border-left:4px solid #3b82f6;'><b>%s</b> — Edad: %s — %s<br><small style=\"color:#64748b;\">%s</small></div>" % (html_escape(n), edad, html_escape(c), str(f)[:16])
                     registros_html = """
 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
   <h3 style="margin:0;">Registros guardados</h3>
-  <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros del formulario?');" style="margin:0;">
+  <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros del formulario?');">
     <input type="hidden" name="borrar_todo" value="1">
-    <button class="btn-danger btn-sm" type="submit">Borrar registros</button>
+    <button class="btn-danger btn-round" type="submit">Borrar registros</button>
   </form>
 </div>
-<div style="background:#f9fafb;padding:15px;border-radius:14px;margin-top:10px;border:1px solid #eef2f7;">
+<div style="background:#f8fafc;padding:15px;border-radius:14px;margin-top:10px;border:1px solid #eef2f7;">
 __ITEMS__
 </div>
 """.replace("__ITEMS__", items)
@@ -607,33 +482,33 @@ __ITEMS__
             registros_html = "<div class='bad'>No hay conexión a BD</div>"
 
         body = """
-<div class="simple-box">
-  <h1>Formulario</h1>
-  __MENSAJE__
+<h1>Formulario</h1>
+__MENSAJE__
 
-  <form method="POST" enctype="multipart/form-data">
-    <label><b>Nombre</b></label>
-    <input name="nombre" placeholder="Nombre" required oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
+<div class="card">
+<form method="POST" enctype="multipart/form-data">
+  <label><b>Nombre</b></label>
+  <input name="nombre" placeholder="Nombre" required oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
 
-    <label><b>Fecha de nacimiento</b></label>
-    <input type="date" name="fecha_nacimiento" max="__MAX__" required>
-    <small style="color:#6b7280;">Debe ser anterior a hoy.</small>
+  <label><b>Fecha de nacimiento</b></label>
+  <input type="date" name="fecha_nacimiento" max="__MAX__" required>
+  <small style="color:#64748b;">Debe ser anterior a hoy.</small>
 
-    <label><b>Correo</b></label>
-    <input type="email" name="correo" placeholder="Correo" required>
+  <label><b>Correo</b></label>
+  <input type="email" name="correo" placeholder="Correo" required>
 
-    <label><b>Confirmar correo</b></label>
-    <input type="email" name="correo_confirmar" placeholder="Confirmar correo" required>
+  <label><b>Confirmar correo</b></label>
+  <input type="email" name="correo_confirmar" placeholder="Confirmar correo" required>
 
-    <label><b>Imagen</b></label>
-    <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
+  <label><b>Imagen</b></label>
+  <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
 
-    <button class="btn-primary" style="width:100%;" type="submit">Guardar</button>
-  </form>
-
-  <hr>
-  __REGS__
+  <button class="btn-primary" style="width:100%;margin-top:10px;" type="submit">Guardar</button>
+</form>
 </div>
+
+<hr>
+__REGS__
 """.replace("__MENSAJE__", mensaje).replace("__REGS__", registros_html).replace("__MAX__", max_fecha)
 
         html = page("Formulario", body)
@@ -641,7 +516,7 @@ __ITEMS__
         return [html.encode("utf-8")]
 
     # =========================================================
-    # REGISTRO + PRG + MAX 30 LETRAS
+    # REGISTRO reCAPTCHA
     # =========================================================
     if path == "/nombre_recaptcha":
         mensaje = ""
@@ -674,7 +549,7 @@ __ITEMS__
                     if not validar_nombre_solo_letras(nombre):
                         errores.append("Nombre solo debe tener letras y espacios")
                     if len(nombre) > 30:
-                        errores.append("Solo se permiten 30 letras máximo.")
+                        errores.append("Solo se permiten 30 letras máximo (no se aceptan más de 30 caracteres).")
 
                 if not rec:
                     errores.append("Completa el reCAPTCHA")
@@ -710,7 +585,7 @@ __ITEMS__
                 cur.close()
                 conn.close()
                 if rows:
-                    lista = "<ul>" + "".join("<li><b>%s</b> <small style='color:#6b7280'>(%s)</small></li>" % (n, str(f)[:16]) for (n, f) in rows) + "</ul>"
+                    lista = "<ul>" + "".join("<li><b>%s</b> <small style=\"color:#64748b;\">(%s)</small></li>" % (html_escape(n), str(f)[:16]) for (n, f) in rows) + "</ul>"
                 else:
                     lista = "<p>No hay nombres aún.</p>"
             except Exception as e:
@@ -719,38 +594,38 @@ __ITEMS__
             lista = "<div class='bad'>No hay conexión a BD</div>"
 
         body = """
-<div class="simple-box">
-  <h1>Registro</h1>
-  <div class="info">Máximo 30 letras.</div>
-  __MENSAJE__
+<h1>Registro</h1>
+<div class="info">Máximo 30 letras.</div>
+__MENSAJE__
 
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 
-  <form method="POST">
-    <label><b>Nombre</b></label>
-    <input name="nombre" placeholder="Nombre" required maxlength="30"
-           oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
+<div class="card">
+<form method="POST">
+  <label><b>Nombre</b></label>
+  <input name="nombre" placeholder="Nombre" required maxlength="30"
+         oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
 
-    <div style="background:#f9fafb;padding:15px;border-radius:14px;margin:15px 0;text-align:center;border:1px solid #eef2f7;">
-      <div class="g-recaptcha" data-sitekey="__SITEKEY__"></div>
-    </div>
+  <div style="background:#f8fafc;padding:15px;border-radius:14px;margin:15px 0;text-align:center;border:1px solid #eef2f7;">
+    <div class="g-recaptcha" data-sitekey="__SITEKEY__"></div>
+  </div>
 
-    <button class="btn-primary" style="width:100%;" type="submit">Guardar</button>
+  <button class="btn-primary" style="width:100%;" type="submit">Guardar</button>
+</form>
+</div>
+
+<hr>
+
+<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+  <h3 style="margin:0;">Nombres ingresados (últimos 15)</h3>
+  <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros de Registro?');">
+    <input type="hidden" name="borrar_todo" value="1">
+    <button class="btn-danger btn-round" type="submit">Borrar registros</button>
   </form>
+</div>
 
-  <hr>
-
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-    <h3 style="margin:0;">Nombres ingresados (últimos 15)</h3>
-    <form method="POST" onsubmit="return confirm('¿Borrar TODOS los registros de Registro?');" style="margin:0;">
-      <input type="hidden" name="borrar_todo" value="1">
-      <button class="btn-danger btn-sm" type="submit">Borrar registros</button>
-    </form>
-  </div>
-
-  <div style="background:#f9fafb;padding:15px;border-radius:14px;margin-top:10px;border:1px solid #eef2f7;">
-    __LISTA__
-  </div>
+<div style="background:#f8fafc;padding:15px;border-radius:14px;margin-top:10px;border:1px solid #eef2f7;">
+__LISTA__
 </div>
 """.replace("__MENSAJE__", mensaje).replace("__LISTA__", lista).replace("__SITEKEY__", RECAPTCHA_SITE_KEY)
 
@@ -763,19 +638,17 @@ __ITEMS__
     # =========================================================
     if path == "/simular_404":
         body = """
-<div class="simple-box" style="text-align:center;">
-  <h1 style="color:#ef4444;font-size:54px;margin-bottom:10px;">404</h1>
-  <h2>Página no encontrada</h2>
-  <p style="color:#6b7280;">Esta ruta existe, pero responde como <b>404</b> para probar tu pantalla.</p>
-  <a href="/" class="btn-pill btn-blue" style="display:inline-block;text-decoration:none;">Volver al Inicio</a>
-</div>
+<h1 style="color:#ef4444;font-size:54px;margin-bottom:10px;">404</h1>
+<h2>Página no encontrada</h2>
+<p>Esta ruta existe, pero responde como <b>404</b> para probar tu pantalla.</p>
+<a href="/" style="display:inline-block;margin-top:20px;padding:12px 22px;background:#2563eb;color:white;text-decoration:none;border-radius:999px;font-weight:bold;">Volver al Inicio</a>
 """
         html = page("Simular 404", body)
         start_response("404 Not Found", headers)
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CARRUSEL + PRG
+    # CARRUSEL
     # =========================================================
     if path == "/carrusel":
         mensaje = ""
@@ -854,10 +727,10 @@ __ITEMS__
                         active = "active" if i == 0 else ""
                         slides += """
 <div class="slide __ACTIVE__">
-  <img src="data:image/__TYPE__;base64,__B64__" style="max-width:100%;max-height:520px;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.12);">
+  <img src="data:image/__TYPE__;base64,__B64__" style="max-width:100%;max-height:520px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);">
   <form method="POST" onsubmit="return confirm('¿Eliminar esta imagen?');" style="margin-top:12px;">
     <input type="hidden" name="eliminar_id" value="__ID__">
-    <button class="btn-danger btn-sm" type="submit">Eliminar</button>
+    <button class="btn-danger btn-round" type="submit">Eliminar</button>
   </form>
 </div>
 """.replace("__ACTIVE__", active).replace("__TYPE__", img_tipo).replace("__B64__", b64).replace("__ID__", str(img_id))
@@ -868,24 +741,26 @@ __ITEMS__
                 slides = "<div class='bad'>Error cargando carrusel: %s</div>" % str(e)
 
         body = """
-<div class="simple-box">
-  <h1>Carrusel</h1>
-  __MENSAJE__
+<h1>Carrusel</h1>
+__MENSAJE__
 
-  <div id="wrap">__SLIDES__</div>
+<div id="wrap" class="card">
+__SLIDES__
+</div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:15px;">
-    <button class="btn-blue" style="width:60px;border-radius:50%;height:50px;font-size:20px;" onclick="prev()">◀</button>
-    <button class="btn-blue" style="width:60px;border-radius:50%;height:50px;font-size:20px;" onclick="next()">▶</button>
-  </div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:15px;">
+  <button class="btn-blue" style="width:60px;border-radius:50%;height:50px;font-size:20px;" onclick="prev()">◀</button>
+  <button class="btn-blue" style="width:60px;border-radius:50%;height:50px;font-size:20px;" onclick="next()">▶</button>
+</div>
 
-  <hr>
+<hr>
 
-  <h3>Agregar imagen</h3>
-  <form method="POST" enctype="multipart/form-data">
-    <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
-    <button class="btn-primary" type="submit" style="width:100%;">Agregar</button>
-  </form>
+<h3>Agregar imagen</h3>
+<div class="card">
+<form method="POST" enctype="multipart/form-data">
+  <input type="file" name="imagen" accept="image/jpeg,image/png,image/gif" required>
+  <button class="btn-primary" style="width:100%;" type="submit">Agregar</button>
+</form>
 </div>
 
 <style>
@@ -913,422 +788,362 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
         return [html.encode("utf-8")]
 
     # =========================================================
-    # CRUD PERSONAS (NOMBRE, EMAIL, FECHA NAC) + MODAL + FILTRO FECHAS
-    #   - nombre solo letras
-    #   - fecha no permite hoy o futuras (max ayer)
-    #   - buscar por nombre
-    #   - filtro por rango (from/to) en fecha_nacimiento
+    # CRUD PERSONAS (nuevo diseño + modal + filtro fechas)
     # =========================================================
     if path == "/crud_personas":
         hoy = date.today()
         max_fecha = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        qs = environ.get("QUERY_STRING", "") or ""
-        q = parse_qs(qs)
-
-        edit_id = (q.get("edit", [""])[0] or "").strip()
-        open_modal = (q.get("new", [""])[0] or "").strip() == "1" or bool(edit_id)
-
-        # paginación + filtros
-        per_page = 5
-        try:
-            page_num = int((q.get("p", ["1"])[0] or "1"))
-            if page_num < 1: page_num = 1
-        except:
-            page_num = 1
-
-        search = limpiar_espacios(q.get("q", [""])[0] if q.get("q") else "")
-
-        desde_str = (q.get("from", [""])[0] or "").strip()
-        hasta_str = (q.get("to", [""])[0] or "").strip()
-        desde = parsear_fecha(desde_str) if desde_str else None
-        hasta = parsear_fecha(hasta_str) if hasta_str else None
-
-        # si vienen invertidas, intercambia
-        if desde and hasta and desde > hasta:
-            tmp = desde
-            desde = hasta
-            hasta = tmp
-            desde_str = desde.strftime("%Y-%m-%d")
-            hasta_str = hasta.strftime("%Y-%m-%d")
-
-        mensaje = ""
-        edit_nombre = ""
-        edit_email = ""
-        edit_fecha = ""
-
-        if method == "POST":
-            try:
-                content_length = int(environ.get("CONTENT_LENGTH", "0") or "0")
-                post_data = environ["wsgi.input"].read(content_length).decode("utf-8") if content_length > 0 else ""
-                params = parse_qs(post_data)
-
-                # eliminar 1
-                eliminar_id = (params.get("eliminar_id", [""])[0] or "").strip()
-                if eliminar_id:
-                    conn = conectar_bd()
-                    if conn:
-                        cur = conn.cursor()
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS personas_crud (
-                              id SERIAL PRIMARY KEY,
-                              nombre VARCHAR(120) NOT NULL,
-                              email VARCHAR(160) NOT NULL,
-                              fecha_nacimiento DATE NOT NULL,
-                              fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            )
-                        """)
-                        cur.execute("DELETE FROM personas_crud WHERE id=%s", (eliminar_id,))
-                        conn.commit()
-                        cur.close()
-                        conn.close()
-
-                    loc = "/crud_personas?p=%s&q=%s&from=%s&to=%s" % (
-                        str(page_num),
-                        urllib.parse.quote(search),
-                        urllib.parse.quote(desde_str),
-                        urllib.parse.quote(hasta_str)
-                    )
-                    start_response("303 See Other", [('Location', loc)] + headers)
-                    return [b""]
-
-                # guardar/editar
-                pid = (params.get("id", [""])[0] or "").strip()
-                nombre_raw = (params.get("nombre", [""])[0] or "")
-                nombre = limpiar_espacios(nombre_raw)
-                email = (params.get("email", [""])[0] or "").strip()
-                fecha_str = (params.get("fecha_nacimiento", [""])[0] or "").strip()
-
-                errores = []
-                if not nombre:
-                    errores.append("Nombre es requerido")
-                elif not validar_nombre_solo_letras(nombre):
-                    errores.append("Nombre solo debe tener letras y espacios")
-
-                if not email:
-                    errores.append("Email es requerido")
-                else:
-                    if "@" not in email or "." not in email.split("@")[-1]:
-                        errores.append("Email inválido")
-
-                fecha_nac = None
-                if not fecha_str:
-                    errores.append("Fecha de nacimiento es requerida")
-                else:
-                    fecha_nac = parsear_fecha(fecha_str)
-                    if not fecha_nac:
-                        errores.append("Fecha inválida")
-                    else:
-                        if fecha_nac >= hoy:
-                            errores.append("La fecha no puede ser hoy ni una futura")
-
-                if errores:
-                    mensaje = "<div class='bad'><ul>%s</ul></div>" % "".join("<li>%s</li>" % e for e in errores)
-                    open_modal = True
-                    edit_id = pid or edit_id
-                    edit_nombre = nombre
-                    edit_email = email
-                    edit_fecha = fecha_str
-                else:
-                    conn = conectar_bd()
-                    if conn:
-                        cur = conn.cursor()
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS personas_crud (
-                              id SERIAL PRIMARY KEY,
-                              nombre VARCHAR(120) NOT NULL,
-                              email VARCHAR(160) NOT NULL,
-                              fecha_nacimiento DATE NOT NULL,
-                              fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            )
-                        """)
-                        if pid:
-                            cur.execute(
-                                "UPDATE personas_crud SET nombre=%s, email=%s, fecha_nacimiento=%s WHERE id=%s",
-                                (nombre, email, fecha_nac, pid)
-                            )
-                        else:
-                            cur.execute(
-                                "INSERT INTO personas_crud (nombre, email, fecha_nacimiento) VALUES (%s,%s,%s)",
-                                (nombre, email, fecha_nac)
-                            )
-                        conn.commit()
-                        cur.close()
-                        conn.close()
-
-                    loc = "/crud_personas?p=%s&q=%s&from=%s&to=%s" % (
-                        str(page_num),
-                        urllib.parse.quote(search),
-                        urllib.parse.quote(desde_str),
-                        urllib.parse.quote(hasta_str)
-                    )
-                    start_response("303 See Other", [('Location', loc)] + headers)
-                    return [b""]
-
-            except Exception as e:
-                mensaje = "<div class='bad'>Error: %s</div>" % str(e)
-                open_modal = True
-
-        # cargar datos al editar
-        if edit_id and not edit_nombre:
-            conn = conectar_bd()
-            if conn:
-                try:
-                    cur = conn.cursor()
-                    cur.execute("""
-                        CREATE TABLE IF NOT EXISTS personas_crud (
-                          id SERIAL PRIMARY KEY,
-                          nombre VARCHAR(120) NOT NULL,
-                          email VARCHAR(160) NOT NULL,
-                          fecha_nacimiento DATE NOT NULL,
-                          fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    """)
-                    cur.execute("SELECT nombre, email, fecha_nacimiento FROM personas_crud WHERE id=%s", (edit_id,))
-                    row = cur.fetchone()
-                    cur.close()
-                    conn.close()
-                    if row:
-                        edit_nombre = row[0] or ""
-                        edit_email = row[1] or ""
-                        edit_fecha = (row[2].strftime("%Y-%m-%d") if row[2] else "")
-                except:
-                    pass
-
-        # construir WHERE dinámico (nombre + rango fechas)
-        where = []
-        args = []
-        if search:
-            where.append("nombre ILIKE %s")
-            args.append("%" + search + "%")
-        if desde:
-            where.append("fecha_nacimiento >= %s")
-            args.append(desde)
-        if hasta:
-            where.append("fecha_nacimiento <= %s")
-            args.append(hasta)
-
-        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-
-        total = 0
-        rows = []
-        total_pages = 1
-
+        # Crear tabla si no existe (NO borra registros)
         conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS personas_crud (
-                      id SERIAL PRIMARY KEY,
-                      nombre VARCHAR(120) NOT NULL,
-                      email VARCHAR(160) NOT NULL,
-                      fecha_nacimiento DATE NOT NULL,
-                      fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
+                CREATE TABLE IF NOT EXISTS crud_personas (
+                    id SERIAL PRIMARY KEY,
+                    nombre VARCHAR(120) NOT NULL,
+                    email VARCHAR(160) NOT NULL,
+                    fecha_nacimiento DATE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
                 """)
-                cur.execute("SELECT COUNT(*) FROM personas_crud" + where_sql, tuple(args))
-                total = int(cur.fetchone()[0] or 0)
+                conn.commit()
+                cur.close()
+                conn.close()
+            except:
+                pass
 
-                total_pages = max(1, (total + per_page - 1) // per_page)
-                if page_num > total_pages:
-                    page_num = total_pages
+        # PRG acciones
+        if method == "POST":
+            try:
+                fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
+                action = (fs.getvalue("action") or "").strip()
 
-                offset = (page_num - 1) * per_page
-                cur.execute("""
-                    SELECT id, nombre, email, fecha_nacimiento
-                    FROM personas_crud
-                    {where}
-                    ORDER BY id DESC
-                    LIMIT %s OFFSET %s
-                """.format(where=where_sql), tuple(args + [per_page, offset]))
+                # agregar
+                if action == "add":
+                    nombre = limpiar_espacios(fs.getvalue("nombre") or "")
+                    email = (fs.getvalue("email") or "").strip()
+                    fecha_str = (fs.getvalue("fecha_nacimiento") or "").strip()
 
+                    errores = []
+                    if not nombre:
+                        errores.append("Nombre es requerido")
+                    elif not validar_nombre_solo_letras(nombre):
+                        errores.append("Nombre solo debe tener letras y espacios")
+
+                    if not email:
+                        errores.append("Email es requerido")
+                    elif not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", email):
+                        errores.append("Email inválido")
+
+                    fecha_nac = parsear_fecha(fecha_str)
+                    if not fecha_nac:
+                        errores.append("Fecha de nacimiento inválida")
+                    else:
+                        if fecha_nac >= hoy:
+                            errores.append("La fecha debe ser anterior a hoy (no hoy ni futura)")
+
+                    if not errores:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("INSERT INTO crud_personas (nombre,email,fecha_nacimiento) VALUES (%s,%s,%s)", (nombre, email, fecha_nac))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                    start_response("303 See Other", [('Location', '/crud_personas')] + headers)
+                    return [b""]
+
+                # editar
+                if action == "edit":
+                    pid = (fs.getvalue("id") or "").strip()
+                    nombre = limpiar_espacios(fs.getvalue("nombre") or "")
+                    email = (fs.getvalue("email") or "").strip()
+                    fecha_str = (fs.getvalue("fecha_nacimiento") or "").strip()
+
+                    errores = []
+                    if not pid.isdigit():
+                        errores.append("ID inválido")
+
+                    if not nombre:
+                        errores.append("Nombre es requerido")
+                    elif not validar_nombre_solo_letras(nombre):
+                        errores.append("Nombre solo debe tener letras y espacios")
+
+                    if not email:
+                        errores.append("Email es requerido")
+                    elif not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", email):
+                        errores.append("Email inválido")
+
+                    fecha_nac = parsear_fecha(fecha_str)
+                    if not fecha_nac:
+                        errores.append("Fecha de nacimiento inválida")
+                    else:
+                        if fecha_nac >= hoy:
+                            errores.append("La fecha debe ser anterior a hoy (no hoy ni futura)")
+
+                    if not errores:
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("UPDATE crud_personas SET nombre=%s, email=%s, fecha_nacimiento=%s WHERE id=%s", (nombre, email, fecha_nac, int(pid)))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                    start_response("303 See Other", [('Location', '/crud_personas')] + headers)
+                    return [b""]
+
+                # eliminar
+                if action == "delete":
+                    pid = (fs.getvalue("id") or "").strip()
+                    if pid.isdigit():
+                        conn = conectar_bd()
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM crud_personas WHERE id=%s", (int(pid),))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+
+                    start_response("303 See Other", [('Location', '/crud_personas')] + headers)
+                    return [b""]
+
+                start_response("303 See Other", [('Location', '/crud_personas')] + headers)
+                return [b""]
+
+            except:
+                start_response("303 See Other", [('Location', '/crud_personas')] + headers)
+                return [b""]
+
+        # GET: filtros
+        qs = parse_qs(environ.get("QUERY_STRING", ""))
+        q = (qs.get("q", [""])[0] or "").strip()
+        fdesde = (qs.get("desde", [""])[0] or "").strip()
+        fhasta = (qs.get("hasta", [""])[0] or "").strip()
+
+        where = []
+        params = []
+
+        if q:
+            where.append("(LOWER(nombre) LIKE %s OR LOWER(email) LIKE %s)")
+            params.append("%" + q.lower() + "%")
+            params.append("%" + q.lower() + "%")
+
+        d1 = parsear_fecha(fdesde) if fdesde else None
+        d2 = parsear_fecha(fhasta) if fhasta else None
+
+        if d1 and d2:
+            where.append("(fecha_nacimiento BETWEEN %s AND %s)")
+            params.append(d1)
+            params.append(d2)
+        elif d1 and not d2:
+            where.append("(fecha_nacimiento >= %s)")
+            params.append(d1)
+        elif d2 and not d1:
+            where.append("(fecha_nacimiento <= %s)")
+            params.append(d2)
+
+        sql_where = (" WHERE " + " AND ".join(where)) if where else ""
+
+        rows = []
+        conn = conectar_bd()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT id, nombre, email, fecha_nacimiento FROM crud_personas" + sql_where + " ORDER BY id DESC LIMIT 200", tuple(params))
                 rows = cur.fetchall()
                 cur.close()
                 conn.close()
-            except Exception as e:
-                mensaje = "<div class='bad'>Error BD: %s</div>" % str(e)
-        else:
-            mensaje = "<div class='bad'>No hay conexión a BD</div>"
+            except:
+                rows = []
 
-        trs = ""
-        for (pid, nom, em, fn) in rows:
-            trs += """
+        # tabla html
+        tbody = ""
+        for (pid, nombre, email, fn) in rows:
+            tbody += """
 <tr>
-  <td><b>{nom}</b></td>
-  <td>{em}</td>
-  <td>{fn}</td>
+  <td><b>__N__</b></td>
+  <td>__E__</td>
+  <td>__F__</td>
   <td>
     <div class="actions">
-      <a class="btn-sm btn-edit" style="text-decoration:none;" href="/crud_personas?edit={id}&p={p}&q={q}&from={fr}&to={to}">Editar</a>
-      <form method="POST" style="margin:0" onsubmit="return confirm('¿Eliminar este usuario?');">
-        <input type="hidden" name="eliminar_id" value="{id}">
-        <button class="btn-sm btn-del" type="submit">Eliminar</button>
+      <button class="btn-muted btn-round" type="button"
+        onclick="openEdit('__ID__','__NJS__','__EJS__','__F__')">Editar</button>
+      <form method="POST" onsubmit="return confirm('¿Eliminar este registro?');" style="display:inline;">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="id" value="__ID__">
+        <button class="btn-danger btn-round" type="submit">Eliminar</button>
       </form>
     </div>
   </td>
 </tr>
-""".format(
-                id=str(pid),
-                nom=str(nom),
-                em=str(em),
-                fn=(fn.strftime("%Y-%m-%d") if fn else ""),
-                p=str(page_num),
-                q=urllib.parse.quote(search),
-                fr=urllib.parse.quote(desde_str),
-                to=urllib.parse.quote(hasta_str)
-            )
-        if not trs:
-            trs = "<tr><td colspan='4' style='padding:18px;color:#6b7280;'>No hay usuarios con ese filtro.</td></tr>"
+""".replace("__ID__", str(pid))\
+   .replace("__N__", html_escape(nombre))\
+   .replace("__E__", html_escape(email))\
+   .replace("__F__", str(fn))\
+   .replace("__NJS__", html_escape(nombre).replace("\\","\\\\").replace("'","\\'"))\
+   .replace("__EJS__", html_escape(email).replace("\\","\\\\").replace("'","\\'"))
 
-        base_q = "q=%s&from=%s&to=%s" % (urllib.parse.quote(search), urllib.parse.quote(desde_str), urllib.parse.quote(hasta_str))
+        if not tbody:
+            tbody = "<tr><td colspan='4' style='color:#64748b;'>No hay registros.</td></tr>"
 
-        if page_num > 1:
-            prev_link = '<a class="iconbtn" title="Anterior" style="text-decoration:none;" href="/crud_personas?p=%s&%s">‹</a>' % (str(page_num-1), base_q)
-        else:
-            prev_link = '<span class="iconbtn" style="opacity:.35;cursor:not-allowed;">‹</span>'
-
-        if page_num < total_pages:
-            next_link = '<a class="iconbtn" title="Siguiente" style="text-decoration:none;" href="/crud_personas?p=%s&%s">›</a>' % (str(page_num+1), base_q)
-        else:
-            next_link = '<span class="iconbtn" style="opacity:.35;cursor:not-allowed;">›</span>'
-
-        modal_html = ""
-        if open_modal:
-            titulo = "Editar usuario" if edit_id else "Nuevo usuario"
-            btn = "Actualizar" if edit_id else "Guardar"
-            cancel_url = "/crud_personas?p=%s&%s" % (str(page_num), base_q)
-            modal_html = """
-<div class="modal-backdrop" onclick="if(event.target===this) window.location.href='{cancel}';">
-  <div class="modal">
-    <div class="modal-head">
-      <div class="modal-title">{titulo}</div>
-      <a href="{cancel}" class="iconbtn" style="text-decoration:none;">✕</a>
-    </div>
-    <div class="modal-body">
-      {msg}
-      <form method="POST" autocomplete="off">
-        <input type="hidden" name="id" value="{eid}">
-
-        <div class="grid2">
-          <div class="field">
-            <label>Nombre</label>
-            <input name="nombre" placeholder="Ej: Alan" required value="{enombre}"
-              oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
-          </div>
-          <div class="field">
-            <label>Email</label>
-            <input type="email" name="email" placeholder="correo@dominio.com" required value="{eemail}">
-          </div>
-        </div>
-
-        <div class="field" style="margin-top:6px;">
-          <label>Fecha de nacimiento</label>
-          <input type="date" name="fecha_nacimiento" max="{maxf}" required value="{efecha}">
-          <div class="hint">Debe ser anterior a hoy.</div>
-        </div>
-
-        <div class="modal-actions">
-          <a class="btn-pill btn-ghost" style="text-decoration:none;" href="{cancel}">Cancelar</a>
-          <button class="btn-pill btn-primary" type="submit">{btn}</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-""".format(
-                titulo=titulo,
-                btn=btn,
-                eid=(edit_id or ""),
-                enombre=(edit_nombre or "").replace('"', "&quot;"),
-                eemail=(edit_email or "").replace('"', "&quot;"),
-                efecha=(edit_fecha or "").replace('"', "&quot;"),
-                maxf=max_fecha,
-                cancel=cancel_url,
-                msg=(mensaje or "")
-            )
+        # UI filtros
+        qesc = html_escape(q)
+        desdev = html_escape(fdesde)
+        hastav = html_escape(fhasta)
 
         body = """
-<div class="card">
-  <div class="header-row">
-    <h1>Usuarios</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+  <div>
+    <h1 style="margin:0;">Usuarios</h1>
+    <div style="color:#64748b;margin-top:6px;">CRUD Personas (Nombre, Email, Fecha de nacimiento)</div>
+  </div>
 
-    <div class="searchbar">
-      <form class="searchbox" method="GET" action="/crud_personas">
+  <button class="btn-blue btn-round" type="button" onclick="openAdd()">＋ Nuevo</button>
+</div>
+
+<div style="margin-top:18px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+  <form method="GET" style="flex:1;min-width:280px;">
+    <div class="pill" style="width:100%;justify-content:space-between;">
+      <div style="display:flex;gap:10px;align-items:center;flex:1;">
         <span style="font-size:18px;">🔎</span>
-        <input name="q" value="{q}" placeholder="Buscar por nombre o apellidos..." />
-        <input type="hidden" name="p" value="1">
-        <button id="filterBtn" class="iconbtn" title="Filtros" type="button" onclick="toggleFilters()">⏷</button>
-        <a class="iconbtn" title="Limpiar" style="text-decoration:none;" href="/crud_personas">🧹</a>
+        <input name="q" value="__Q__" placeholder="Buscar por nombre o email..." style="border:none;background:transparent;margin:0;padding:0;box-shadow:none;outline:none;flex:1;">
+      </div>
 
-        <div id="filtersBox" class="filters">
-          <div class="row">
-            <div class="field">
-              <label>Fecha desde</label>
-              <input type="date" name="from" value="{fr}">
-            </div>
-            <div class="field">
-              <label>Fecha hasta</label>
-              <input type="date" name="to" value="{to}">
-            </div>
+      <button class="iconbtn" type="button" title="Filtrar por fecha" onclick="toggleFilter()">
+        ▾
+      </button>
+
+      <button class="iconbtn" type="submit" title="Buscar / aplicar">
+        ✓
+      </button>
+    </div>
+
+    <div id="filtroFecha" style="display:none;margin-top:10px;" class="card">
+      <div class="grid2">
+        <div>
+          <label><b>Desde</b></label>
+          <input type="date" name="desde" value="__DESDE__" max="__MAX__">
+        </div>
+        <div>
+          <label><b>Hasta</b></label>
+          <input type="date" name="hasta" value="__HASTA__" max="__MAX__">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
+        <a href="/crud_personas" class="btn-round" style="text-decoration:none;background:#f1f5f9;color:#0f172a;padding:10px 14px;border-radius:999px;border:1px solid #e5e7eb;">Limpiar</a>
+        <button class="btn-blue btn-round" type="submit">Aplicar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div style="margin-top:18px;" class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>NOMBRE</th>
+        <th>EMAIL</th>
+        <th>FECHA DE NACIMIENTO</th>
+        <th>ACCIONES</th>
+      </tr>
+    </thead>
+    <tbody>
+      __TBODY__
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal Backdrop -->
+<div class="modal-backdrop" id="modalBg" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div style="font-weight:900;font-size:20px;" id="modalTitle">Nuevo usuario</div>
+      <button class="iconbtn" type="button" onclick="hideModal()">✕</button>
+    </div>
+    <form method="POST" id="modalForm">
+      <input type="hidden" name="action" id="actionField" value="add">
+      <input type="hidden" name="id" id="idField" value="">
+
+      <div class="modal-body">
+        <div class="grid2">
+          <div>
+            <label><b>Nombre</b></label>
+            <input name="nombre" id="nombreField" placeholder="Ej: Juan Perez" required
+              oninput="this.value=this.value.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\\s]/g,'')">
           </div>
-          <div class="actions">
-            <a class="btn-pill btn-ghost" style="text-decoration:none;" href="/crud_personas">Limpiar filtros</a>
-            <button class="btn-pill btn-primary" type="submit">Aplicar</button>
+          <div>
+            <label><b>Email</b></label>
+            <input type="email" name="email" id="emailField" placeholder="ejemplo@correo.com" required>
           </div>
         </div>
-      </form>
-    </div>
 
-    <a class="btn-pill btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px;"
-       href="/crud_personas?new=1&p={p}&q={qenc}&from={frenc}&to={toenc}">
-       <span style="font-size:18px;">＋</span> Nuevo
-    </a>
-  </div>
+        <div style="margin-top:8px;">
+          <label><b>Fecha de nacimiento</b></label>
+          <input type="date" name="fecha_nacimiento" id="fechaField" required max="__MAX__">
+          <small style="color:#64748b;">Debe ser anterior a hoy.</small>
+        </div>
+      </div>
 
-  <div class="container">
-    {alert}
-
-    <div style="overflow:auto;border-radius:14px;border:1px solid #eef2f7;">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Email</th>
-            <th>Fecha de nacimiento</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {trs}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="footerbar">
-    {prev}
-    <div class="pagepill">Página {p} de {tp}</div>
-    {next}
+      <div class="modal-foot">
+        <button class="btn-muted btn-round" type="button" onclick="hideModal()">Cancelar</button>
+        <button class="btn-blue btn-round" type="submit">Guardar</button>
+      </div>
+    </form>
   </div>
 </div>
 
-{modal}
-""".format(
-            trs=trs,
-            p=str(page_num),
-            tp=str(total_pages),
-            prev=prev_link,
-            next=next_link,
-            q=(search or "").replace('"', "&quot;"),
-            qenc=urllib.parse.quote(search),
-            fr=(desde_str or ""),
-            to=(hasta_str or ""),
-            frenc=urllib.parse.quote(desde_str),
-            toenc=urllib.parse.quote(hasta_str),
-            modal=modal_html,
-            alert=(mensaje if (mensaje and not open_modal) else "")
-        )
+<script>
+function toggleFilter(){
+  var el = document.getElementById('filtroFecha');
+  if(!el) return;
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+function openAdd(){
+  document.getElementById('modalTitle').innerText = 'Nuevo usuario';
+  document.getElementById('actionField').value = 'add';
+  document.getElementById('idField').value = '';
+  document.getElementById('nombreField').value = '';
+  document.getElementById('emailField').value = '';
+  document.getElementById('fechaField').value = '';
+  showModal();
+}
+function openEdit(id,n,e,f){
+  document.getElementById('modalTitle').innerText = 'Editar usuario';
+  document.getElementById('actionField').value = 'edit';
+  document.getElementById('idField').value = id;
+  document.getElementById('nombreField').value = n;
+  document.getElementById('emailField').value = e;
+  document.getElementById('fechaField').value = f;
+  showModal();
+}
+function showModal(){
+  document.getElementById('modalBg').style.display = 'flex';
+}
+function hideModal(){
+  document.getElementById('modalBg').style.display = 'none';
+}
+function closeModal(ev){
+  hideModal();
+}
+// abre el filtro si ya hay valores
+(function(){
+  var desde = "__DESDE__";
+  var hasta = "__HASTA__";
+  if((desde && desde.trim()) || (hasta && hasta.trim())){
+    var el = document.getElementById('filtroFecha');
+    if(el) el.style.display = 'block';
+  }
+})();
+</script>
+""".replace("__TBODY__", tbody)\
+   .replace("__Q__", qesc)\
+   .replace("__DESDE__", desdev)\
+   .replace("__HASTA__", hastav)\
+   .replace("__MAX__", max_fecha)
 
         html = page("CRUD Personas", body)
         start_response("200 OK", headers)
@@ -1338,13 +1153,11 @@ document.addEventListener('DOMContentLoaded', function(){ show(0); });
     # 404 REAL
     # =========================================================
     body = """
-<div class="simple-box" style="text-align:center;">
-  <h1 style="color:#ef4444;font-size:54px;margin-bottom:10px;">404</h1>
-  <h2>Página no encontrada</h2>
-  <p style="color:#6b7280;">La ruta solicitada <code>%s</code> no existe.</p>
-  <a href="/" class="btn-pill btn-primary" style="display:inline-block;text-decoration:none;">Volver al Inicio</a>
-</div>
-""" % path
+<h1 style="color:#ef4444;font-size:54px;margin-bottom:10px;">404</h1>
+<h2>Página no encontrada</h2>
+<p>La ruta solicitada <code>%s</code> no existe.</p>
+<a href="/" style="display:inline-block;margin-top:20px;padding:12px 22px;background:#2563eb;color:white;text-decoration:none;border-radius:999px;font-weight:bold;">Volver al Inicio</a>
+""" % html_escape(path)
 
     html = page("404", body)
     start_response("404 Not Found", headers)
