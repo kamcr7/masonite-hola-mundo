@@ -136,7 +136,115 @@ __BODY__
 </html>""".replace("__TITLE__", title).replace("__NAV__", navegacion()).replace("__BODY__", body_html)
 
     # =========================================================
-    # CRUD PERSONAS
+    # INICIO (MEJOR DISEÑO)
+    # =========================================================
+    if path == "/" and method == "GET":
+        body = """
+<div style="
+  background:linear-gradient(135deg, rgba(79,70,229,.10), rgba(37,99,235,.06));
+  border:1px solid #e5e7eb;
+  border-radius:18px;
+  padding:22px;
+  margin-top:6px;
+">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0;font-size:34px;">Aplicación</h1>
+      <p style="margin:6px 0 0;color:#6b7280;">Elige una sección para continuar.</p>
+    </div>
+
+    <div style="
+      display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      background:#ffffffcc;border:1px solid #e5e7eb;border-radius:999px;
+      padding:10px 12px;
+    ">
+      <span style="font-size:18px;">🚀</span>
+      <span style="font-weight:800;color:#374151;">Acceso rápido</span>
+      <a href="/crud_personas" style="
+        text-decoration:none;
+        background:#4f46e5;color:#fff;
+        padding:10px 14px;border-radius:999px;
+        font-weight:800;
+        display:inline-flex;gap:8px;align-items:center;
+      ">Ir a CRUD Personas →</a>
+    </div>
+  </div>
+
+  <div style="
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    gap:16px;
+    margin-top:18px;
+  ">
+    <a href="/calculadora" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#eef2ff;border:1px solid #e0e7ff;display:flex;align-items:center;justify-content:center;font-size:20px;">🧮</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Calculadora</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Suma y división con validación</div>
+            </div>
+          </div>
+          <div style="color:#4f46e5;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+    
+    <a href="/formulario" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#ecfeff;border:1px solid #cffafe;display:flex;align-items:center;justify-content:center;font-size:20px;">📝</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Formulario</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Imagen + fecha válida + correo</div>
+            </div>
+          </div>
+          <div style="color:#2563eb;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+    
+    <a href="/carrusel" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#fff7ed;border:1px solid #ffedd5;display:flex;align-items:center;justify-content:center;font-size:20px;">🖼️</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Carrusel</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Sube y administra imágenes</div>
+            </div>
+          </div>
+          <div style="color:#f97316;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+    
+    <a href="/nombre_recaptcha" style="text-decoration:none;color:inherit;">
+      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="width:44px;height:44px;border-radius:14px;background:#f0fdf4;border:1px solid #dcfce7;display:flex;align-items:center;justify-content:center;font-size:20px;">✅</div>
+            <div>
+              <div style="font-weight:900;font-size:18px;">Registro</div>
+              <div style="color:#6b7280;font-size:13px;margin-top:2px;">reCAPTCHA + máximo 30 letras</div>
+            </div>
+          </div>
+          <div style="color:#16a34a;font-weight:900;">→</div>
+        </div>
+      </div>
+    </a>
+
+  </div>
+</div>
+"""
+        html = page("Inicio", body)
+        start_response("200 OK", headers)
+        return [html.encode("utf-8")]
+
+    # =========================================================
+    # CRUD PERSONAS (con paginación)
     # =========================================================
     if path == "/crud_personas":
         hoy = date.today()
@@ -161,6 +269,11 @@ __BODY__
                 conn.close()
             except:
                 pass
+
+        # Paginación
+        page_size = 4  # Número de usuarios por página
+        page_number = int((parse_qs(environ.get("QUERY_STRING", "")).get("page", [1]))[0])  # Página actual
+        offset = (page_number - 1) * page_size
 
         # PRG acciones
         if method == "POST":
@@ -223,15 +336,8 @@ __BODY__
                 start_response("303 See Other", [('Location', '/crud_personas')] + headers)
                 return [b""]
 
-        # Paginación
-        page_size = 4  # Número de usuarios por página
-        page_number = int((parse_qs(environ.get("QUERY_STRING", "")).get("page", [1]))[0])  # Página actual
-        offset = (page_number - 1) * page_size
-
-        # GET: filtros
-        qs = parse_qs(environ.get("QUERY_STRING", ""))
-        q = (qs.get("q", [""])[0] or "").strip()
-
+        # GET: obtener datos de la página y aplicar filtros
+        q = (parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[0])  # Filtro de búsqueda
         where = []
         params = []
 
@@ -247,7 +353,7 @@ __BODY__
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("SELECT id, nombre, email, fecha_nacimiento FROM crud_personas" + sql_where + " ORDER BY id DESC LIMIT %s OFFSET %s", tuple(params + [page_size, offset]))
+                cur.execute(f"SELECT id, nombre, email, fecha_nacimiento FROM crud_personas {sql_where} ORDER BY id DESC LIMIT {page_size} OFFSET {offset}", tuple(params))
                 rows = cur.fetchall()
                 cur.close()
                 conn.close()
@@ -284,26 +390,26 @@ __BODY__
         if not tbody:
             tbody = "<tr><td colspan='4' style='color:#64748b;'>No hay registros.</td></tr>"
 
-        # UI filtros
-        qesc = html_escape(q)
-
         # Paginación
-        total_rows = 0
         conn = conectar_bd()
+        total_count = 0
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM crud_personas" + sql_where, tuple(params))
-                total_rows = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM crud_personas")
+                total_count = cur.fetchone()[0]
                 cur.close()
                 conn.close()
             except:
-                total_rows = 0
+                pass
 
-        total_pages = (total_rows + page_size - 1) // page_size  # Cálculo de total de páginas
-        pagination_html = ""
+        total_pages = (total_count + page_size - 1) // page_size  # Total de páginas
+        pagination = ""
         for i in range(1, total_pages + 1):
-            pagination_html += f'<a href="/crud_personas?page={i}" style="padding:5px; margin:5px; text-decoration:none;">{i}</a>'
+            pagination += f'<a href="/crud_personas?page={i}" class="btn-muted btn-round">{i}</a> '
+
+        # UI filtros
+        qesc = html_escape(q)
 
         body = """
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -322,10 +428,7 @@ __BODY__
         <span style="font-size:18px;">🔎</span>
         <input name="q" value="__Q__" placeholder="Buscar por nombre o email..." style="border:none;background:transparent;margin:0;padding:0;box-shadow:none;outline:none;flex:1;">
       </div>
-
-      <button class="iconbtn" type="submit" title="Buscar / aplicar">
-        ✓
-      </button>
+      <button class="iconbtn" type="submit" title="Buscar / aplicar">✓</button>
     </div>
   </form>
 </div>
@@ -346,39 +449,13 @@ __BODY__
   </table>
 </div>
 
-<div style="margin-top:10px;">
-  __PAGINACION__
+<div style="margin-top:18px;display:flex;justify-content:center;">
+  __PAGINATION__
 </div>
-
-<script>
-function openAdd(){
-  document.getElementById('modalTitle').innerText = 'Nuevo usuario';
-  document.getElementById('actionField').value = 'add';
-  document.getElementById('idField').value = '';
-  document.getElementById('nombreField').value = '';
-  document.getElementById('emailField').value = '';
-  document.getElementById('fechaField').value = '';
-  showModal();
-}
-</script>
 """.replace("__TBODY__", tbody)\
    .replace("__Q__", qesc)\
-   .replace("__PAGINACION__", pagination_html)
+   .replace("__PAGINATION__", pagination)
 
         html = page("CRUD Personas", body)
         start_response("200 OK", headers)
         return [html.encode("utf-8")]
-
-    # =========================================================
-    # 404 REAL
-    # =========================================================
-    body = """
-<h1 style="color:#ef4444;font-size:54px;margin-bottom:10px;">404</h1>
-<h2>Página no encontrada</h2>
-<p>La ruta solicitada <code>%s</code> no existe.</p>
-<a href="/" style="display:inline-block;margin-top:20px;padding:12px 22px;background:#2563eb;color:white;text-decoration:none;border-radius:999px;font-weight:bold;">Volver al Inicio</a>
-""" % html_escape(path)
-
-    html = page("404", body)
-    start_response("404 Not Found", headers)
-    return [html.encode("utf-8")]
