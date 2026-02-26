@@ -136,115 +136,7 @@ __BODY__
 </html>""".replace("__TITLE__", title).replace("__NAV__", navegacion()).replace("__BODY__", body_html)
 
     # =========================================================
-    # INICIO (MEJOR DISEÑO)
-    # =========================================================
-    if path == "/" and method == "GET":
-        body = """
-<div style="
-  background:linear-gradient(135deg, rgba(79,70,229,.10), rgba(37,99,235,.06));
-  border:1px solid #e5e7eb;
-  border-radius:18px;
-  padding:22px;
-  margin-top:6px;
-">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-    <div>
-      <h1 style="margin:0;font-size:34px;">Aplicación</h1>
-      <p style="margin:6px 0 0;color:#6b7280;">Elige una sección para continuar.</p>
-    </div>
-
-    <div style="
-      display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-      background:#ffffffcc;border:1px solid #e5e7eb;border-radius:999px;
-      padding:10px 12px;
-    ">
-      <span style="font-size:18px;">🚀</span>
-      <span style="font-weight:800;color:#374151;">Acceso rápido</span>
-      <a href="/crud_personas" style="
-        text-decoration:none;
-        background:#4f46e5;color:#fff;
-        padding:10px 14px;border-radius:999px;
-        font-weight:800;
-        display:inline-flex;gap:8px;align-items:center;
-      ">Ir a CRUD Personas →</a>
-    </div>
-  </div>
-
-  <div style="
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-    gap:16px;
-    margin-top:18px;
-  ">
-    <a href="/calculadora" style="text-decoration:none;color:inherit;">
-      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="display:flex;gap:12px;align-items:center;">
-            <div style="width:44px;height:44px;border-radius:14px;background:#eef2ff;border:1px solid #e0e7ff;display:flex;align-items:center;justify-content:center;font-size:20px;">🧮</div>
-            <div>
-              <div style="font-weight:900;font-size:18px;">Calculadora</div>
-              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Suma y división con validación</div>
-            </div>
-          </div>
-          <div style="color:#4f46e5;font-weight:900;">→</div>
-        </div>
-      </div>
-    </a>
-    
-    <a href="/formulario" style="text-decoration:none;color:inherit;">
-      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="display:flex;gap:12px;align-items:center;">
-            <div style="width:44px;height:44px;border-radius:14px;background:#ecfeff;border:1px solid #cffafe;display:flex;align-items:center;justify-content:center;font-size:20px;">📝</div>
-            <div>
-              <div style="font-weight:900;font-size:18px;">Formulario</div>
-              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Imagen + fecha válida + correo</div>
-            </div>
-          </div>
-          <div style="color:#2563eb;font-weight:900;">→</div>
-        </div>
-      </div>
-    </a>
-    
-    <a href="/carrusel" style="text-decoration:none;color:inherit;">
-      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="display:flex;gap:12px;align-items:center;">
-            <div style="width:44px;height:44px;border-radius:14px;background:#fff7ed;border:1px solid #ffedd5;display:flex;align-items:center;justify-content:center;font-size:20px;">🖼️</div>
-            <div>
-              <div style="font-weight:900;font-size:18px;">Carrusel</div>
-              <div style="color:#6b7280;font-size:13px;margin-top:2px;">Sube y administra imágenes</div>
-            </div>
-          </div>
-          <div style="color:#f97316;font-weight:900;">→</div>
-        </div>
-      </div>
-    </a>
-    
-    <a href="/nombre_recaptcha" style="text-decoration:none;color:inherit;">
-      <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="display:flex;gap:12px;align-items:center;">
-            <div style="width:44px;height:44px;border-radius:14px;background:#f0fdf4;border:1px solid #dcfce7;display:flex;align-items:center;justify-content:center;font-size:20px;">✅</div>
-            <div>
-              <div style="font-weight:900;font-size:18px;">Registro</div>
-              <div style="color:#6b7280;font-size:13px;margin-top:2px;">reCAPTCHA + máximo 30 letras</div>
-            </div>
-          </div>
-          <div style="color:#16a34a;font-weight:900;">→</div>
-        </div>
-      </div>
-    </a>
-
-  </div>
-</div>
-"""
-        html = page("Inicio", body)
-        start_response("200 OK", headers)
-        return [html.encode("utf-8")]
-
-    # =========================================================
-    # CRUD PERSONAS (con paginación)
+    # CRUD PERSONAS (con paginación y flechas)
     # =========================================================
     if path == "/crud_personas":
         hoy = date.today()
@@ -405,8 +297,18 @@ __BODY__
 
         total_pages = (total_count + page_size - 1) // page_size  # Total de páginas
         pagination = ""
+
+        # Agregar botones de flechas
+        if page_number > 1:
+            pagination += f'<a href="/crud_personas?page=1" class="btn-muted btn-round">« Primera</a> '
+            pagination += f'<a href="/crud_personas?page={page_number-1}" class="btn-muted btn-round">‹ Anterior</a> '
+
         for i in range(1, total_pages + 1):
             pagination += f'<a href="/crud_personas?page={i}" class="btn-muted btn-round">{i}</a> '
+
+        if page_number < total_pages:
+            pagination += f'<a href="/crud_personas?page={page_number+1}" class="btn-muted btn-round">Siguiente ›</a> '
+            pagination += f'<a href="/crud_personas?page={total_pages}" class="btn-muted btn-round">Última »</a> '
 
         # UI filtros
         qesc = html_escape(q)
