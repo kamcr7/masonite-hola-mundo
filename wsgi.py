@@ -116,9 +116,80 @@ def application(environ, start_response):
     .modal-body{padding:18px;}
     .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:18px;border-top:1px solid #eef2f7;}
     .btn-round{border-radius:999px;padding:10px 16px;}
+
+    /* ✅ PAGINACIÓN con flechas (estilo similar a tu 2da imagen) */
+    .pager-bar{
+      margin-top:18px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      gap:12px;
+      padding:14px 12px;
+      background:#f1f5f9;
+      border:1px solid #e5e7eb;
+      border-radius:16px;
+      flex-wrap:wrap;
+    }
+    .pager-btn{
+      width:48px;height:48px;
+      border-radius:12px;
+      border:1px solid #c7d2fe;
+      background:#dbeafe;
+      color:#1d4ed8;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+      font-weight:900;
+      user-select:none;
+    }
+    .pager-btn:hover{filter:brightness(.98);}
+    .pager-btn.disabled{
+      opacity:.45;
+      pointer-events:none;
+    }
+    .pager-info{
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:999px;
+      padding:12px 18px;
+      font-weight:800;
+      color:#334155;
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      box-shadow:0 8px 18px rgba(16,24,40,.08);
+    }
+    .pager-pages{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:center;
+    }
+    .pager-page{
+      min-width:44px;
+      height:44px;
+      border-radius:999px;
+      border:1px solid #e5e7eb;
+      background:#fff;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+      font-weight:800;
+      color:#4f46e5;
+      padding:0 14px;
+    }
+    .pager-page.active{
+      background:#4f46e5;
+      color:#fff;
+      border-color:#4f46e5;
+    }
+
     @media(max-width:900px){
       .grid2{grid-template-columns:1fr;}
-      th:nth-child(2), td:nth-child(2){display:none;} /* en móvil oculta email si quieres (pero lo dejo visible abajo) */
+      th:nth-child(2), td:nth-child(2){display:none;}
     }
     @media(max-width:700px){
       th,td{padding:12px 10px;}
@@ -190,7 +261,7 @@ __BODY__
         </div>
       </div>
     </a>
-    
+
     <a href="/formulario" style="text-decoration:none;color:inherit;">
       <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
@@ -205,7 +276,7 @@ __BODY__
         </div>
       </div>
     </a>
-    
+
     <a href="/carrusel" style="text-decoration:none;color:inherit;">
       <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
@@ -220,7 +291,7 @@ __BODY__
         </div>
       </div>
     </a>
-    
+
     <a href="/nombre_recaptcha" style="text-decoration:none;color:inherit;">
       <div style="background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:16px;box-shadow:0 12px 35px rgba(16,24,40,.06);" class="homecard">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
@@ -271,8 +342,10 @@ __BODY__
                 pass
 
         # Paginación
-        page_size = 4  # Número de usuarios por página
-        page_number = int((parse_qs(environ.get("QUERY_STRING", "")).get("page", [1]))[0])  # Página actual
+        page_size = 4
+        page_number = int((parse_qs(environ.get("QUERY_STRING", "")).get("page", [1]))[0])
+        if page_number < 1:
+            page_number = 1
         offset = (page_number - 1) * page_size
 
         # PRG acciones
@@ -309,7 +382,10 @@ __BODY__
                         conn = conectar_bd()
                         if conn:
                             cur = conn.cursor()
-                            cur.execute("INSERT INTO crud_personas (nombre,email,fecha_nacimiento) VALUES (%s,%s,%s)", (nombre, email, fecha_nac))
+                            cur.execute(
+                                "INSERT INTO crud_personas (nombre,email,fecha_nacimiento) VALUES (%s,%s,%s)",
+                                (nombre, email, fecha_nac)
+                            )
                             conn.commit()
                             cur.close()
                             conn.close()
@@ -337,7 +413,8 @@ __BODY__
                 return [b""]
 
         # GET: obtener datos de la página y aplicar filtros
-        q = (parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[0])  # Filtro de búsqueda
+        qs = parse_qs(environ.get("QUERY_STRING", ""))
+        q = (qs.get("q", [""])[0])
         where = []
         params = []
 
@@ -353,7 +430,11 @@ __BODY__
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute(f"SELECT id, nombre, email, fecha_nacimiento FROM crud_personas {sql_where} ORDER BY id DESC LIMIT {page_size} OFFSET {offset}", tuple(params))
+                cur.execute(
+                    f"SELECT id, nombre, email, fecha_nacimiento FROM crud_personas {sql_where} "
+                    f"ORDER BY id DESC LIMIT {page_size} OFFSET {offset}",
+                    tuple(params)
+                )
                 rows = cur.fetchall()
                 cur.close()
                 conn.close()
@@ -390,23 +471,68 @@ __BODY__
         if not tbody:
             tbody = "<tr><td colspan='4' style='color:#64748b;'>No hay registros.</td></tr>"
 
-        # Paginación
-        conn = conectar_bd()
+        # ✅ total_count con filtro (para que las páginas correspondan a la búsqueda)
         total_count = 0
+        conn = conectar_bd()
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM crud_personas")
+                cur.execute(f"SELECT COUNT(*) FROM crud_personas {sql_where}", tuple(params))
                 total_count = cur.fetchone()[0]
                 cur.close()
                 conn.close()
             except:
                 pass
 
-        total_pages = (total_count + page_size - 1) // page_size  # Total de páginas
-        pagination = ""
-        for i in range(1, total_pages + 1):
-            pagination += f'<a href="/crud_personas?page={i}" class="btn-muted btn-round">{i}</a> '
+        total_pages = (total_count + page_size - 1) // page_size
+        if total_pages < 1:
+            total_pages = 1
+        if page_number > total_pages:
+            page_number = total_pages
+
+        # ✅ construir links conservando q
+        q_param = ""
+        if q:
+            q_param = "&q=" + urllib.parse.quote(q)
+
+        def page_link(p):
+            return f"/crud_personas?page={p}{q_param}"
+
+        # ✅ PAGINACIÓN con flechas + números (como tu 2da imagen)
+        first_disabled = "disabled" if page_number <= 1 else ""
+        prev_disabled  = "disabled" if page_number <= 1 else ""
+        next_disabled  = "disabled" if page_number >= total_pages else ""
+        last_disabled  = "disabled" if page_number >= total_pages else ""
+
+        first_href = page_link(1) if page_number > 1 else "#"
+        prev_href  = page_link(page_number - 1) if page_number > 1 else "#"
+        next_href  = page_link(page_number + 1) if page_number < total_pages else "#"
+        last_href  = page_link(total_pages) if page_number < total_pages else "#"
+
+        # rango de páginas visible (para no llenar de 200 botones si hay muchos)
+        start_p = max(1, page_number - 3)
+        end_p = min(total_pages, page_number + 3)
+
+        pages_html = ""
+        for i in range(start_p, end_p + 1):
+            active = "active" if i == page_number else ""
+            pages_html += f'<a class="pager-page {active}" href="{page_link(i)}">{i}</a>'
+
+        pagination = f"""
+<div class="pager-bar">
+  <a class="pager-btn {first_disabled}" href="{first_href}" title="Primera">⏮</a>
+  <a class="pager-btn {prev_disabled}" href="{prev_href}" title="Anterior">◀</a>
+
+  <div class="pager-info">Página {page_number} / {total_pages}</div>
+
+  <div class="pager-pages">
+    {pages_html}
+  </div>
+
+  <a class="pager-btn {next_disabled}" href="{next_href}" title="Siguiente">▶</a>
+  <a class="pager-btn {last_disabled}" href="{last_href}" title="Última">⏭</a>
+</div>
+"""
 
         # UI filtros
         qesc = html_escape(q)
@@ -459,3 +585,8 @@ __BODY__
         html = page("CRUD Personas", body)
         start_response("200 OK", headers)
         return [html.encode("utf-8")]
+
+    # fallback simple
+    html = page("404", "<h1>404</h1><p>No encontrado.</p>")
+    start_response("404 Not Found", headers)
+    return [html.encode("utf-8")]
