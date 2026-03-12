@@ -15,11 +15,11 @@ import os
 # CONFIG
 # =========================================================
 # Información de conexión para MySQL en Railway
-DB_HOST = os.getenv('DB_HOST', 'nozomi.proxy.rlyw.net')
-DB_PORT = os.getenv('DB_PORT', '28752')
-DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'your_password_here')
-DB_NAME = os.getenv('DB_NAME', 'railway')
+DB_HOST = os.getenv('DB_HOST', 'nozomi.proxy.rlyw.net')  # Asegúrate de usar las variables de entorno correctamente
+DB_PORT = os.getenv('DB_PORT', '28752')  # Puerto proporcionado por Railway
+DB_USER = os.getenv('DB_USER', 'root')  # Usuario por defecto para MySQL
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'your_password_here')  # Asegúrate de poner la contraseña real de tu base de datos
+DB_NAME = os.getenv('DB_NAME', 'railway')  # El nombre de tu base de datos en Railway
 
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
 RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
@@ -61,15 +61,23 @@ def conectar_bd():
         'database': DB_NAME
     }
 
-    # Establecemos la conexión
-    conn = mysql.connector.connect(**db_config)
-    return conn
+    try:
+        # Establecemos la conexión
+        conn = mysql.connector.connect(**db_config)
+        print("Conexión exitosa a la base de datos MySQL.")
+        return conn
+    except mysql.connector.Error as err:
+        print(f"Error al conectar con la base de datos: {err}")
+        return None
 
 # =========================================================
 # INIT DB (Crear usuario ADMIN por defecto)
 # =========================================================
 def init_db():
     conn = conectar_bd()
+    if conn is None:
+        return  # Si no se pudo conectar, no continuamos
+
     cur = conn.cursor()
 
     # Crear tabla usuarios si no existe
