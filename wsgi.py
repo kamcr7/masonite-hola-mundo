@@ -149,7 +149,6 @@ def conectar_bd():
         sslmode="require"
     )
 
-
 # =========================================================
 # RENDER HTML FOR LOGIN
 # =========================================================
@@ -219,7 +218,7 @@ def login_html(msg=""):
           }} else {{
             msg.innerHTML = '<div class="msg-bad">' + data.message + '</div>';
           }}
-        }});
+        }}); 
         </script>
         """
     )
@@ -251,6 +250,7 @@ def render_layout(title, content, user=None, breadcrumbs=None):
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *{{box-sizing:border-box;}}
+
     body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#efefef;color:#111;}}
     .page{{max-width:1280px;margin:0 auto;padding:18px 22px 40px;}}
     .topbar{{background:#0f4573;color:#fff;display:flex;justify-content:space-between;align-items:center;}}
@@ -271,3 +271,53 @@ def render_layout(title, content, user=None, breadcrumbs=None):
 </body>
 </html>
 """
+
+# =========================================================
+# RUTAS
+# =========================================================
+def application(environ, start_response):
+    path = environ.get("PATH_INFO", "/")
+    method = environ.get("REQUEST_METHOD", "GET")
+
+    # ---------------- LOGIN VIEW ----------------
+    if path in ("/", "/login") and method == "GET":
+        html = login_html()
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [html.encode("utf-8")]
+
+    # ---------------- API LOGIN ----------------
+    if path == "/api/login" and method == "POST":
+        fs, data = get_form_data(environ)
+        usuario = limpiar_espacios(data.get("usuario", ""))
+        password = data.get("password", "")
+        captcha_token = data.get("g-recaptcha-response", "")
+
+        if not verificar_recaptcha(captcha_token):
+            return json_response(start_response, {"ok": False, "message": "Captcha inválido."})
+
+        conn = conectar_bd()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
+        row = cur.fetchone()
+
+        if not row or row[2] != hash_password(password):  # Asumiendo que row[2] es la contraseña
+            return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
+
+        token = jwt_encode({
+            "uid": row[0],
+            "usuario": row[1],
+            "exp": int(time.time()) + JWT_EXPIRE_SECONDS
+        })
+
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            make_cookie("token", token, max_age=JWT_EXPIRE_SECONDS)
+        ])
+        return [json.dumps({"ok": True}).encode("utf-8")]
+
+    # ---------------- DASHBOARD ----------------
+    if path == "/dashboard":
+        # Aquí iría la lógica para mostrar la página de dashboard después de login
+        pass
+
+    return redirect(start_response, "/login")
