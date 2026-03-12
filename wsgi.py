@@ -150,35 +150,6 @@ def conectar_bd():
     )
 
 # =========================================================
-# INIT DB (Create Default Admin)
-# =========================================================
-def init_db():
-    conn = conectar_bd()
-    cur = conn.cursor()
-
-    # Create users table if not exist
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id SERIAL PRIMARY KEY,
-        strNombreUsuario VARCHAR(50) NOT NULL UNIQUE,
-        strPwd VARCHAR(255) NOT NULL,
-        strCorreo VARCHAR(150) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-
-    cur.execute("SELECT COUNT(*) FROM usuarios")
-    if cur.fetchone()[0] == 0:
-        cur.execute("""
-        INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo)
-        VALUES ('admin', %s, 'admin@example.com')
-        """, (hash_password("123456"),))  # admin with password 123456
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# =========================================================
 # RENDER HTML FOR LOGIN
 # =========================================================
 def login_html(msg=""):
@@ -252,36 +223,12 @@ def login_html(msg=""):
         """
     )
 
-# =========================================================
-# RENDER LAYOUT (DASHBOARD)
-# =========================================================
-def dashboard_html(user):
-    return render_layout(
-        "Bienvenido",
-        f"""
-        <div class="title-row">
-          <div class="title-icon">🏥</div>
-          <div class="title-text">Sistema Corporativo - Clínica Santa Mónica</div>
-        </div>
-        <div class="green-line"></div>
+def render_layout(title, content, user=None, breadcrumbs=None):
+    breadcrumbs = breadcrumbs or []
+    crumbs = '<a href="/dashboard">Inicio</a>'
+    for item in breadcrumbs:
+        crumbs += f' <span style="color:#7c8aa5;">/</span> <span>{html_escape(item)}</span>'
 
-        <div class="msg-ok">
-          Bienvenido, <b>{html_escape(user["usuario"])}</b>.
-        </div>
-
-        <div class="topbar">
-          <div class="menu-wrap">
-            <a class="menu-item" href="/perfil">Perfil</a>
-            <a class="menu-item" href="/modulos">Módulo</a>
-            <a class="menu-item" href="/permisos-perfil">Permisos-Perfil</a>
-            <a class="menu-item" href="/usuarios">Usuario</a>
-          </div>
-        </div>
-        """,
-        user=user
-    )
-
-def render_layout(title, content, user=None):
     menu_html = ""
     if user:
         menu_html = f"""
@@ -303,6 +250,7 @@ def render_layout(title, content, user=None):
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *{{box-sizing:border-box;}}
+
     body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#efefef;color:#111;}}
     .page{{max-width:1280px;margin:0 auto;padding:18px 22px 40px;}}
     .topbar{{background:#0f4573;color:#fff;display:flex;justify-content:space-between;align-items:center;}}
@@ -325,14 +273,11 @@ def render_layout(title, content, user=None):
 """
 
 # =========================================================
-# INIT DB AND RUTAS
+# RUTAS
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-
-    # Initialize database with admin user
-    init_db()
 
     # ---------------- LOGIN VIEW ----------------
     if path in ("/", "/login") and method == "GET":
@@ -345,6 +290,10 @@ def application(environ, start_response):
         fs, data = get_form_data(environ)
         usuario = limpiar_espacios(data.get("usuario", ""))
         password = data.get("password", "")
+        captcha_token = data.get("g-recaptcha-response", "")
+
+        if not verificar_recaptcha(captcha_token):
+            return json_response(start_response, {"ok": False, "message": "Captcha inválido."})
 
         conn = conectar_bd()
         cur = conn.cursor()
@@ -369,8 +318,6 @@ def application(environ, start_response):
     # ---------------- DASHBOARD ----------------
     if path == "/dashboard":
         # Aquí iría la lógica para mostrar la página de dashboard después de login
-        html = dashboard_html({"usuario": "admin"})
-        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-        return [html.encode("utf-8")]
+        pass
 
     return redirect(start_response, "/login")
