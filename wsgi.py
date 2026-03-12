@@ -7,20 +7,13 @@ import urllib.parse
 import urllib.request
 import cgi
 from datetime import datetime
-from urllib.parse import parse_qs
 import mysql.connector
 import os
 
 # =========================================================
 # CONFIG
 # =========================================================
-# Información de conexión para MySQL en Railway
-DB_HOST = os.getenv('DB_HOST', 'nozomi.proxy.rlyw.net')  # Asegúrate de usar las variables de entorno correctamente
-DB_PORT = os.getenv('DB_PORT', '28752')  # Puerto proporcionado por Railway
-DB_USER = os.getenv('DB_USER', 'root')  # Usuario por defecto para MySQL
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'your_password_here')  # Asegúrate de poner la contraseña real de tu base de datos
-DB_NAME = os.getenv('DB_NAME', 'railway')  # El nombre de tu base de datos en Railway
-
+DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozomi.proxy.rlyw.net:28752/railway')
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
 RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
@@ -52,18 +45,9 @@ def hash_password(password):
 # CONEXIÓN A LA BASE DE DATOS MYSQL
 # =========================================================
 def conectar_bd():
-    # Usamos las variables de entorno para conectar a MySQL
-    db_config = {
-        'host': DB_HOST,
-        'port': DB_PORT,
-        'user': DB_USER,
-        'password': DB_PASSWORD,
-        'database': DB_NAME
-    }
-
     try:
-        # Establecemos la conexión
-        conn = mysql.connector.connect(**db_config)
+        # Usar el conector URL completo
+        conn = mysql.connector.connect(DB_URL)
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
     except mysql.connector.Error as err:
@@ -102,6 +86,27 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
+
+# =========================================================
+# FUNCIONES DE REDIRECCIÓN
+# =========================================================
+def redirect(start_response, location, extra_headers=None):
+    headers = [("Location", location)]
+    if extra_headers:
+        headers.extend(extra_headers)
+    start_response("303 See Other", headers)
+    return [b""]  # Redirige al login
+
+def get_form_data(environ):
+    fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
+    data = {}
+    if hasattr(fs, "list") and fs.list:
+        for item in fs.list:
+            if item.filename:
+                data[item.name] = item
+            else:
+                data[item.name] = item.value
+    return fs, data
 
 # =========================================================
 # RENDER HTML PARA LOGIN
@@ -247,7 +252,7 @@ def render_layout(title, content, user=None):
   </div>
 </body>
 </html>
-"""
+""" 
 
 # =========================================================
 # INIT DB AND RUTAS
@@ -298,4 +303,4 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [html.encode("utf-8")]
 
-    return redirect(start_response, "/login")
+    return redirect(start_response, "/login") 
