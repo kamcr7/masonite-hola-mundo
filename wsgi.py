@@ -9,45 +9,31 @@ import cgi
 from datetime import datetime
 import mysql.connector
 import os
+from urllib.parse import urlparse
 
 # =========================================================
 # CONFIG
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozomi.proxy.rlyw.net:28752/railway')
-RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
-RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
-
-JWT_SECRET = "CAMBIA_ESTA_LLAVE_SUPER_SECRETA_2026"
-JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
-PAGE_SIZE = 5
-
-# =========================================================
-# HELPERS GENERALES
-# =========================================================
-def html_escape(s):
-    s = s or ""
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-         .replace('"', "&quot;")
-         .replace("'", "&#39;")
-    )
-
-def limpiar_espacios(texto):
-    return " ".join((texto or "").strip().split())
-
-def hash_password(password):
-    password = password or ""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 # =========================================================
 # CONEXIÓN A LA BASE DE DATOS MYSQL
 # =========================================================
 def conectar_bd():
     try:
-        # Usar el conector URL completo
-        conn = mysql.connector.connect(DB_URL)
+        # Usamos el URL de la base de datos para obtener la información necesaria
+        result = urlparse(DB_URL)
+
+        # Asegurarnos de que result.path tenga el nombre de la base de datos sin '/'
+        db_name = result.path[1:] if result.path.startswith('/') else result.path  # Eliminar '/' al principio, si existe
+
+        conn = mysql.connector.connect(
+            host=result.hostname,
+            port=result.port,
+            user=result.username,
+            password=result.password,
+            database=db_name
+        )
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
     except mysql.connector.Error as err:
