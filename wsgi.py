@@ -93,6 +93,28 @@ def redirect(start_response, location, extra_headers=None):
     return [b""]
 
 # =========================================================
+# FUNCIONES DE VALIDACIÓN DE JWT
+# =========================================================
+def verify_jwt(environ):
+    token = environ.get('HTTP_COOKIE', "").split("=")[-1]
+    if not token:
+        return None
+
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+
+    payload_b64 = parts[1]
+    try:
+        payload = json.loads(b64url_encode(payload_b64).encode("utf-8").decode("utf-8"))
+        if payload["exp"] < time.time():
+            return None
+        return payload
+    except Exception as e:
+        print(e)
+        return None
+
+# =========================================================
 # INIT DB (Crear usuario ADMIN por defecto)
 # =========================================================
 def init_db():
@@ -109,7 +131,8 @@ def init_db():
         strNombreUsuario VARCHAR(50) NOT NULL UNIQUE,
         strPwd VARCHAR(255) NOT NULL,
         strCorreo VARCHAR(150) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        idEstadoUsuario INT NOT NULL DEFAULT 1
     )
     """)
 
@@ -355,15 +378,25 @@ def render_layout(title, content, user=None):
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *{{box-sizing:border-box;}}
+
     body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#efefef;color:#111;}}
+
     .page{{max-width:1280px;margin:0 auto;padding:18px 22px 40px;}}
+
     .topbar{{background:#0f4573;color:#fff;display:flex;justify-content:space-between;align-items:center;}}
+
     .menu-wrap{{display:flex;align-items:center;gap:10px;}}
+
     .menu-item{{color:#fff;text-decoration:none;padding:16px;}}
+
     .btn{{padding:12px 24px;background:#58a74a;color:#fff;cursor:pointer;text-decoration:none;border-radius:5px;}}
+
     .msg-bad{{color:#d88b8b;background:#fde2e2;padding:12px 14px;margin:12px 0;border-radius:5px;}}
+
     .login-wrap{{display:flex;justify-content:center;align-items:center;height:100vh;background:#f2f2f2;}}
+
     .login-card{{padding:24px;background:white;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:400px;}}
+
     .input{{padding:12px;width:100%;margin:12px 0;border:1px solid #ccc;border-radius:5px;}}
   </style>
 </head>
