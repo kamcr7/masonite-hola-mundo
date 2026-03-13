@@ -15,6 +15,7 @@ import base64
 # =========================================================
 # CONFIG
 # =========================================================
+# Usamos directamente la URL de la base de datos proporcionada
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
 
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
@@ -50,16 +51,21 @@ def hash_password(password):
 def b64url_encode(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
+# Función para codificar el JWT (JSON Web Token)
 def jwt_encode(payload):
     header = {"alg": "HS256", "typ": "JWT"}
+    # Codificar el encabezado y el payload en Base64 URL-safe
     header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     
+    # Crear la firma
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
     signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
     
+    # Codificar la firma en Base64 URL-safe
     signature_b64 = b64url_encode(signature)
     
+    # Retornar el token JWT
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 # =========================================================
@@ -67,6 +73,7 @@ def jwt_encode(payload):
 # =========================================================
 def conectar_bd():
     try:
+        # Usamos el URL de la base de datos para obtener la información necesaria
         result = urllib.parse.urlparse(DB_URL)
         
         conn = mysql.connector.connect(
@@ -74,12 +81,44 @@ def conectar_bd():
             port=result.port,
             user=result.username,
             password=result.password,
-            database=result.path[1:]
+            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
         )
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
     except mysql.connector.Error as err:
         print(f"Error al conectar con la base de datos: {err}")
+        return None
+
+# =========================================================
+# FUNCIONES DE VERIFICACIÓN DE AUTENTICACIÓN
+# =========================================================
+def verificar_token(environ):
+    cookie = environ.get("HTTP_COOKIE", "")
+    if not cookie:
+        return None
+
+    token = None
+    for item in cookie.split(";"):
+        if item.strip().startswith("token="):
+            token = item.split("=")[1]
+            break
+
+    if not token:
+        return None
+
+    # Verificar el token JWT
+    try:
+        header_b64, payload_b64, signature_b64 = token.split(".")
+        signature = base64.urlsafe_b64decode(signature_b64 + "=")
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        expected_signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
+
+        if signature != expected_signature:
+            return None
+        # Decodificar el payload del token
+        payload = base64.urlsafe_b64decode(payload_b64 + "=").decode("utf-8")
+        return json.loads(payload)
+    except Exception as e:
         return None
 
 # =========================================================
@@ -109,7 +148,9 @@ def init_db():
         strNombreUsuario VARCHAR(50) NOT NULL UNIQUE,
         strPwd VARCHAR(255) NOT NULL,
         strCorreo VARCHAR(150) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        idEstadoUsuario INT DEFAULT 1,  -- Activo por defecto
+        strNumeroCelular VARCHAR(50) -- Agregar campo para número celular
     )
     """)
 
@@ -117,8 +158,8 @@ def init_db():
     cur.execute("SELECT COUNT(*) FROM usuarios")
     if cur.fetchone()[0] == 0:
         cur.execute("""
-        INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo)
-        VALUES ('admin', %s, 'admin@example.com')
+        INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo, strNumeroCelular)
+        VALUES ('admin', %s, 'admin@example.com', '1234567890')
         """, (hash_password("123456"),))  # admin con contraseña 123456
 
     conn.commit()
@@ -149,86 +190,6 @@ def make_cookie(name, value, max_age=None, path="/", http_only=True):
     if http_only:
         cookie += "; HttpOnly"
     return ("Set-Cookie", cookie)
-
-# =========================================================
-# FUNCIONES CRUD PARA USUARIOS
-# =========================================================
-def crear_usuario(nombre, correo, celular, contrasena, estado):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Insertar nuevo usuario
-    cur.execute("""
-    INSERT INTO usuarios (strNombreUsuario, strCorreo, strNumeroCelular, strPwd, idEstadoUsuario)
-    VALUES (%s, %s, %s, %s, %s)
-    """, (nombre, correo, celular, hash_password(contrasena), estado))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def obtener_usuarios(page=1):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Paginación para 5 usuarios por página
-    offset = (page - 1) * 5
-    cur.execute("SELECT * FROM usuarios LIMIT 5 OFFSET %s", (offset,))
-    usuarios = cur.fetchall()
-    
-    cur.close()
-    conn.close()
-    
-    return usuarios
-
-def editar_usuario(usuario_id, nombre, correo, celular, contrasena, estado):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Actualizar usuario
-    cur.execute("""
-    UPDATE usuarios
-    SET strNombreUsuario = %s, strCorreo = %s, strNumeroCelular = %s, strPwd = %s, idEstadoUsuario = %s
-    WHERE id = %s
-    """, (nombre, correo, celular, hash_password(contrasena), estado, usuario_id))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def eliminar_usuario(usuario_id):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Eliminar usuario
-    cur.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def obtener_detalle_usuario(usuario_id):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Obtener detalles de un usuario
-    cur.execute("SELECT * FROM usuarios WHERE id = %s", (usuario_id,))
-    usuario = cur.fetchone()
-    
-    cur.close()
-    conn.close()
-    
-    return usuario
 
 # =========================================================
 # RENDER HTML PARA LOGIN
@@ -355,6 +316,8 @@ def render_layout(title, content, user=None):
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     *{{box-sizing:border-box;}}
+
+    /* Aquí va tu CSS */
     body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#efefef;color:#111;}}
     .page{{max-width:1280px;margin:0 auto;padding:18px 22px 40px;}}
     .topbar{{background:#0f4573;color:#fff;display:flex;justify-content:space-between;align-items:center;}}
@@ -383,6 +346,8 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
+    print(f"Path: {path}, Method: {method}")  # Agregar depuración aquí
+
     # Initialize database with admin user
     init_db()
 
@@ -398,6 +363,8 @@ def application(environ, start_response):
         usuario = limpiar_espacios(data.get("usuario", ""))
         password = data.get("password", "")
 
+        print(f"Usuario: {usuario}, Contraseña: {password}")  # Agregar depuración aquí
+
         conn = conectar_bd()
         if not conn:
             return json_response(start_response, {"ok": False, "message": "No se pudo conectar a la base de datos."})
@@ -405,6 +372,8 @@ def application(environ, start_response):
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
         row = cur.fetchone()
+
+        print(f"Fila obtenida: {row}")  # Agregar depuración aquí
 
         if not row or row[2] != hash_password(password):
             return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
@@ -421,9 +390,27 @@ def application(environ, start_response):
         ])
         return [json.dumps({"ok": True}).encode("utf-8")]
 
-    # ---------------- DASHBOARD ----------------
-    if path == "/dashboard":
-        html = dashboard_html({"usuario": "admin"})
+    # ---------------- CRUD DE PERFILES ----------------
+    if path == "/perfil" and method == "GET":
+        html = crud_perfil_html()
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [html.encode("utf-8")]
+
+    # ---------------- CRUD DE MÓDULOS ----------------
+    if path == "/modulos" and method == "GET":
+        html = crud_modulo_html()
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [html.encode("utf-8")]
+
+    # ---------------- CRUD DE PERMISOS-PERFIL ----------------
+    if path == "/permisos-perfil" and method == "GET":
+        html = crud_permisos_perfil_html()
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [html.encode("utf-8")]
+
+    # ---------------- CRUD DE USUARIOS ----------------
+    if path == "/usuarios" and method == "GET":
+        html = crud_usuario_html()
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [html.encode("utf-8")]
 
