@@ -7,14 +7,42 @@ import urllib.parse
 import urllib.request
 import cgi
 from datetime import datetime
+from urllib.parse import parse_qs
 import mysql.connector
 import os
-from urllib.parse import urlparse
 
 # =========================================================
 # CONFIG
 # =========================================================
+# Información de conexión para MySQL en Railway
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozomi.proxy.rlyw.net:28752/railway')
+
+RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
+RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
+
+JWT_SECRET = "CAMBIA_ESTA_LLAVE_SUPER_SECRETA_2026"
+JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
+PAGE_SIZE = 5
+
+# =========================================================
+# HELPERS GENERALES
+# =========================================================
+def html_escape(s):
+    s = s or ""
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+         .replace('"', "&quot;")
+         .replace("'", "&#39;")
+    )
+
+def limpiar_espacios(texto):
+    return " ".join((texto or "").strip().split())
+
+def hash_password(password):
+    password = password or ""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 # =========================================================
 # CONEXIÓN A LA BASE DE DATOS MYSQL
@@ -22,17 +50,14 @@ DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozo
 def conectar_bd():
     try:
         # Usamos el URL de la base de datos para obtener la información necesaria
-        result = urlparse(DB_URL)
-
-        # Asegurarnos de que result.path tenga el nombre de la base de datos sin '/'
-        db_name = result.path[1:] if result.path.startswith('/') else result.path  # Eliminar '/' al principio, si existe
-
+        result = urllib.parse.urlparse(DB_URL)
+        
         conn = mysql.connector.connect(
             host=result.hostname,
             port=result.port,
             user=result.username,
             password=result.password,
-            database=db_name
+            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
         )
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
@@ -72,27 +97,6 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-
-# =========================================================
-# FUNCIONES DE REDIRECCIÓN
-# =========================================================
-def redirect(start_response, location, extra_headers=None):
-    headers = [("Location", location)]
-    if extra_headers:
-        headers.extend(extra_headers)
-    start_response("303 See Other", headers)
-    return [b""]  # Redirige al login
-
-def get_form_data(environ):
-    fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
-    data = {}
-    if hasattr(fs, "list") and fs.list:
-        for item in fs.list:
-            if item.filename:
-                data[item.name] = item
-            else:
-                data[item.name] = item.value
-    return fs, data
 
 # =========================================================
 # RENDER HTML PARA LOGIN
@@ -238,7 +242,7 @@ def render_layout(title, content, user=None):
   </div>
 </body>
 </html>
-""" 
+"""
 
 # =========================================================
 # INIT DB AND RUTAS
@@ -289,4 +293,4 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [html.encode("utf-8")]
 
-    return redirect(start_response, "/login") 
+    return redirect(start_response, "/login")
