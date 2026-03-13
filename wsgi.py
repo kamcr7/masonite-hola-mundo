@@ -52,14 +52,13 @@ def conectar_bd():
     except: return None
 
 # =========================================================
-# INICIALIZACIÓN DE BD (CORREGIDA)
+# INICIALIZACIÓN DE BD
 # =========================================================
 def init_db():
     conn = conectar_bd()
     if not conn: return
     cur = conn.cursor(dictionary=True)
     
-    # Crear tablas según requerimiento
     cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
     cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))")
     cur.execute("""CREATE TABLE IF NOT EXISTS usuarios (
@@ -67,7 +66,6 @@ def init_db():
         strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), 
         strNumeroCelular VARCHAR(20), imgUsuario LONGTEXT)""")
     
-    # Buscar admin sin importar mayúsculas
     cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = 'admin'")
     admin = cur.fetchone()
     
@@ -76,7 +74,7 @@ def init_db():
         p_id = cur.lastrowid
         cur.execute("INSERT INTO usuarios (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) VALUES ('admin', %s, %s, 1, 'admin@clinica.com')", (p_id, hash_password("123456")))
     else:
-        # Actualización segura: usamos el nombre de la columna tal cual viene de la BD
+        # Buscamos la columna de estado de forma segura
         col_name = [k for k in admin.keys() if k.lower() == 'idestadousuario'][0]
         if int(admin[col_name]) != 1:
             cur.execute("UPDATE usuarios SET idEstadoUsuario = 1 WHERE strNombreUsuario = 'admin'")
@@ -86,18 +84,28 @@ def init_db():
     conn.close()
 
 # =========================================================
-# INTERFAZ
+# INTERFAZ (CORREGIDA SIN BACKSLASH EN F-STRINGS)
 # =========================================================
 def render_layout(title, content, user=None, breadcrumbs=None):
     nav = ""
-    bc = ""
+    bc_html = ""
     if user:
         nav = f"""<div style="background:#0f4573; color:white; padding:15px; display:flex; justify-content:space-between;">
             <div><a href="/dashboard" style="color:white; text-decoration:none; margin-right:20px;">Inicio</a><a href="/seguridad" style="color:white; text-decoration:none;">Seguridad</a></div>
             <div>Bienvenido, <b>{user.get('u', 'admin')}</b> | <a href="/logout" style="color:white; text-decoration:none;">Salir</a></div>
         </div>"""
-        steps = [("Inicio", "/dashboard")] + (breadcrumbs or [])
-        bc = f'<div style="padding:10px 20px; background:#fff; border-bottom:1px solid #ddd;">{" / ".join([f"<a href=\'{u}\'>{t}</a>" for t, u in steps])}</div>'
+        
+        # Lógica de breadcrumbs fuera de f-string para evitar SyntaxError
+        steps = [("Inicio", "/dashboard")]
+        if breadcrumbs:
+            steps.extend(breadcrumbs)
+        
+        links = []
+        for text, url in steps:
+            links.append(f'<a href="{url}">{text}</a>')
+        
+        bc_string = " / ".join(links)
+        bc_html = f'<div style="padding:10px 20px; background:#fff; border-bottom:1px solid #ddd;">{bc_string}</div>'
 
     return f"""<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
@@ -107,7 +115,7 @@ def render_layout(title, content, user=None, breadcrumbs=None):
         .btn-bar {{ background: #0f4573; color: white; padding: 10px; display: flex; gap: 30px; margin-top: 15px; }}
         .btn-bar a {{ color: white; text-decoration: none; font-size: 14px; }}
     </style></head>
-    <body>{nav}{bc}<div class="container">{content}</div></body></html>"""
+    <body>{nav}{bc_html}<div class="container">{content}</div></body></html>"""
 
 # =========================================================
 # APP PRINCIPAL
@@ -118,7 +126,6 @@ def application(environ, start_response):
     
     init_db()
 
-    # LOGIN
     if path in ["/", "/login"] and method == "GET":
         content = """<div class="card" style="max-width:350px; text-align:center;">
             <h2>Clínica Santa Mónica</h2>
@@ -133,16 +140,17 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html")])
         return [render_layout("Login", content).encode("utf-8")]
 
-    # API LOGIN
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u_in, p_in = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        u_in = fs.getvalue("u")
+        p_in = hash_password(fs.getvalue("p", ""))
+        
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (u_in,))
         user = cur.fetchone()
         
         if user and user.get('strPwd') == p_in:
-            # Obtener el valor de estado sin importar las mayúsculas de la columna
             col = [k for k in user.keys() if k.lower() == 'idestadousuario'][0]
             if int(user[col]) != 1:
                 res = {"ok": False, "msg": "Usuario inactivo"}
@@ -156,25 +164,27 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [json.dumps(res).encode("utf-8")]
 
-    # DASHBOARD
-    user = verify_jwt(environ)
-    if not user:
+    user_info = verify_jwt(environ)
+    if not user_info:
+        if path.startswith("/api/"):
+            start_response("401 Unauthorized", [("Content-Type", "application/json")])
+            return [json.dumps({"ok": False}).encode("utf-8")]
         start_response("303 See Other", [("Location", "/login")])
         return [b""]
 
     if path == "/dashboard":
         content = f"""<div class="card"><p>Sistema Corporativo - Clínica Santa Mónica</p>
-            <h3>Bienvenido, <b>{user['u']}</b>.</h3>
+            <h3>Bienvenido, <b>{user_info['u']}</b>.</h3>
             <div class="btn-bar">
                 <a href="/perfiles">Perfil</a><a href="/modulos">Módulo</a>
                 <a href="/permisos">Permisos-Perfil</a><a href="/usuarios">Usuario</a>
             </div></div>"""
         start_response("200 OK", [("Content-Type", "text/html")])
-        return [render_layout("Dashboard", content, user).encode("utf-8")]
+        return [render_layout("Dashboard", content, user_info).encode("utf-8")]
 
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")])
         return [b""]
 
     start_response("404 Not Found", [("Content-Type", "text/html")])
-    return [render_layout("Error", "<h1>404</h1>", user).encode("utf-8")]
+    return [render_layout("Error", "<h1>404</h1>", user_info).encode("utf-8")]
