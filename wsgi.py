@@ -8,10 +8,9 @@ import cgi
 import mysql.connector
 import os
 import base64
-from datetime import datetime
 
 # =========================================================
-# CONFIGURACIÓN Y CONSTANTES
+# CONFIGURACIÓN
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
 JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
@@ -41,14 +40,13 @@ def verify_jwt(environ):
     if not token: return None
     try:
         parts = token.split('.')
-        if len(parts) != 3: return None
         payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
         if payload['exp'] < time.time(): return None
         return payload
     except: return None
 
 # =========================================================
-# BASE DE DATOS - ESTRUCTURA SOLICITADA
+# BASE DE DATOS
 # =========================================================
 def conectar_bd():
     try:
@@ -63,24 +61,17 @@ def init_db():
     conn = conectar_bd()
     if not conn: return
     cur = conn.cursor()
-    # Módulo Perfil
-    cur.execute("""CREATE TABLE IF NOT EXISTS perfiles (
-        id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))""")
-    # Módulo Módulo
-    cur.execute("""CREATE TABLE IF NOT EXISTS modulos (
-        id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))""")
-    # Módulo Usuario (Incluye Imagen)
+    cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
+    cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))")
     cur.execute("""CREATE TABLE IF NOT EXISTS usuarios (
         id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, 
         strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), 
         strNumeroCelular VARCHAR(20), imgUsuario LONGTEXT)""")
-    # Módulo PermisosPerfil
     cur.execute("""CREATE TABLE IF NOT EXISTS permisos_perfil (
         id INT AUTO_INCREMENT PRIMARY KEY, idModulo INT, idPerfil INT, 
         bitAgregar TINYINT(1), bitEditar TINYINT(1), bitConsulta TINYINT(1), 
         bitEliminar TINYINT(1), bitDetalle TINYINT(1))""")
     
-    # Usuario Inicial
     cur.execute("SELECT COUNT(*) FROM usuarios")
     if cur.fetchone()[0] == 0:
         cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES ('Administrador', 1)")
@@ -90,7 +81,7 @@ def init_db():
     conn.close()
 
 # =========================================================
-# INTERFAZ Y MAQUETACIÓN (RESPONSIVO)
+# INTERFAZ (SOLUCIÓN AL SYNTAXERROR)
 # =========================================================
 def render_layout(title, content, user=None, breadcrumbs=None):
     nav_html = ""
@@ -106,10 +97,15 @@ def render_layout(title, content, user=None, breadcrumbs=None):
             <div class="user-badge">Usuario: <strong>{user['usuario']}</strong></div>
         </div>"""
         
-        # Breadcrumbs logic
+        # Corregido: Construcción manual de breadcrumbs para evitar backslashes en f-strings
         steps = [("Inicio", "/dashboard")]
         if breadcrumbs: steps.extend(breadcrumbs)
-        bc_html = f'<div class="bc">{" / ".join([f"<a href=\'{s[1]}\'>{s[0]}</a>" for s in steps])}</div>'
+        
+        links = []
+        for text, url in steps:
+            links.append(f'<a href="{url}">{text}</a>')
+        bc_string = " / ".join(links)
+        bc_html = f'<div class="bc">{bc_string}</div>'
 
     return f"""
     <!DOCTYPE html>
@@ -132,12 +128,9 @@ def render_layout(title, content, user=None, breadcrumbs=None):
             th {{ background: #fafafa; color: var(--main); }}
             .btn {{ padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; display: inline-block; font-size: 14px; }}
             .btn-add {{ background: var(--green); color: white; }}
-            .btn-edit {{ background: #ffc107; color: #000; }}
-            .btn-del {{ background: #dc3545; color: white; }}
             .pagination {{ margin-top: 15px; display: flex; gap: 5px; }}
-            .error-page {{ text-align: center; margin-top: 100px; }}
             .img-row {{ width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }}
-            @media (max-width: 600px) {{ .top-nav {{ flex-direction: column; gap: 10px; }} }}
+            .error-box {{ text-align: center; padding: 50px; }}
         </style>
     </head>
     <body>
@@ -149,7 +142,7 @@ def render_layout(title, content, user=None, breadcrumbs=None):
     """
 
 # =========================================================
-# APLICACIÓN WSGI PRINCIPAL
+# WSGI APPLICATION
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
@@ -158,7 +151,7 @@ def application(environ, start_response):
     
     init_db()
 
-    # --- RUTA: LOGIN ---
+    # --- RUTAS PÚBLICAS (LOGIN) ---
     if path in ["/", "/login"]:
         content = """
         <div style="max-width: 400px; margin: 80px auto;" class="card">
@@ -187,7 +180,7 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html")])
         return [render_layout("Login", content).encode("utf-8")]
 
-    # --- API: LOGIN (JWT + Captcha + Estado) ---
+    # --- API: LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u_input = fs.getvalue("user")
@@ -214,17 +207,17 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [json.dumps(res).encode("utf-8")]
 
-    # --- VALIDACIÓN DE SESIÓN ---
+    # --- PROTECCIÓN ---
     user_session = verify_jwt(environ)
     if not user_session:
         start_response("303 See Other", [("Location", "/login")])
         return [b""]
 
-    # --- RUTA: DASHBOARD ---
+    # --- DASHBOARD ---
     if path == "/dashboard":
         content = """
         <div class="card">
-            <h1>Panel Administrativo</h1>
+            <h1>Sistema de Gestión</h1>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
                 <a href="/perfiles" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Perfiles</h3></a>
                 <a href="/modulos" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Módulos</h3></a>
@@ -236,7 +229,7 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html")])
         return [render_layout("Dashboard", content, user_session).encode("utf-8")]
 
-    # --- RUTA: CRUD USUARIOS (Con paginación y detalle) ---
+    # --- CRUD USUARIOS (EJEMPLO DE PAGINACIÓN) ---
     if path == "/usuarios":
         p = int(query.get("p", ["1"])[0])
         offset = (p - 1) * PAGE_SIZE
@@ -246,50 +239,25 @@ def application(environ, start_response):
         cur.execute("SELECT * FROM usuarios LIMIT %s OFFSET %s", (PAGE_SIZE, offset))
         rows = cur.fetchall()
         
-        rows_html = ""
-        for r in rows:
-            img = f"<img src='{r['imgUsuario']}' class='img-row'>" if r['imgUsuario'] else "Sin foto"
-            est = "Activo" if r['idEstadoUsuario'] == 1 else "Inactivo"
-            rows_html += f"""<tr>
-                <td>{img}</td><td>{r['strNombreUsuario']}</td><td>{r['strCorreo']}</td><td>{est}</td>
-                <td>
-                    <button class='btn btn-edit'>Detalle</button>
-                    <button class='btn btn-del'>Eliminar</button>
-                </td>
-            </tr>"""
-            
+        rows_html = "".join([f"<tr><td>{r['strNombreUsuario']}</td><td>{r['strCorreo']}</td><td><button class='btn'>Detalle</button></td></tr>" for r in rows])
+        
         content = f"""
         <div class="card">
-            <div style="display:flex; justify-content:space-between;">
-                <h2>Gestión de Usuarios</h2>
-                <button class="btn btn-add">+ Nuevo Usuario</button>
-            </div>
-            <table>
-                <tr><th>Foto</th><th>Usuario</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
-                {rows_html if rows_html else "<tr><td colspan='5'>No hay datos</td></tr>"}
-            </table>
+            <h2>Gestión de Usuarios</h2>
+            <table><tr><th>Usuario</th><th>Email</th><th>Acción</th></tr>{rows_html}</table>
             <div class="pagination">
                 <a href="?p={max(1, p-1)}" class="btn" style="background:#ccc">Anterior</a>
-                <span style="padding:8px;">Página {p}</span>
                 <a href="?p={p+1}" class="btn" style="background:#ccc">Siguiente</a>
             </div>
         </div>"""
         start_response("200 OK", [("Content-Type", "text/html")])
         return [render_layout("Usuarios", content, user_session, [("Usuarios", "/usuarios")]).encode("utf-8")]
 
-    # --- SALIR ---
+    # --- LOGOUT ---
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")])
         return [b""]
 
-    # --- PÁGINA DE ERROR PERSONALIZADA ---
-    content = """
-    <div class="error-page">
-        <h1 style="font-size:80px; color:#0f4573;">404</h1>
-        <h2>Oops! Página no encontrada</h2>
-        <p>Parece que no tienes permisos o la ruta es incorrecta.</p>
-        <a href="/dashboard" class="btn btn-add">Regresar al Inicio</a>
-    </div>
-    """
+    # --- ERROR PAGE ---
     start_response("404 Not Found", [("Content-Type", "text/html")])
-    return [render_layout("Error", content, user_session).encode("utf-8")]
+    return [render_layout("Error", "<div class='error-box'><h1>404</h1><p>Página no encontrada.</p></div>", user_session).encode("utf-8")]
