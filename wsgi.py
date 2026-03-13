@@ -15,7 +15,6 @@ import base64
 # =========================================================
 # CONFIG
 # =========================================================
-# Usamos directamente la URL de la base de datos proporcionada
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
 
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
@@ -51,21 +50,16 @@ def hash_password(password):
 def b64url_encode(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
-# Función para codificar el JWT (JSON Web Token)
 def jwt_encode(payload):
     header = {"alg": "HS256", "typ": "JWT"}
-    # Codificar el encabezado y el payload en Base64 URL-safe
     header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     
-    # Crear la firma
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
     signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
     
-    # Codificar la firma en Base64 URL-safe
     signature_b64 = b64url_encode(signature)
     
-    # Retornar el token JWT
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 # =========================================================
@@ -73,7 +67,6 @@ def jwt_encode(payload):
 # =========================================================
 def conectar_bd():
     try:
-        # Usamos el URL de la base de datos para obtener la información necesaria
         result = urllib.parse.urlparse(DB_URL)
         
         conn = mysql.connector.connect(
@@ -81,7 +74,7 @@ def conectar_bd():
             port=result.port,
             user=result.username,
             password=result.password,
-            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
+            database=result.path[1:]
         )
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
@@ -156,6 +149,86 @@ def make_cookie(name, value, max_age=None, path="/", http_only=True):
     if http_only:
         cookie += "; HttpOnly"
     return ("Set-Cookie", cookie)
+
+# =========================================================
+# FUNCIONES CRUD PARA USUARIOS
+# =========================================================
+def crear_usuario(nombre, correo, celular, contrasena, estado):
+    conn = conectar_bd()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    
+    # Insertar nuevo usuario
+    cur.execute("""
+    INSERT INTO usuarios (strNombreUsuario, strCorreo, strNumeroCelular, strPwd, idEstadoUsuario)
+    VALUES (%s, %s, %s, %s, %s)
+    """, (nombre, correo, celular, hash_password(contrasena), estado))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def obtener_usuarios(page=1):
+    conn = conectar_bd()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    
+    # Paginación para 5 usuarios por página
+    offset = (page - 1) * 5
+    cur.execute("SELECT * FROM usuarios LIMIT 5 OFFSET %s", (offset,))
+    usuarios = cur.fetchall()
+    
+    cur.close()
+    conn.close()
+    
+    return usuarios
+
+def editar_usuario(usuario_id, nombre, correo, celular, contrasena, estado):
+    conn = conectar_bd()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    
+    # Actualizar usuario
+    cur.execute("""
+    UPDATE usuarios
+    SET strNombreUsuario = %s, strCorreo = %s, strNumeroCelular = %s, strPwd = %s, idEstadoUsuario = %s
+    WHERE id = %s
+    """, (nombre, correo, celular, hash_password(contrasena), estado, usuario_id))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_usuario(usuario_id):
+    conn = conectar_bd()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    
+    # Eliminar usuario
+    cur.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def obtener_detalle_usuario(usuario_id):
+    conn = conectar_bd()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    
+    # Obtener detalles de un usuario
+    cur.execute("SELECT * FROM usuarios WHERE id = %s", (usuario_id,))
+    usuario = cur.fetchone()
+    
+    cur.close()
+    conn.close()
+    
+    return usuario
 
 # =========================================================
 # RENDER HTML PARA LOGIN
@@ -310,8 +383,6 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
-    print(f"Path: {path}, Method: {method}")  # Agregar depuración aquí
-
     # Initialize database with admin user
     init_db()
 
@@ -327,8 +398,6 @@ def application(environ, start_response):
         usuario = limpiar_espacios(data.get("usuario", ""))
         password = data.get("password", "")
 
-        print(f"Usuario: {usuario}, Contraseña: {password}")  # Agregar depuración aquí
-
         conn = conectar_bd()
         if not conn:
             return json_response(start_response, {"ok": False, "message": "No se pudo conectar a la base de datos."})
@@ -336,8 +405,6 @@ def application(environ, start_response):
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
         row = cur.fetchone()
-
-        print(f"Fila obtenida: {row}")  # Agregar depuración aquí
 
         if not row or row[2] != hash_password(password):
             return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
@@ -356,7 +423,6 @@ def application(environ, start_response):
 
     # ---------------- DASHBOARD ----------------
     if path == "/dashboard":
-        # Aquí iría la lógica para mostrar la página de dashboard después de login
         html = dashboard_html({"usuario": "admin"})
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [html.encode("utf-8")]
