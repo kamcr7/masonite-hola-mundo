@@ -26,7 +26,28 @@ JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
 PAGE_SIZE = 5
 
 # =========================================================
-# HELPERS GENERALES
+# FUNCIONES DE CONEXIÓN A LA BASE DE DATOS MYSQL
+# =========================================================
+def conectar_bd():
+    try:
+        # Usamos el URL de la base de datos para obtener la información necesaria
+        result = urllib.parse.urlparse(DB_URL)
+        
+        conn = mysql.connector.connect(
+            host=result.hostname,
+            port=result.port,
+            user=result.username,
+            password=result.password,
+            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
+        )
+        print("Conexión exitosa a la base de datos MySQL.")
+        return conn
+    except mysql.connector.Error as err:
+        print(f"Error al conectar con la base de datos: {err}")
+        return None
+
+# =========================================================
+# FUNCIONES DE HELPERS GENERALES
 # =========================================================
 def html_escape(s):
     s = s or ""
@@ -61,36 +82,6 @@ def jwt_encode(payload):
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 # =========================================================
-# FUNCIONES DE VERIFICACIÓN DE AUTENTICACIÓN
-# =========================================================
-def verificar_token(environ):
-    cookie = environ.get("HTTP_COOKIE", "")
-    if not cookie:
-        return None
-
-    token = None
-    for item in cookie.split(";"):
-        if item.strip().startswith("token="):
-            token = item.split("=")[1]
-            break
-
-    if not token:
-        return None
-
-    try:
-        header_b64, payload_b64, signature_b64 = token.split(".")
-        signature = base64.urlsafe_b64decode(signature_b64 + "=")
-        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-        expected_signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-
-        if signature != expected_signature:
-            return None
-        payload = base64.urlsafe_b64decode(payload_b64 + "=").decode("utf-8")
-        return json.loads(payload)
-    except Exception as e:
-        return None
-
-# =========================================================
 # FUNCIONES DE REDIRECCIÓN
 # =========================================================
 def redirect(start_response, location, extra_headers=None):
@@ -99,6 +90,31 @@ def redirect(start_response, location, extra_headers=None):
         headers.extend(extra_headers)
     start_response("303 See Other", headers)
     return [b""]
+
+# =========================================================
+# FUNCIONES DE OBTENER DATOS DEL FORMULARIO
+# =========================================================
+def get_form_data(environ):
+    fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
+    data = {}
+    if hasattr(fs, "list") and fs.list:
+        for item in fs.list:
+            if item.filename:
+                data[item.name] = item
+            else:
+                data[item.name] = item.value
+    return fs, data
+
+# =========================================================
+# FUNCION PARA CREAR COOKIES
+# =========================================================
+def make_cookie(name, value, max_age=None, path="/", http_only=True):
+    cookie = f"{name}={value}; Path={path}; SameSite=Lax"
+    if max_age is not None:
+        cookie += f"; Max-Age={max_age}"
+    if http_only:
+        cookie += "; HttpOnly"
+    return ("Set-Cookie", cookie)
 
 # =========================================================
 # INIT DB (Crear usuario ADMIN por defecto)
@@ -134,31 +150,6 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-
-# =========================================================
-# FUNCIONES DE OBTENER DATOS DEL FORMULARIO
-# =========================================================
-def get_form_data(environ):
-    fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
-    data = {}
-    if hasattr(fs, "list") and fs.list:
-        for item in fs.list:
-            if item.filename:
-                data[item.name] = item
-            else:
-                data[item.name] = item.value
-    return fs, data
-
-# =========================================================
-# FUNCION PARA CREAR COOKIES
-# =========================================================
-def make_cookie(name, value, max_age=None, path="/", http_only=True):
-    cookie = f"{name}={value}; Path={path}; SameSite=Lax"
-    if max_age is not None:
-        cookie += f"; Max-Age={max_age}"
-    if http_only:
-        cookie += "; HttpOnly"
-    return ("Set-Cookie", cookie)
 
 # =========================================================
 # RENDER HTML PARA LOGIN
@@ -235,7 +226,7 @@ def login_html(msg=""):
     )
 
 # =========================================================
-# RENDER LAYOUT (DASHBOARD)
+# FUNCIONES DE RENDER (DASHBOARD Y OTROS)
 # =========================================================
 def dashboard_html(user):
     return render_layout(
