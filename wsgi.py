@@ -133,7 +133,7 @@ def init_db():
     conn.close()
 
 # =========================================================
-# FUNCION PARA OBTENER DATOS DEL FORMULARIO
+# FUNCIONES DE OBTENER DATOS DEL FORMULARIO
 # =========================================================
 def get_form_data(environ):
     fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
@@ -145,6 +145,17 @@ def get_form_data(environ):
             else:
                 data[item.name] = item.value
     return fs, data
+
+# =========================================================
+# FUNCION PARA CREAR COOKIES
+# =========================================================
+def make_cookie(name, value, max_age=None, path="/", http_only=True):
+    cookie = f"{name}={value}; Path={path}; SameSite=Lax"
+    if max_age is not None:
+        cookie += f"; Max-Age={max_age}"
+    if http_only:
+        cookie += "; HttpOnly"
+    return ("Set-Cookie", cookie)
 
 # =========================================================
 # RENDER HTML PARA LOGIN
