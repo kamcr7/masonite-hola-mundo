@@ -15,12 +15,8 @@ from http import cookies
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
 JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
-JWT_EXPIRE_SECONDS = 3600 
 PAGE_SIZE = 5
 
-# =========================================================
-# SEGURIDAD Y TOKEN (JWT)
-# =========================================================
 def hash_password(password):
     return hashlib.sha256((password or "").encode("utf-8")).hexdigest()
 
@@ -28,12 +24,10 @@ def b64url_encode(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
 def jwt_encode(payload):
-    header = {"alg": "HS256", "typ": "JWT"}
-    header_b64 = b64url_encode(json.dumps(header).encode("utf-8"))
+    header_b64 = b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode("utf-8"))
     payload_b64 = b64url_encode(json.dumps(payload).encode("utf-8"))
-    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    return f"{header_b64}.{payload_b64}.{b64url_encode(signature)}"
+    sig = hmac.new(JWT_SECRET.encode("utf-8"), f"{header_b64}.{payload_b64}".encode("utf-8"), hashlib.sha256).digest()
+    return f"{header_b64}.{payload_b64}.{b64url_encode(sig)}"
 
 def verify_jwt(environ):
     C = cookies.SimpleCookie()
@@ -47,25 +41,25 @@ def verify_jwt(environ):
         return payload
     except: return None
 
-# =========================================================
-# BASE DE DATOS - INICIALIZACIÓN FORZADA
-# =========================================================
 def conectar_bd():
     try:
         res = urllib.parse.urlparse(DB_URL)
         return mysql.connector.connect(
             host=res.hostname, port=res.port, user=res.username,
             password=res.password, database=res.path[1:],
-            charset='utf8mb4', collation='utf8mb4_general_ci'
+            charset='utf8mb4'
         )
     except: return None
 
+# =========================================================
+# INICIALIZACIÓN DE BD (CORREGIDA)
+# =========================================================
 def init_db():
     conn = conectar_bd()
     if not conn: return
     cur = conn.cursor(dictionary=True)
     
-    # Crear tablas
+    # Crear tablas según requerimiento
     cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
     cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))")
     cur.execute("""CREATE TABLE IF NOT EXISTS usuarios (
@@ -73,20 +67,19 @@ def init_db():
         strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), 
         strNumeroCelular VARCHAR(20), imgUsuario LONGTEXT)""")
     
-    # Verificar si el admin ya existe y si su estado es correcto
+    # Buscar admin sin importar mayúsculas
     cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = 'admin'")
     admin = cur.fetchone()
     
     if not admin:
-        # Insertar perfil y usuario desde cero
         cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES ('Administrador', 1)")
-        perfil_id = cur.lastrowid
-        cur.execute("""INSERT INTO usuarios 
-            (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) 
-            VALUES ('admin', %s, %s, 1, 'admin@clinica.com')""", (perfil_id, hash_password("123456")))
-    elif admin['idEstadoUsuario'] != 1:
-        # CORRECCIÓN: Si el admin existe pero está inactivo, lo activamos
-        cur.execute("UPDATE usuarios SET idEstadoUsuario = 1 WHERE strNombreUsuario = 'admin'")
+        p_id = cur.lastrowid
+        cur.execute("INSERT INTO usuarios (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) VALUES ('admin', %s, %s, 1, 'admin@clinica.com')", (p_id, hash_password("123456")))
+    else:
+        # Actualización segura: usamos el nombre de la columna tal cual viene de la BD
+        col_name = [k for k in admin.keys() if k.lower() == 'idestadousuario'][0]
+        if int(admin[col_name]) != 1:
+            cur.execute("UPDATE usuarios SET idEstadoUsuario = 1 WHERE strNombreUsuario = 'admin'")
     
     conn.commit()
     cur.close()
@@ -96,45 +89,28 @@ def init_db():
 # INTERFAZ
 # =========================================================
 def render_layout(title, content, user=None, breadcrumbs=None):
-    nav_html = ""
-    bc_html = ""
+    nav = ""
+    bc = ""
     if user:
-        nav_html = f"""
-        <div class="top-nav" style="background:#0f4573; color:white; padding:15px; display:flex; gap:20px;">
-            <a href="/dashboard" style="color:white; text-decoration:none;">Inicio</a>
-            <a href="/seguridad" style="color:white; text-decoration:none;">Seguridad</a>
-            <a href="/logout" style="color:white; text-decoration:none; margin-left:auto;">Salir</a>
+        nav = f"""<div style="background:#0f4573; color:white; padding:15px; display:flex; justify-content:space-between;">
+            <div><a href="/dashboard" style="color:white; text-decoration:none; margin-right:20px;">Inicio</a><a href="/seguridad" style="color:white; text-decoration:none;">Seguridad</a></div>
+            <div>Bienvenido, <b>{user.get('u', 'admin')}</b> | <a href="/logout" style="color:white; text-decoration:none;">Salir</a></div>
         </div>"""
-        
-        steps = [("Inicio", "/dashboard")]
-        if breadcrumbs: steps.extend(breadcrumbs)
-        links = [f'<a href="{u}">{t}</a>' for t, u in steps]
-        bc_html = f'<div style="padding:10px 20px; background:#fff; border-bottom:1px solid #ddd;">{" / ".join(links)}</div>'
+        steps = [("Inicio", "/dashboard")] + (breadcrumbs or [])
+        bc = f'<div style="padding:10px 20px; background:#fff; border-bottom:1px solid #ddd;">{" / ".join([f"<a href=\'{u}\'>{t}</a>" for t, u in steps])}</div>'
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8"><title>{title}</title>
-        <script src="https://www.google.com/recaptcha/api.js" async defer></script>
-        <style>
-            body {{ font-family: sans-serif; margin: 0; background: #f0f2f5; }}
-            .container {{ padding: 20px; }}
-            .card {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
-            .btn {{ padding: 10px 20px; background: #0f4573; color: white; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; }}
-            .menu-bar {{ background: #0f4573; color: white; padding: 10px; margin-top: 20px; display: flex; gap: 40px; justify-content: center; }}
-            .menu-bar a {{ color: white; text-decoration: none; font-weight: bold; }}
-        </style>
-    </head>
-    <body>
-        {nav_html}{bc_html}
-        <div class="container">{content}</div>
-    </body>
-    </html>
-    """
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>{title}</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <style>
+        body {{ font-family: sans-serif; margin: 0; background: #f0f2f5; }}
+        .card {{ background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: 20px auto; }}
+        .btn-bar {{ background: #0f4573; color: white; padding: 10px; display: flex; gap: 30px; margin-top: 15px; }}
+        .btn-bar a {{ color: white; text-decoration: none; font-size: 14px; }}
+    </style></head>
+    <body>{nav}{bc}<div class="container">{content}</div></body></html>"""
 
 # =========================================================
-# WSGI APP
+# APP PRINCIPAL
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
@@ -142,77 +118,63 @@ def application(environ, start_response):
     
     init_db()
 
-    if path in ["/", "/login"]:
-        content = """
-        <div style="max-width: 400px; margin: 80px auto; text-align:center;" class="card">
+    # LOGIN
+    if path in ["/", "/login"] and method == "GET":
+        content = """<div class="card" style="max-width:350px; text-align:center;">
             <h2>Clínica Santa Mónica</h2>
-            <form id="formLogin">
-                <input type="text" name="u" placeholder="Usuario" style="width:90%; padding:10px; margin:10px;" required>
-                <input type="password" name="p" placeholder="Contraseña" style="width:90%; padding:10px; margin:10px;" required>
-                <div style="display:inline-block;" class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
-                <button type="submit" class="btn" style="width:95%; margin-top:15px;">Entrar</button>
-            </form>
-            <div id="msg" style="color:red; margin-top:15px; font-weight:bold;"></div>
-        </div>
-        <script>
-            document.getElementById('formLogin').onsubmit = async (e) => {
-                e.preventDefault();
-                const res = await fetch('/api/login', { method: 'POST', body: new FormData(e.target) });
-                const data = await res.json();
-                if(data.ok) location.href = '/dashboard';
-                else document.getElementById('msg').innerText = data.msg;
-            };
-        </script>"""
+            <form id="fL"><input type="text" name="u" placeholder="Usuario" style="width:100%; padding:10px; margin:5px 0;" required>
+            <input type="password" name="p" placeholder="Contraseña" style="width:100%; padding:10px; margin:5px 0;" required>
+            <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+            <button type="submit" style="width:100%; padding:10px; background:#0f4573; color:white; border:none; margin-top:10px;">Entrar</button></form>
+            <div id="msg" style="color:red; margin-top:10px;"></div></div>
+            <script>document.getElementById('fL').onsubmit = async (e) => { e.preventDefault(); 
+            const res = await fetch('/api/login', {method:'POST', body:new FormData(e.target)});
+            const d = await res.json(); if(d.ok) location.href='/dashboard'; else document.getElementById('msg').innerText=d.msg; }</script>"""
         start_response("200 OK", [("Content-Type", "text/html")])
         return [render_layout("Login", content).encode("utf-8")]
 
+    # API LOGIN
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u_in, p_in = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
-        
-        conn = conectar_bd()
-        cur = conn.cursor(dictionary=True)
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (u_in,))
         user = cur.fetchone()
         
-        if user and user['strPwd'] == p_in:
-            # Aquí está la validación que te fallaba
-            if int(user['idEstadoUsuario']) != 1:
-                res = {"ok": False, "msg": "Usuario inactivo o sin permisos"}
+        if user and user.get('strPwd') == p_in:
+            # Obtener el valor de estado sin importar las mayúsculas de la columna
+            col = [k for k in user.keys() if k.lower() == 'idestadousuario'][0]
+            if int(user[col]) != 1:
+                res = {"ok": False, "msg": "Usuario inactivo"}
             else:
-                token = jwt_encode({"u": u_in, "exp": time.time() + 3600})
-                start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={token}; Path=/; HttpOnly")])
+                tk = jwt_encode({"u": u_in, "exp": time.time() + 3600})
+                start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
                 return [json.dumps({"ok": True}).encode("utf-8")]
         else:
-            res = {"ok": False, "msg": "Usuario o contraseña incorrectos"}
+            res = {"ok": False, "msg": "Credenciales inválidas"}
         
         start_response("200 OK", [("Content-Type", "application/json")])
         return [json.dumps(res).encode("utf-8")]
 
-    user_data = verify_jwt(environ)
-    if not user_data:
+    # DASHBOARD
+    user = verify_jwt(environ)
+    if not user:
         start_response("303 See Other", [("Location", "/login")])
         return [b""]
 
     if path == "/dashboard":
-        content = f"""
-        <div class="card">
-            <p>Sistema Corporativo - Clínica Santa Mónica</p>
-            <h3>Bienvenido, <strong>{user_data['u']}</strong>.</h3>
-            <div class="menu-bar">
-                <a href="/perfiles">Perfil</a>
-                <a href="/modulos">Módulo</a>
-                <a href="/permisos">Permisos-Perfil</a>
-                <a href="/usuarios">Usuario</a>
-            </div>
-        </div>"""
+        content = f"""<div class="card"><p>Sistema Corporativo - Clínica Santa Mónica</p>
+            <h3>Bienvenido, <b>{user['u']}</b>.</h3>
+            <div class="btn-bar">
+                <a href="/perfiles">Perfil</a><a href="/modulos">Módulo</a>
+                <a href="/permisos">Permisos-Perfil</a><a href="/usuarios">Usuario</a>
+            </div></div>"""
         start_response("200 OK", [("Content-Type", "text/html")])
-        return [render_layout("Dashboard", content, user_data).encode("utf-8")]
+        return [render_layout("Dashboard", content, user).encode("utf-8")]
 
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")])
         return [b""]
 
-    # Página de Error
     start_response("404 Not Found", [("Content-Type", "text/html")])
-    return [render_layout("Error", "<div class='card'><h2>Error 404</h2><p>Página no encontrada.</p></div>", user_data).encode("utf-8")]
+    return [render_layout("Error", "<h1>404</h1>", user).encode("utf-8")]
