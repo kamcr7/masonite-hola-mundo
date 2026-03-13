@@ -14,9 +14,10 @@ import os
 # =========================================================
 # CONFIG
 # =========================================================
-# Información de conexión para MySQL en Railway
+# Usamos directamente la URL de la base de datos proporcionada
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozomi.proxy.rlyw.net:28752/railway')
 
+# RECAPTCHA y JWT (no es necesario modificar esto, sigue igual)
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
 RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
@@ -25,40 +26,12 @@ JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
 PAGE_SIZE = 5
 
 # =========================================================
-# HELPERS GENERALES
-# =========================================================
-def html_escape(s):
-    s = s or ""
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-         .replace('"', "&quot;")
-         .replace("'", "&#39;")
-    )
-
-def limpiar_espacios(texto):
-    return " ".join((texto or "").strip().split())
-
-def hash_password(password):
-    password = password or ""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-# =========================================================
 # CONEXIÓN A LA BASE DE DATOS MYSQL
 # =========================================================
 def conectar_bd():
     try:
-        # Usamos el URL de la base de datos para obtener la información necesaria
-        result = urllib.parse.urlparse(DB_URL)
-        
-        conn = mysql.connector.connect(
-            host=result.hostname,
-            port=result.port,
-            user=result.username,
-            password=result.password,
-            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
-        )
+        # Usamos la URL para conectar a la base de datos
+        conn = mysql.connector.connect(DB_URL)
         print("Conexión exitosa a la base de datos MySQL.")
         return conn
     except mysql.connector.Error as err:
