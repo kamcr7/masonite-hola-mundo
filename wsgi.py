@@ -51,43 +51,14 @@ def hash_password(password):
 def b64url_encode(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
-# Función para codificar el JWT (JSON Web Token)
 def jwt_encode(payload):
     header = {"alg": "HS256", "typ": "JWT"}
-    # Codificar el encabezado y el payload en Base64 URL-safe
     header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    
-    # Crear la firma
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
     signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    
-    # Codificar la firma en Base64 URL-safe
     signature_b64 = b64url_encode(signature)
-    
-    # Retornar el token JWT
     return f"{header_b64}.{payload_b64}.{signature_b64}"
-
-# =========================================================
-# CONEXIÓN A LA BASE DE DATOS MYSQL
-# =========================================================
-def conectar_bd():
-    try:
-        # Usamos el URL de la base de datos para obtener la información necesaria
-        result = urllib.parse.urlparse(DB_URL)
-        
-        conn = mysql.connector.connect(
-            host=result.hostname,
-            port=result.port,
-            user=result.username,
-            password=result.password,
-            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
-        )
-        print("Conexión exitosa a la base de datos MySQL.")
-        return conn
-    except mysql.connector.Error as err:
-        print(f"Error al conectar con la base de datos: {err}")
-        return None
 
 # =========================================================
 # FUNCIONES DE VERIFICACIÓN DE AUTENTICACIÓN
@@ -106,7 +77,6 @@ def verificar_token(environ):
     if not token:
         return None
 
-    # Verificar el token JWT
     try:
         header_b64, payload_b64, signature_b64 = token.split(".")
         signature = base64.urlsafe_b64decode(signature_b64 + "=")
@@ -115,7 +85,6 @@ def verificar_token(environ):
 
         if signature != expected_signature:
             return None
-        # Decodificar el payload del token
         payload = base64.urlsafe_b64decode(payload_b64 + "=").decode("utf-8")
         return json.loads(payload)
     except Exception as e:
