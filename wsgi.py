@@ -251,6 +251,8 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
+    print(f"Path: {path}, Method: {method}")  # Agregar depuración aquí
+
     # Initialize database with admin user
     init_db()
 
@@ -266,12 +268,19 @@ def application(environ, start_response):
         usuario = limpiar_espacios(data.get("usuario", ""))
         password = data.get("password", "")
 
+        print(f"Usuario: {usuario}, Contraseña: {password}")  # Agregar depuración aquí
+
         conn = conectar_bd()
+        if not conn:
+            return json_response(start_response, {"ok": False, "message": "No se pudo conectar a la base de datos."})
+
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
         row = cur.fetchone()
 
-        if not row or row[2] != hash_password(password):  # Asumiendo que row[2] es la contraseña
+        print(f"Fila obtenida: {row}")  # Agregar depuración aquí
+
+        if not row or row[2] != hash_password(password):
             return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
 
         token = jwt_encode({
