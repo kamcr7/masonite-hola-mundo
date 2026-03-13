@@ -14,15 +14,39 @@ import os
 # =========================================================
 # CONFIG
 # =========================================================
-# Información de conexión para MySQL en Railway
-DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
+# Usamos directamente la URL de la base de datos proporcionada
+DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@nozomi.proxy.rlyw.net:28752/railway')
 
+# RECAPTCHA y JWT (no es necesario modificar esto, sigue igual)
 RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
 RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 
 JWT_SECRET = "CAMBIA_ESTA_LLAVE_SUPER_SECRETA_2026"
 JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
 PAGE_SIZE = 5
+
+# =========================================================
+# CONEXIÓN A LA BASE DE DATOS MYSQL
+# =========================================================
+def conectar_bd():
+    try:
+        # Usamos la URL para conectar a la base de datos
+        conn = mysql.connector.connect(DB_URL)
+        print("Conexión exitosa a la base de datos MySQL.")
+        return conn
+    except mysql.connector.Error as err:
+        print(f"Error al conectar con la base de datos: {err}")
+        return None
+
+# =========================================================
+# FUNCIONES DE REDIRECCIÓN
+# =========================================================
+def redirect(start_response, location, extra_headers=None):
+    headers = [("Location", location)]
+    if extra_headers:
+        headers.extend(extra_headers)
+    start_response("303 See Other", headers)
+    return [b""]
 
 # =========================================================
 # HELPERS GENERALES
@@ -43,27 +67,6 @@ def limpiar_espacios(texto):
 def hash_password(password):
     password = password or ""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-# =========================================================
-# CONEXIÓN A LA BASE DE DATOS MYSQL
-# =========================================================
-def conectar_bd():
-    try:
-        # Usamos el URL de la base de datos para obtener la información necesaria
-        result = urllib.parse.urlparse(DB_URL)
-        
-        conn = mysql.connector.connect(
-            host=result.hostname,
-            port=result.port,
-            user=result.username,
-            password=result.password,
-            database=result.path[1:]  # Eliminamos el primer '/' del nombre de la base de datos
-        )
-        print("Conexión exitosa a la base de datos MySQL.")
-        return conn
-    except mysql.connector.Error as err:
-        print(f"Error al conectar con la base de datos: {err}")
-        return None
 
 # =========================================================
 # INIT DB (Crear usuario ADMIN por defecto)
@@ -251,8 +254,6 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
-    print(f"Path: {path}, Method: {method}")  # Agregar depuración aquí
-
     # Initialize database with admin user
     init_db()
 
@@ -268,19 +269,12 @@ def application(environ, start_response):
         usuario = limpiar_espacios(data.get("usuario", ""))
         password = data.get("password", "")
 
-        print(f"Usuario: {usuario}, Contraseña: {password}")  # Agregar depuración aquí
-
         conn = conectar_bd()
-        if not conn:
-            return json_response(start_response, {"ok": False, "message": "No se pudo conectar a la base de datos."})
-
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
         row = cur.fetchone()
 
-        print(f"Fila obtenida: {row}")  # Agregar depuración aquí
-
-        if not row or row[2] != hash_password(password):
+        if not row or row[2] != hash_password(password):  # Asumiendo que row[2] es la contraseña
             return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
 
         token = jwt_encode({
