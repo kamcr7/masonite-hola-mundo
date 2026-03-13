@@ -49,40 +49,45 @@ def conectar_bd():
     except: return None
 
 # =========================================================
-# INICIALIZACIÓN ROBUSTA DE BD
+# INICIALIZACIÓN DE BD (CORRECCIÓN UNREAD RESULT)
 # =========================================================
 def init_db():
     conn = conectar_bd()
     if not conn: return
-    cur = conn.cursor(dictionary=True)
-    
-    # Asegurar tablas base
-    cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
-    cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150))")
-    
-    # REPARACIÓN: Si la columna idEstadoUsuario no existe por algún error previo, la agregamos
     try:
-        cur.execute("SELECT idEstadoUsuario FROM usuarios LIMIT 1")
-    except:
-        cur.execute("ALTER TABLE usuarios ADD COLUMN idEstadoUsuario INT DEFAULT 1")
-    
-    cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = 'admin'")
-    admin = cur.fetchone()
-    
-    if not admin:
-        cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES ('Administrador', 1)")
-        p_id = cur.lastrowid
-        cur.execute("INSERT INTO usuarios (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) VALUES ('admin', %s, %s, 1, 'admin@clinica.com')", (p_id, hash_password("123456")))
-    else:
-        # Forzar activación del admin si existe
-        cur.execute("UPDATE usuarios SET idEstadoUsuario = 1 WHERE strNombreUsuario = 'admin'")
-    
-    conn.commit()
-    cur.close()
-    conn.close()
+        # Usamos buffered=True para evitar el error de "Unread result"
+        cur = conn.cursor(dictionary=True, buffered=True)
+        
+        # Crear tablas base
+        cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
+        cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150))")
+        conn.commit()
+
+        # Verificar columna idEstadoUsuario
+        cur.execute("SHOW COLUMNS FROM usuarios LIKE 'idEstadoUsuario'")
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE usuarios ADD COLUMN idEstadoUsuario INT DEFAULT 1")
+            conn.commit()
+        
+        # Buscar admin
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = 'admin'")
+        admin = cur.fetchone()
+        
+        if not admin:
+            cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES ('Administrador', 1)")
+            p_id = cur.lastrowid
+            cur.execute("INSERT INTO usuarios (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) VALUES ('admin', %s, %s, 1, 'admin@clinica.com')", (p_id, hash_password("123456")))
+            conn.commit()
+        else:
+            cur.execute("UPDATE usuarios SET idEstadoUsuario = 1 WHERE strNombreUsuario = 'admin'")
+            conn.commit()
+            
+        cur.close()
+    finally:
+        conn.close()
 
 # =========================================================
-# INTERFAZ
+# RENDERIZADO
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -102,12 +107,15 @@ def render_layout(title, content, user=None):
     </style></head><body>{nav}<div class="container">{content}</div></body></html>"""
 
 # =========================================================
-# APLICACIÓN
+# APLICACIÓN WSGI
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-    init_db()
+    
+    # Solo inicializar BD en rutas principales para no saturar
+    if path in ["/", "/login", "/dashboard"]:
+        init_db()
 
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; text-align:center;">
@@ -127,13 +135,16 @@ def application(environ, start_response):
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u_in, p_in = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True, buffered=True)
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (u_in,))
         user = cur.fetchone()
+        cur.close()
+        conn.close()
         
         if user and user.get('strPwd') == p_in:
-            # Validación simplificada para evitar errores de nombres de columnas
-            estado = user.get('idEstadoUsuario') or user.get('idestadousuario') or 1
+            estado = user.get('idEstadoUsuario', 1)
             if int(estado) != 1:
                 res = {"ok": False, "msg": "Usuario inactivo"}
             else:
