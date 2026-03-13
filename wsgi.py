@@ -10,6 +10,7 @@ from datetime import datetime
 from urllib.parse import parse_qs
 import mysql.connector
 import os
+import base64
 
 # =========================================================
 # CONFIG
@@ -43,6 +44,29 @@ def limpiar_espacios(texto):
 def hash_password(password):
     password = password or ""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+# =========================================================
+# FUNCIONES DE ENCODING DE JWT
+# =========================================================
+def b64url_encode(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
+
+# Función para codificar el JWT (JSON Web Token)
+def jwt_encode(payload):
+    header = {"alg": "HS256", "typ": "JWT"}
+    # Codificar el encabezado y el payload en Base64 URL-safe
+    header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+    payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    
+    # Crear la firma
+    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+    signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    
+    # Codificar la firma en Base64 URL-safe
+    signature_b64 = b64url_encode(signature)
+    
+    # Retornar el token JWT
+    return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 # =========================================================
 # CONEXIÓN A LA BASE DE DATOS MYSQL
