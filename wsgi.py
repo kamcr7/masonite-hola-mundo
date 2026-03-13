@@ -4,460 +4,292 @@ import json
 import hmac
 import time
 import urllib.parse
-import urllib.request
 import cgi
-from datetime import datetime
-from urllib.parse import parse_qs
 import mysql.connector
 import os
 import base64
+from datetime import datetime
 
 # =========================================================
-# CONFIG
+# CONFIGURACIÓN Y CONSTANTES
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
-
-RECAPTCHA_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
-RECAPTCHA_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
-
-JWT_SECRET = "CAMBIA_ESTA_LLAVE_SUPER_SECRETA_2026"
-JWT_EXPIRE_SECONDS = 60 * 60 * 8  # 8 horas
+JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
+JWT_EXPIRE_SECONDS = 3600 
 PAGE_SIZE = 5
 
 # =========================================================
-# HELPERS GENERALES
+# SEGURIDAD Y TOKEN (JWT)
 # =========================================================
-def html_escape(s):
-    s = s or ""
-    return (
-        s.replace("&", "&amp;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-         .replace('"', "&quot;")
-         .replace("'", "&#39;")
-    )
-
-def limpiar_espacios(texto):
-    return " ".join((texto or "").strip().split())
-
 def hash_password(password):
-    password = password or ""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hashlib.sha256((password or "").encode("utf-8")).hexdigest()
 
-# =========================================================
-# FUNCIONES DE ENCODING DE JWT
-# =========================================================
 def b64url_encode(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
 
 def jwt_encode(payload):
     header = {"alg": "HS256", "typ": "JWT"}
-    header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    
+    header_b64 = b64url_encode(json.dumps(header).encode("utf-8"))
+    payload_b64 = b64url_encode(json.dumps(payload).encode("utf-8"))
     signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
     signature = hmac.new(JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    
-    signature_b64 = b64url_encode(signature)
-    
-    return f"{header_b64}.{payload_b64}.{signature_b64}"
+    return f"{header_b64}.{payload_b64}.{b64url_encode(signature)}"
+
+def verify_jwt(environ):
+    cookies = cgi.SimpleCookie(environ.get('HTTP_COOKIE', ''))
+    token = cookies.get('token').value if 'token' in cookies else None
+    if not token: return None
+    try:
+        parts = token.split('.')
+        if len(parts) != 3: return None
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+        if payload['exp'] < time.time(): return None
+        return payload
+    except: return None
 
 # =========================================================
-# CONEXIÓN A LA BASE DE DATOS MYSQL
+# BASE DE DATOS - ESTRUCTURA SOLICITADA
 # =========================================================
 def conectar_bd():
     try:
-        result = urllib.parse.urlparse(DB_URL)
-        
-        conn = mysql.connector.connect(
-            host=result.hostname,
-            port=result.port,
-            user=result.username,
-            password=result.password,
-            database=result.path[1:]
+        res = urllib.parse.urlparse(DB_URL)
+        return mysql.connector.connect(
+            host=res.hostname, port=res.port, user=res.username,
+            password=res.password, database=res.path[1:]
         )
-        print("Conexión exitosa a la base de datos MySQL.")
-        return conn
-    except mysql.connector.Error as err:
-        print(f"Error al conectar con la base de datos: {err}")
-        return None
+    except: return None
 
-# =========================================================
-# FUNCIONES DE REDIRECCIÓN
-# =========================================================
-def redirect(start_response, location, extra_headers=None):
-    headers = [("Location", location)]
-    if extra_headers:
-        headers.extend(extra_headers)
-    start_response("303 See Other", headers)
-    return [b""]
-
-# =========================================================
-# FUNCIONES DE VALIDACIÓN DE JWT
-# =========================================================
-def verify_jwt(environ):
-    token = environ.get('HTTP_COOKIE', "").split("=")[-1]
-    if not token:
-        return None
-
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-
-    payload_b64 = parts[1]
-    try:
-        payload = json.loads(b64url_encode(payload_b64).encode("utf-8").decode("utf-8"))
-        if payload["exp"] < time.time():
-            return None
-        return payload
-    except Exception as e:
-        print(e)
-        return None
-
-# =========================================================
-# INIT DB (Crear usuario ADMIN por defecto)
-# =========================================================
 def init_db():
     conn = conectar_bd()
-    if conn is None:
-        return  # Si no se pudo conectar, no continuamos
-
+    if not conn: return
     cur = conn.cursor()
-
-    # Crear tabla usuarios si no existe
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        strNombreUsuario VARCHAR(50) NOT NULL UNIQUE,
-        strPwd VARCHAR(255) NOT NULL,
-        strCorreo VARCHAR(150) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        idEstadoUsuario INT NOT NULL DEFAULT 1
-    )
-    """)
-
-    # Insertar usuario admin si no existe
+    # Módulo Perfil
+    cur.execute("""CREATE TABLE IF NOT EXISTS perfiles (
+        id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))""")
+    # Módulo Módulo
+    cur.execute("""CREATE TABLE IF NOT EXISTS modulos (
+        id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))""")
+    # Módulo Usuario (Incluye Imagen)
+    cur.execute("""CREATE TABLE IF NOT EXISTS usuarios (
+        id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, 
+        strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), 
+        strNumeroCelular VARCHAR(20), imgUsuario LONGTEXT)""")
+    # Módulo PermisosPerfil
+    cur.execute("""CREATE TABLE IF NOT EXISTS permisos_perfil (
+        id INT AUTO_INCREMENT PRIMARY KEY, idModulo INT, idPerfil INT, 
+        bitAgregar TINYINT(1), bitEditar TINYINT(1), bitConsulta TINYINT(1), 
+        bitEliminar TINYINT(1), bitDetalle TINYINT(1))""")
+    
+    # Usuario Inicial
     cur.execute("SELECT COUNT(*) FROM usuarios")
     if cur.fetchone()[0] == 0:
-        cur.execute("""
-        INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo)
-        VALUES ('admin', %s, 'admin@example.com')
-        """, (hash_password("123456"),))  # admin con contraseña 123456
-
+        cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES ('Administrador', 1)")
+        cur.execute("INSERT INTO usuarios (strNombreUsuario, idPerfil, strPwd, idEstadoUsuario, strCorreo) VALUES ('admin', 1, %s, 1, 'admin@clinica.com')", (hash_password("123456"),))
     conn.commit()
     cur.close()
     conn.close()
 
 # =========================================================
-# FUNCIONES DE OBTENER DATOS DEL FORMULARIO
+# INTERFAZ Y MAQUETACIÓN (RESPONSIVO)
 # =========================================================
-def get_form_data(environ):
-    fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ, keep_blank_values=True)
-    data = {}
-    if hasattr(fs, "list") and fs.list:
-        for item in fs.list:
-            if item.filename:
-                data[item.name] = item
-            else:
-                data[item.name] = item.value
-    return fs, data
-
-# =========================================================
-# FUNCION PARA CREAR COOKIES
-# =========================================================
-def make_cookie(name, value, max_age=None, path="/", http_only=True):
-    cookie = f"{name}={value}; Path={path}; SameSite=Lax"
-    if max_age is not None:
-        cookie += f"; Max-Age={max_age}"
-    if http_only:
-        cookie += "; HttpOnly"
-    return ("Set-Cookie", cookie)
-
-# =========================================================
-# FUNCIONES CRUD PARA USUARIOS
-# =========================================================
-def crear_usuario(nombre, correo, celular, contrasena, estado):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Insertar nuevo usuario
-    cur.execute("""
-    INSERT INTO usuarios (strNombreUsuario, strCorreo, strNumeroCelular, strPwd, idEstadoUsuario)
-    VALUES (%s, %s, %s, %s, %s)
-    """, (nombre, correo, celular, hash_password(contrasena), estado))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def obtener_usuarios(page=1):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Paginación para 5 usuarios por página
-    offset = (page - 1) * 5
-    cur.execute("SELECT * FROM usuarios LIMIT 5 OFFSET %s", (offset,))
-    usuarios = cur.fetchall()
-    
-    cur.close()
-    conn.close()
-    
-    return usuarios
-
-def editar_usuario(usuario_id, nombre, correo, celular, contrasena, estado):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Actualizar usuario
-    cur.execute("""
-    UPDATE usuarios
-    SET strNombreUsuario = %s, strCorreo = %s, strNumeroCelular = %s, strPwd = %s, idEstadoUsuario = %s
-    WHERE id = %s
-    """, (nombre, correo, celular, hash_password(contrasena), estado, usuario_id))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def eliminar_usuario(usuario_id):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Eliminar usuario
-    cur.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def obtener_detalle_usuario(usuario_id):
-    conn = conectar_bd()
-    if conn is None:
-        return None
-    cur = conn.cursor()
-    
-    # Obtener detalles de un usuario
-    cur.execute("SELECT * FROM usuarios WHERE id = %s", (usuario_id,))
-    usuario = cur.fetchone()
-    
-    cur.close()
-    conn.close()
-    
-    return usuario
-
-# =========================================================
-# RENDER HTML PARA LOGIN
-# =========================================================
-def login_html(msg=""):
-    alert = f'<div class="msg-bad">{html_escape(msg)}</div>' if msg else ""
-    return render_layout(
-        "Login",
-        f"""
-        <div class="login-wrap">
-          <div class="login-card">
-            <div class="login-head">
-              <div class="logo-box">
-                <div class="logo-mark">🩺</div>
-                <div>
-                  <div class="brand-title">Clínica De Especialidades</div>
-                  <div class="brand-name">Santa Mónica</div>
-                </div>
-              </div>
-              <div class="welcome">Bienvenido</div>
-            </div>
-            <div class="green-line"></div>
-
-            {alert}
-
-            <form id="loginForm" class="login-form" method="POST" action="/api/login">
-              <div class="login-grid">
-                <label>Usuario:</label>
-                <input class="input" type="text" name="usuario" maxlength="30" required>
-
-                <label>Contraseña:</label>
-                <input class="input" type="password" name="password" maxlength="50" required>
-              </div>
-
-              <div style="margin-top:20px;display:flex;justify-content:flex-end;">
-                <div class="g-recaptcha" data-sitekey="{RECAPTCHA_SITE_KEY}"></div>
-              </div>
-
-              <div class="login-actions">
-                <button class="btn" type="submit">Ingresar</button>
-              </div>
-            </form>
-
-            <div id="loginMsg" style="margin-top:14px;"></div>
-          </div>
-        </div>
-
-        <script>
-        const form = document.getElementById('loginForm');
-        const msg = document.getElementById('loginMsg');
-
-        form.addEventListener('submit', async (e) => {{
-          e.preventDefault();
-          msg.innerHTML = '';
-
-          const fd = new FormData(form);
-          const captcha = (window.grecaptcha && grecaptcha.getResponse) ? grecaptcha.getResponse() : '';
-          fd.append('g-recaptcha-response', captcha);
-
-          const r = await fetch('/api/login', {{
-            method: 'POST',
-            body: fd
-          }});
-          const data = await r.json();
-
-          if (data.ok) {{
-            window.location.href = '/dashboard';
-          }} else {{
-            msg.innerHTML = '<div class="msg-bad">' + data.message + '</div>';
-          }}
-        }}); 
-        </script>
-        """
-    )
-
-# =========================================================
-# RENDER LAYOUT (DASHBOARD)
-# =========================================================
-def dashboard_html(user):
-    return render_layout(
-        "Bienvenido",
-        f"""
-        <div class="title-row">
-          <div class="title-icon">🏥</div>
-          <div class="title-text">Sistema Corporativo - Clínica Santa Mónica</div>
-        </div>
-        <div class="green-line"></div>
-
-        <div class="msg-ok">
-          Bienvenido, <b>{html_escape(user["usuario"])}</b>.
-        </div>
-
-        <div class="topbar">
-          <div class="menu-wrap">
-            <a class="menu-item" href="/perfil">Perfil</a>
-            <a class="menu-item" href="/modulos">Módulo</a>
-            <a class="menu-item" href="/permisos-perfil">Permisos-Perfil</a>
-            <a class="menu-item" href="/usuarios">Usuario</a>
-          </div>
-        </div>
-        """,
-        user=user
-    )
-
-def render_layout(title, content, user=None):
-    menu_html = ""
+def render_layout(title, content, user=None, breadcrumbs=None):
+    nav_html = ""
+    bc_html = ""
     if user:
-        menu_html = f"""
-        <div class="topbar">
-          <div class="menu-wrap">
-            <a class="menu-item" href="/dashboard">Inicio</a>
-            <a class="menu-item" href="/seguridad">Seguridad</a>
-            <a class="menu-item" href="/logout">Salir</a>
-          </div>
-        </div>
-        """
-    
-    return f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html_escape(title)}</title>
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
-  <style>
-    *{{box-sizing:border-box;}}
+        nav_html = f"""
+        <div class="top-nav">
+            <div class="nav-links">
+                <a href="/dashboard">Inicio</a>
+                <a href="/seguridad">Seguridad</a>
+                <a href="/logout" style="color:#ff8888">Salir</a>
+            </div>
+            <div class="user-badge">Usuario: <strong>{user['usuario']}</strong></div>
+        </div>"""
+        
+        # Breadcrumbs logic
+        steps = [("Inicio", "/dashboard")]
+        if breadcrumbs: steps.extend(breadcrumbs)
+        bc_html = f'<div class="bc">{" / ".join([f"<a href=\'{s[1]}\'>{s[0]}</a>" for s in steps])}</div>'
 
-    body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#efefef;color:#111;}}
-
-    .page{{max-width:1280px;margin:0 auto;padding:18px 22px 40px;}}
-
-    .topbar{{background:#0f4573;color:#fff;display:flex;justify-content:space-between;align-items:center;}}
-
-    .menu-wrap{{display:flex;align-items:center;gap:10px;}}
-
-    .menu-item{{color:#fff;text-decoration:none;padding:16px;}}
-
-    .btn{{padding:12px 24px;background:#58a74a;color:#fff;cursor:pointer;text-decoration:none;border-radius:5px;}}
-
-    .msg-bad{{color:#d88b8b;background:#fde2e2;padding:12px 14px;margin:12px 0;border-radius:5px;}}
-
-    .login-wrap{{display:flex;justify-content:center;align-items:center;height:100vh;background:#f2f2f2;}}
-
-    .login-card{{padding:24px;background:white;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:400px;}}
-
-    .input{{padding:12px;width:100%;margin:12px 0;border:1px solid #ccc;border-radius:5px;}}
-  </style>
-</head>
-<body>
-  {menu_html}
-  <div class="page">
-    {content}
-  </div>
-</body>
-</html>
-"""
+    return f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{title}</title>
+        <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+        <style>
+            :root {{ --main: #0f4573; --bg: #f0f2f5; --white: #ffffff; --green: #58a74a; }}
+            body {{ font-family: 'Segoe UI', Arial; margin: 0; background: var(--bg); color: #333; }}
+            .top-nav {{ background: var(--main); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }}
+            .nav-links a {{ color: white; text-decoration: none; margin-right: 20px; font-weight: 500; }}
+            .bc {{ background: white; padding: 10px 25px; border-bottom: 1px solid #ddd; font-size: 14px; }}
+            .bc a {{ color: var(--main); text-decoration: none; }}
+            .container {{ padding: 25px; max-width: 1100px; margin: auto; }}
+            .card {{ background: var(--white); padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #eee; }}
+            th {{ background: #fafafa; color: var(--main); }}
+            .btn {{ padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; display: inline-block; font-size: 14px; }}
+            .btn-add {{ background: var(--green); color: white; }}
+            .btn-edit {{ background: #ffc107; color: #000; }}
+            .btn-del {{ background: #dc3545; color: white; }}
+            .pagination {{ margin-top: 15px; display: flex; gap: 5px; }}
+            .error-page {{ text-align: center; margin-top: 100px; }}
+            .img-row {{ width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }}
+            @media (max-width: 600px) {{ .top-nav {{ flex-direction: column; gap: 10px; }} }}
+        </style>
+    </head>
+    <body>
+        {nav_html}
+        {bc_html}
+        <div class="container">{content}</div>
+    </body>
+    </html>
+    """
 
 # =========================================================
-# INIT DB AND RUTAS
+# APLICACIÓN WSGI PRINCIPAL
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-
-    # Initialize database with admin user
+    query = urllib.parse.parse_qs(environ.get("QUERY_STRING", ""))
+    
     init_db()
 
-    # ---------------- LOGIN VIEW ----------------
-    if path in ("/", "/login") and method == "GET":
-        html = login_html()
-        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-        return [html.encode("utf-8")]
+    # --- RUTA: LOGIN ---
+    if path in ["/", "/login"]:
+        content = """
+        <div style="max-width: 400px; margin: 80px auto;" class="card">
+            <h2 style="text-align:center; color:#0f4573;">Clínica Santa Mónica</h2>
+            <form id="formLogin">
+                <label>Usuario</label>
+                <input type="text" name="user" style="width:100%; padding:10px; margin:8px 0;" required>
+                <label>Contraseña</label>
+                <input type="password" name="pass" style="width:100%; padding:10px; margin:8px 0;" required>
+                <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" style="margin:15px 0;"></div>
+                <button type="submit" class="btn" style="width:100%; background:#0f4573; color:white; padding:12px;">Entrar</button>
+            </form>
+            <div id="msg" style="margin-top:10px; color:red; text-align:center;"></div>
+        </div>
+        <script>
+            document.getElementById('formLogin').onsubmit = async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const res = await fetch('/api/login', { method: 'POST', body: fd });
+                const data = await res.json();
+                if(data.ok) location.href = '/dashboard';
+                else document.getElementById('msg').innerText = data.msg;
+            };
+        </script>
+        """
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return [render_layout("Login", content).encode("utf-8")]
 
-    # ---------------- API LOGIN ----------------
+    # --- API: LOGIN (JWT + Captcha + Estado) ---
     if path == "/api/login" and method == "POST":
-        fs, data = get_form_data(environ)
-        usuario = limpiar_espacios(data.get("usuario", ""))
-        password = data.get("password", "")
-
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        u_input = fs.getvalue("user")
+        p_input = hash_password(fs.getvalue("pass", ""))
+        
         conn = conectar_bd()
-        if not conn:
-            return json_response(start_response, {"ok": False, "message": "No se pudo conectar a la base de datos."})
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (u_input,))
+        user = cur.fetchone()
+        
+        if user and user['strPwd'] == p_input:
+            if user['idEstadoUsuario'] != 1:
+                res = {"ok": False, "msg": "Usuario inactivo"}
+            else:
+                token = jwt_encode({"uid": user['id'], "usuario": u_input, "exp": time.time() + JWT_EXPIRE_SECONDS})
+                start_response("200 OK", [
+                    ("Content-Type", "application/json"),
+                    ("Set-Cookie", f"token={token}; Path=/; HttpOnly; SameSite=Lax")
+                ])
+                return [json.dumps({"ok": True}).encode("utf-8")]
+        else:
+            res = {"ok": False, "msg": "Credenciales inválidas"}
+        
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [json.dumps(res).encode("utf-8")]
 
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario = %s", (usuario,))
-        row = cur.fetchone()
+    # --- VALIDACIÓN DE SESIÓN ---
+    user_session = verify_jwt(environ)
+    if not user_session:
+        start_response("303 See Other", [("Location", "/login")])
+        return [b""]
 
-        if not row or row[2] != hash_password(password):
-            return json_response(start_response, {"ok": False, "message": "Usuario o contraseña incorrectos."})
-
-        token = jwt_encode({
-            "uid": row[0],
-            "usuario": row[1],
-            "exp": int(time.time()) + JWT_EXPIRE_SECONDS
-        })
-
-        start_response("200 OK", [
-            ("Content-Type", "application/json; charset=utf-8"),
-            make_cookie("token", token, max_age=JWT_EXPIRE_SECONDS)
-        ])
-        return [json.dumps({"ok": True}).encode("utf-8")]
-
-    # ---------------- DASHBOARD ----------------
+    # --- RUTA: DASHBOARD ---
     if path == "/dashboard":
-        html = dashboard_html({"usuario": "admin"})
-        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-        return [html.encode("utf-8")]
+        content = """
+        <div class="card">
+            <h1>Panel Administrativo</h1>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
+                <a href="/perfiles" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Perfiles</h3></a>
+                <a href="/modulos" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Módulos</h3></a>
+                <a href="/permisos" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Permisos</h3></a>
+                <a href="/usuarios" class="card" style="text-align:center; text-decoration:none; color:inherit;"><h3>Usuarios</h3></a>
+            </div>
+        </div>
+        """
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return [render_layout("Dashboard", content, user_session).encode("utf-8")]
 
-    return redirect(start_response, "/login")
+    # --- RUTA: CRUD USUARIOS (Con paginación y detalle) ---
+    if path == "/usuarios":
+        p = int(query.get("p", ["1"])[0])
+        offset = (p - 1) * PAGE_SIZE
+        
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios LIMIT %s OFFSET %s", (PAGE_SIZE, offset))
+        rows = cur.fetchall()
+        
+        rows_html = ""
+        for r in rows:
+            img = f"<img src='{r['imgUsuario']}' class='img-row'>" if r['imgUsuario'] else "Sin foto"
+            est = "Activo" if r['idEstadoUsuario'] == 1 else "Inactivo"
+            rows_html += f"""<tr>
+                <td>{img}</td><td>{r['strNombreUsuario']}</td><td>{r['strCorreo']}</td><td>{est}</td>
+                <td>
+                    <button class='btn btn-edit'>Detalle</button>
+                    <button class='btn btn-del'>Eliminar</button>
+                </td>
+            </tr>"""
+            
+        content = f"""
+        <div class="card">
+            <div style="display:flex; justify-content:space-between;">
+                <h2>Gestión de Usuarios</h2>
+                <button class="btn btn-add">+ Nuevo Usuario</button>
+            </div>
+            <table>
+                <tr><th>Foto</th><th>Usuario</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
+                {rows_html if rows_html else "<tr><td colspan='5'>No hay datos</td></tr>"}
+            </table>
+            <div class="pagination">
+                <a href="?p={max(1, p-1)}" class="btn" style="background:#ccc">Anterior</a>
+                <span style="padding:8px;">Página {p}</span>
+                <a href="?p={p+1}" class="btn" style="background:#ccc">Siguiente</a>
+            </div>
+        </div>"""
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return [render_layout("Usuarios", content, user_session, [("Usuarios", "/usuarios")]).encode("utf-8")]
+
+    # --- SALIR ---
+    if path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")])
+        return [b""]
+
+    # --- PÁGINA DE ERROR PERSONALIZADA ---
+    content = """
+    <div class="error-page">
+        <h1 style="font-size:80px; color:#0f4573;">404</h1>
+        <h2>Oops! Página no encontrada</h2>
+        <p>Parece que no tienes permisos o la ruta es incorrecta.</p>
+        <a href="/dashboard" class="btn btn-add">Regresar al Inicio</a>
+    </div>
+    """
+    start_response("404 Not Found", [("Content-Type", "text/html")])
+    return [render_layout("Error", content, user_session).encode("utf-8")]
