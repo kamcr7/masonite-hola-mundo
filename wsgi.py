@@ -22,8 +22,7 @@ def verify_jwt(env):
         C = cookies.SimpleCookie(); C.load(env.get('HTTP_COOKIE', ''))
         t = C.get('token').value if 'token' in C else None
         if not t: return None
-        parts = t.split('.')
-        p = json.loads(base64.urlsafe_b64decode(parts[1] + "==").decode("utf-8"))
+        p = json.loads(base64.urlsafe_b64decode(t.split('.')[1] + "==").decode("utf-8"))
         return p if p['exp'] > time.time() else None
     except: return None
 
@@ -37,38 +36,47 @@ def init_db():
     cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))")
     cur.execute("CREATE TABLE IF NOT EXISTS permisos_perfil (id INT AUTO_INCREMENT PRIMARY KEY, idPerfil INT, idModulo INT)")
     cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), imgUsuario LONGTEXT)")
+    # Asegurar columna idPerfil por si hubo errores previos
+    try: cur.execute("ALTER TABLE usuarios ADD COLUMN idPerfil INT AFTER strNombreUsuario")
+    except: pass
     conn.commit(); cur.close(); conn.close()
 
 def render_layout(title, content, user=None):
     nav = ""
     if user:
-        nav = f"""<div style="background:#0f4573; color:white; padding:15px; display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; gap:20px;">
-                <a href="/dashboard" style="color:white; text-decoration:none; font-weight:bold;">🏠 Inicio</a>
-                <a href="/perfiles" style="color:white; text-decoration:none;">Perfiles</a>
-                <a href="/modulos" style="color:white; text-decoration:none;">Módulos</a>
-                <a href="/permisos" style="color:white; text-decoration:none;">Permisos</a>
-                <a href="/usuarios" style="color:white; text-decoration:none;">Usuarios</a>
+        nav = f"""<div style="background:#0b1120; color:white; padding:15px 40px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b;">
+            <div style="display:flex; gap:25px; align-items:center;">
+                <span style="font-weight:bold; color:#38bdf8; font-size:1.1rem;">🛡️ Sistema de Gestión</span>
+                <a href="/perfiles" style="color:#94a3b8; text-decoration:none; font-size:0.9rem;">Seguridad</a>
+                <a href="/modulos" style="color:#94a3b8; text-decoration:none; font-size:0.9rem;">Módulos</a>
+                <a href="/permisos" style="color:#94a3b8; text-decoration:none; font-size:0.9rem;">Permisos</a>
+                <a href="/usuarios" style="color:#94a3b8; text-decoration:none; font-size:0.9rem;">Usuarios</a>
             </div>
-            <div><b>{user['u']}</b> | <a href="/logout" style="color:#ff7675; text-decoration:none;">Salir</a></div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span style="background:#be185d; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; font-size:0.8rem; font-weight:bold;">{user['u'][0].upper()}</span>
+                <span style="font-size:0.9rem;"><b>{user['u']}</b></span>
+                <a href="/logout" style="color:#ef4444; text-decoration:none; font-size:0.8rem; margin-left:10px;">Salir</a>
+            </div>
         </div>"""
+    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
-        body{{font-family:sans-serif; background:#f0f2f5; margin:0;}} 
-        .card{{background:white; padding:25px; margin:20px auto; max-width:900px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.1);}}
-        table{{width:100%; border-collapse:collapse; margin-top:15px;}} 
-        th,td{{padding:12px; border:1px solid #ddd; text-align:left;}}
-        th{{background:#0f4573; color:white;}}
-        .btn{{background:#0f4573; color:white; border:none; padding:10px 20px; cursor:pointer; border-radius:4px; font-weight:bold;}}
-        .btn-del{{background:#e74c3c; color:white; border:none; padding:5px 10px; cursor:pointer; border-radius:4px;}}
-        input, select{{padding:10px; border:1px solid #ccc; border-radius:4px; margin:5px 0;}}
-        .form-group{{background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-bottom:20px;}}
+        body{{font-family:'Inter', sans-serif; background:#0f172a; color:#f8fafc; margin:0;}}
+        .container{{padding:30px 40px;}}
+        .card{{background:#1e293b; border-radius:12px; padding:24px; border:1px solid #334155; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);}}
+        .header-flex{{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}}
+        .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.85rem;}}
+        .btn-green{{background:#16a34a; color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;}}
+        .search-input{{width:100%; background:#0f172a; border:1px solid #334155; padding:12px; border-radius:8px; color:white; margin:15px 0; font-size:0.9rem;}}
+        table{{width:100%; border-collapse:collapse;}}
+        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; padding:12px; border-bottom:1px solid #334155;}}
+        td{{padding:16px 12px; border-bottom:1px solid #334155; font-size:0.9rem; color:#e2e8f0;}}
+        .badge-yes{{background:rgba(6,78,59,0.5); color:#34d399; padding:4px 12px; border-radius:20px; font-size:0.7rem; font-weight:bold; border:1px solid #064e3b;}}
+        .badge-no{{background:rgba(69,26,3,0.5); color:#fbbf24; padding:4px 12px; border-radius:20px; font-size:0.7rem; font-weight:bold; border:1px solid #451a03;}}
+        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:6px; margin:5px 0;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
-# =========================================================
-# APP PRINCIPAL
-# =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
@@ -76,25 +84,24 @@ def application(environ, start_response):
 
     # --- LOGIN ---
     if path in ["/", "/login"]:
-        content = """<div class="card" style="max-width:320px; text-align:center; margin-top:80px;">
-            <h2 style="color:#0f4573;">Clínica Santa Mónica</h2>
+        content = """<div class="card" style="max-width:350px; margin:80px auto; text-align:center;">
+            <h2 style="color:#38bdf8; margin-bottom:25px;">Clínica Santa Mónica</h2>
             <form id="fL">
-                <input type="text" name="u" placeholder="Usuario" style="width:100%;" required>
-                <input type="password" name="p" placeholder="Contraseña" style="width:100%;" required>
-                <div style="margin:15px 0; display:flex; justify-content:center;">
+                <input type="text" name="u" placeholder="Usuario" style="width:100%; margin-bottom:15px;" required>
+                <input type="password" name="p" placeholder="Contraseña" style="width:100%; margin-bottom:20px;" required>
+                <div style="margin-bottom:20px; display:flex; justify-content:center;">
                     <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
                 </div>
-                <button type="button" id="btnIn" class="btn" style="width:100%;">Entrar</button>
-            </form><div id="msg" style="color:red; margin-top:10px;"></div></div>
+                <button type="button" id="btnIn" class="btn-blue" style="width:100%; padding:12px;">Entrar al Sistema</button>
+            </form><div id="msg" style="color:#ef4444; margin-top:15px; font-size:0.85rem;"></div></div>
             <script>
                 document.getElementById('btnIn').onclick = async () => {
-                    const captcha = grecaptcha.getResponse();
-                    if(!captcha) { document.getElementById('msg').innerText = "Resuelve el captcha"; return; }
+                    if(!grecaptcha.getResponse()) { document.getElementById('msg').innerText = "Por favor, valida el captcha"; return; }
                     const fd = new FormData(document.getElementById('fL'));
                     const res = await fetch('/api/login', {method:'POST', body:fd});
                     const d = await res.json();
-                    if(d.ok) window.location.replace('/dashboard');
-                    else { document.getElementById('msg').innerText = d.msg; grecaptcha.reset(); }
+                    if(d.ok) window.location.replace('/perfiles');
+                    else { document.getElementById('msg').innerText = "Credenciales incorrectas"; grecaptcha.reset(); }
                 };
             </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
@@ -108,8 +115,8 @@ def application(environ, start_response):
         if user:
             tk = jwt_encode({"u": u, "exp": time.time()+3600})
             start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
-            return [json.dumps({"ok":True}).encode("utf-8")]
-        start_response("200 OK", [("Content-Type", "application/json")]); return [json.dumps({"ok":False, "msg":"Credenciales incorrectas"}).encode("utf-8")]
+            return [b'{"ok":true}']
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
     # --- SEGURIDAD ---
     u_data = verify_jwt(environ)
@@ -124,82 +131,67 @@ def application(environ, start_response):
             cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES (%s,%s)", (fs.getvalue("n"), 1 if fs.getvalue("a") else 0))
         elif path == "/api/save_modulos":
             cur.execute("INSERT INTO modulos (strNombreModulo) VALUES (%s)", (fs.getvalue("n"),))
-        elif path == "/api/save_permisos":
-            cur.execute("INSERT INTO permisos_perfil (idPerfil, idModulo) VALUES (%s,%s)", (fs.getvalue("pid"), fs.getvalue("mid")))
         elif path == "/api/save_usuarios":
             cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strCorreo, idEstadoUsuario, imgUsuario) VALUES (%s,%s,%s,%s,1,%s)", 
                 (fs.getvalue("u"), hash_password(fs.getvalue("p")), fs.getvalue("pid"), fs.getvalue("e"), fs.getvalue("img")))
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
+    # --- VISTA PERFILES (DISEÑO SOLICITADO) ---
+    if path == "/perfiles":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
+        cur.close(); conn.close()
+        
+        rows_html = "".join([f"""<tr>
+            <td style='color:#94a3b8;'>{r['id']}</td>
+            <td style='font-weight:600;'>{r['strNombrePerfil']}</td>
+            <td style='color:#64748b;'>Sin descripción</td>
+            <td><span class='{"badge-yes" if r['bitAdministrador'] else "badge-no"}'>{"Sí" if r['bitAdministrador'] else "No"}</span></td>
+            <td style='color:#64748b;'>19 mar 2026</td>
+            <td><span style='cursor:pointer;'>👁️ ✏️ 🗑️</span></td>
+        </tr>""" for r in rows])
+
+        form = """<div id="formAdd" style="display:none; background:#0f172a; padding:20px; border-radius:10px; margin-bottom:20px; border:1px dashed #334155;">
+            <form id="f" style="display:flex; gap:15px; align-items:center;">
+                <input name="n" placeholder="Nombre Perfil" required style="flex:1;">
+                <label style="font-size:0.8rem;">Admin: <input type="checkbox" name="a"></label>
+                <button class="btn-blue">Guardar Perfil</button>
+            </form></div>"""
+
+        content = f"""<div class="card">
+            <div class="header-flex">
+                <div>
+                    <h2 style="margin:0; font-size:1.5rem;">Gestión de Perfiles</h2>
+                    <span style="font-size:0.8rem; color:#94a3b8;">{len(rows)} registros encontrados</span>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-green">📊</button>
+                    <button class="btn-blue" onclick="document.getElementById('formAdd').style.display='block'">+ Nuevo</button>
+                </div>
+            </div>
+            {form}
+            <input type="text" class="search-input" placeholder="Buscar por nombre o descripción...">
+            <table>
+                <thead><tr><th>#</th><th>Nombre Perfil ↑↓</th><th>Descripción ↑↓</th><th>Administrador</th><th>Creado</th><th>Acciones</th></tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+        </div>"""
+        
+        script = """<script>
+            if(document.getElementById('f')){
+                document.getElementById('f').onsubmit = async (e) => {
+                    e.preventDefault();
+                    await fetch('/api/save_perfiles', {method:'POST', body:new FormData(e.target)});
+                    location.reload();
+                };
+            }
+        </script>"""
+        start_response("200 OK", [("Content-Type", "text/html")]); return [(render_layout("Perfiles", content, u_data)+script).encode("utf-8")]
+
     # --- LOGOUT ---
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0")]); return [b""]
 
-    # --- VISTAS CRUD ---
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    form = ""; tbl = ""; title = ""
-    
-    if path == "/dashboard":
-        title = "Dashboard"; content = "<h3>Bienvenido al Sistema de Gestión</h3><p>Use el menú superior para navegar.</p>"
-    
-    elif path == "/perfiles":
-        title = "Gestión de Perfiles"
-        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
-        form = "<form id='f'><input name='n' placeholder='Nombre del Perfil' required> Admin: <input type='checkbox' name='a'> <button class='btn'>Añadir Perfil</button></form>"
-        tbl = "<table><tr><th>ID</th><th>Nombre</th><th>Admin</th></tr>" + "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'S' if r['bitAdministrador'] else 'N'}</td></tr>" for r in rows]) + "</table>"
-    
-    elif path == "/modulos":
-        title = "Gestión de Módulos"
-        cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
-        form = "<form id='f'><input name='n' placeholder='Nombre del Módulo' required> <button class='btn'>Añadir Módulo</button></form>"
-        tbl = "<table><tr><th>ID</th><th>Módulo</th></tr>" + "".join([f"<tr><td>{r['id']}</td><td>{r['strNombreModulo']}</td></tr>" for r in rows]) + "</table>"
-        
-    elif path == "/permisos":
-        title = "Asignación de Permisos"
-        cur.execute("SELECT pp.id, p.strNombrePerfil, m.strNombreModulo FROM permisos_perfil pp JOIN perfiles p ON pp.idPerfil=p.id JOIN modulos m ON pp.idModulo=m.id"); rows = cur.fetchall()
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
-        cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
-        opt_p = "".join([f"<option value='{x['id']}'>{x['strNombrePerfil']}</option>" for x in perfs])
-        opt_m = "".join([f"<option value='{x['id']}'>{x['strNombreModulo']}</option>" for x in mods])
-        form = f"<form id='f'>Perfil: <select name='pid'>{opt_p}</select> Módulo: <select name='mid'>{opt_m}</select> <button class='btn'>Asignar Permiso</button></form>"
-        tbl = "<table><tr><th>Perfil</th><th>Módulo Permitido</th></tr>" + "".join([f"<tr><td>{r['strNombrePerfil']}</td><td>{r['strNombreModulo']}</td></tr>" for r in rows]) + "</table>"
-
-    elif path == "/usuarios":
-        title = "Gestión de Usuarios"
-        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id"); rows = cur.fetchall()
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
-        opt_p = "".join([f"<option value='{x['id']}'>{x['strNombrePerfil']}</option>" for x in perfs])
-        form = f"<form id='f'><input name='u' placeholder='Usuario' required><input name='p' type='password' placeholder='Clave'><input name='e' type='email' placeholder='Correo'><select name='pid'>{opt_p}</select> Foto: <input type='file' id='img_file'><button class='btn'>Crear Usuario</button></form>"
-        tbl = "<table><tr><th>Foto</th><th>Usuario</th><th>Perfil</th><th>Correo</th></tr>" + "".join([f"<tr><td><img src='{r.get('imgUsuario','')}' width='30' style='border-radius:50%'></td><td>{r['strNombreUsuario']}</td><td>{r['strNombrePerfil']}</td><td>{r['strCorreo']}</td></tr>" for r in rows]) + "</table>"
-
-    if path != "/dashboard":
-        content = f"<div class='form-group'><h4>Agregar Nuevo</h4>{form}</div><h3>Listado</h3>{tbl}"
-    
-    cur.close(); conn.close()
-    
-    full_body = f"<div class='card'><h2>{title}</h2>{content}</div>"
-    # JS MÁGICO QUE MANEJA TODOS LOS FORMULARIOS Y FOTOS
-    script = f"""<script>
-        if(document.getElementById('f')) {{
-            document.getElementById('f').onsubmit = async (e) => {{
-                e.preventDefault();
-                const fd = new FormData(e.target);
-                const fileInput = document.getElementById('img_file');
-                if(fileInput && fileInput.files[0]) {{
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {{
-                        fd.append('img', reader.result);
-                        await fetch('/api/save' + window.location.pathname, {{method:'POST', body:fd}});
-                        location.reload();
-                    }};
-                    reader.readAsDataURL(fileInput.files[0]);
-                }} else {{
-                    await fetch('/api/save' + window.location.pathname, {{method:'POST', body:fd}});
-                    location.reload();
-                }}
-            }};
-        }}
-    </script>"""
-    
-    start_response("200 OK", [("Content-Type", "text/html")]); return [(render_layout(title, full_body, u_data) + script).encode("utf-8")]
+    # Redirección por defecto
+    start_response("303 See Other", [("Location", "/perfiles")]); return [b""]
