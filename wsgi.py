@@ -39,7 +39,7 @@ def init_db():
     conn.commit(); cur.close(); conn.close()
 
 # =========================================================
-# MAQUETACIÓN (NAVBAR Y CSS)
+# DISEÑO (LAYOUT)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -61,7 +61,7 @@ def render_layout(title, content, user=None):
             </div>
             <div class="nav-right">
                 <span class="user-badge">{user['u'][0].upper()}</span>
-                <b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none;">Salir</a>
+                <b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a>
             </div>
         </div>"""
     
@@ -71,27 +71,29 @@ def render_layout(title, content, user=None):
         .top-nav{{background:#0b1120; padding:0 40px; height:60px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; position:sticky; top:0; z-index:100;}}
         .nav-left{{display:flex; gap:25px; align-items:center;}}
         .logo{{font-weight:bold; color:#38bdf8; font-size:1.1rem;}}
-        .nav-link{{color:#94a3b8; text-decoration:none; font-size:0.9rem;}}
-        .dropdown{{position:relative; display:inline-block;}}
-        .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 0;}}
-        .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:180px; border-radius:8px; border:1px solid #334155; overflow:hidden;}}
-        .dropdown-content a{{color:#e2e8f0; padding:12px; text-decoration:none; display:block; font-size:0.85rem;}}
-        .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
-        .dropdown:hover .dropdown-content{{display:block;}}
-        .container{{padding:30px 40px;}}
+        .nav-link{{color:#94a3b8; text-decoration:none; font-size:0.9rem; transition:0.3s;}}
+        .nav-link:hover{{color:white;}}
+        .dropdown {{position: relative; display: inline-block;}}
+        .dropbtn {{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 0; font-family:inherit;}}
+        .dropdown-content {{display: none; position: absolute; background:#1e293b; min-width:180px; box-shadow:0 8px 16px rgba(0,0,0,0.5); border-radius:8px; border:1px solid #334155; overflow:hidden;}}
+        .dropdown-content a {{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem; transition:0.2s;}}
+        .dropdown-content a:hover {{background:#334155; color:#38bdf8;}}
+        .dropdown:hover .dropdown-content {{display: block;}}
+        .container{{padding:40px;}}
         .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
-        .btn-save{{background:#1e3a8a; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; float:right; margin-top:15px;}}
-        table{{width:100%; border-collapse:collapse; margin-top:20px; background:#1e293b;}}
-        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
-        td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
+        .btn-save{{background:#1e3a8a; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; margin-top:20px; float:right;}}
+        table{{width:100%; border-collapse:collapse; margin-top:20px;}}
+        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155; background: #1e293b;}}
+        td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem; color:#e2e8f0;}}
         .badge-si{{background:rgba(16,185,129,0.1); color:#10b981; padding:4px 10px; border-radius:20px; font-size:0.7rem; border:1px solid #064e3b;}}
         .badge-no{{background:rgba(245,158,11,0.1); color:#f59e0b; padding:4px 10px; border-radius:20px; font-size:0.7rem; border:1px solid #451a03;}}
-        input[type="text"], select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px;}}
+        select, input{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px;}}
+        .user-badge{{background:#be185d; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; margin-right:5px;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
 # =========================================================
-# APP PRINCIPAL
+# LÓGICA DE APLICACIÓN
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
@@ -99,39 +101,40 @@ def application(environ, start_response):
     init_db()
     u_data = verify_jwt(environ)
 
-    # --- API: ELIMINAR ---
-    if path.startswith("/api/delete_") and method == "POST":
+    # --- API LOGIN ---
+    if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        table = path.replace("/api/delete_", "")
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
+        user = cur.fetchone(); cur.close(); conn.close()
+        if user:
+            tk = jwt_encode({"u": u, "exp": time.time()+3600})
+            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
+            return [b'{"ok":true}']
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
+
+    if not u_data and path not in ["/", "/login", "/api/login"]:
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
+    # --- API ELIMINAR ---
+    if path == "/api/delete" and method == "POST":
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         conn = conectar_bd(); cur = conn.cursor()
-        cur.execute(f"DELETE FROM {table} WHERE id=%s", (fs.getvalue("id"),))
+        cur.execute(f"DELETE FROM {fs.getvalue('table')} WHERE id=%s", (fs.getvalue('id'),))
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # --- API: GUARDAR PERMISOS ---
-    if path == "/api/save_matriz" and method == "POST":
-        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        pid = fs.getvalue("pid")
-        conn = conectar_bd(); cur = conn.cursor()
-        cur.execute("DELETE FROM permisos_perfil WHERE idPerfil=%s", (pid,))
-        # Recorrer módulos enviados
-        mods = fs.getlist("mid")
-        for mid in mods:
-            v = 1 if fs.getvalue(f"v_{mid}") else 0
-            a = 1 if fs.getvalue(f"a_{mid}") else 0
-            e = 1 if fs.getvalue(f"e_{mid}") else 0
-            d = 1 if fs.getvalue(f"d_{mid}") else 0
-            cur.execute("INSERT INTO permisos_perfil (idPerfil, idModulo, can_view, can_add, can_edit, can_del) VALUES (%s,%s,%s,%s,%s,%s)", (pid, mid, v, a, e, d))
-        conn.commit(); cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
-
-    # --- VISTA: PERMISOS (MATRIZ) ---
+    # --- PANTALLA PERMISOS (MATRIZ) ---
     if path == "/permisos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
         cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
         
-        selected_pid = cgi.parse_qs(environ.get('QUERY_STRING', '')).get('pid', [None])[0]
+        # CORRECCIÓN AQUÍ: Usar urllib.parse en lugar de cgi.parse_qs
+        qs = urllib.parse.parse_qs(environ.get('QUERY_STRING', ''))
+        selected_pid = qs.get('pid', [None])[0]
+        
         permisos_actuales = {}
         if selected_pid:
             cur.execute("SELECT * FROM permisos_perfil WHERE idPerfil=%s", (selected_pid,))
@@ -151,9 +154,16 @@ def application(environ, start_response):
             </tr>"""
 
         content = f"""<div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h2>Matriz de Permisos</h2>
-                <div>Perfil: <select onchange="window.location.href='/permisos?pid='+this.value">{f"<option value=''>-- Seleccione Perfil --</option>" + opt_perfil}</select></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
+                <div>
+                    <h2 style="margin:0;">Matriz de Permisos</h2>
+                    <span style="font-size:0.8rem; color:#94a3b8;">Administra los permisos por perfil y módulo</span>
+                </div>
+                <div>
+                    Perfil: <select onchange="window.location.href='/permisos?pid='+this.value">
+                        <option value="">-- Seleccionar perfil --</option>{opt_perfil}
+                    </select>
+                </div>
             </div>
             {f'''<form id="fMatriz">
                 <input type="hidden" name="pid" value="{selected_pid}">
@@ -162,23 +172,33 @@ def application(environ, start_response):
                     <tbody>{tbody}</tbody>
                 </table>
                 <button type="submit" class="btn-save">Guardar Matriz de Permisos</button>
-            </form>''' if selected_pid else '<p style="text-align:center; padding:40px; color:#94a3b8;">Selecciona un perfil para ver y editar sus permisos.</p>'}
+            </form>''' if selected_pid else '<div style="text-align:center; padding:80px; color:#64748b;">📂 Selecciona un perfil para ver y editar sus permisos.</div>'}
         </div>
         <script>
             if(document.getElementById('fMatriz')){{
                 document.getElementById('fMatriz').onsubmit = async (e) => {{
                     e.preventDefault();
-                    const res = await fetch('/api/save_matriz', {{method:'POST', body:new FormData(e.target)}});
-                    if((await res.json()).ok) alert("Permisos actualizados");
+                    await fetch('/api/save_matriz', {{method:'POST', body:new FormData(e.target)}});
+                    alert("¡Matriz guardada con éxito!");
                 }};
             }}
         </script>"""
         cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
-    # --- LOGIN Y OTRAS RUTAS (RESUMIDAS PARA EL EJEMPLO) ---
-    if not u_data and path not in ["/", "/login", "/api/login"]:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
+    # --- PANTALLA DASHBOARD ---
+    if path == "/dashboard":
+        content = f"<div class='card' style='text-align:center; padding:50px;'><h1>Bienvenido, {u_data['u']}</h1><p>Usa el menú superior 'Seguridad' para administrar el sistema.</p></div>"
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Inicio", content, u_data).encode("utf-8")]
 
-    # Redirección por defecto a Perfiles si no hay ruta
-    start_response("303 See Other", [("Location", "/permisos")]); return [b""]
+    # --- LOGIN PAGE ---
+    if path in ["/", "/login"]:
+        content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
+            <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
+            <form id="fL"><input type="text" name="u" placeholder="Usuario" required style="width:100%; margin-bottom:15px;">
+            <input type="password" name="p" placeholder="Contraseña" required style="width:100%; margin-bottom:20px;">
+            <button type="button" onclick="login()" class="btn-blue" style="width:100%;">Entrar</button></form></div>
+            <script>async def login(){{ const res = await fetch('/api/login',{{method:'POST', body:new FormData(document.getElementById('fL'))}}); if((await res.json()).ok) location.href='/dashboard'; else alert('Error'); }}</script>"""
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
+
+    start_response("303 See Other", [("Location", "/dashboard")]); return [b""]
