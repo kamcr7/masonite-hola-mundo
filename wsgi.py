@@ -50,22 +50,31 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
         
-        # Módulos base fijos para evitar duplicados en el menú visual
-        base_seguridad = ["Perfiles", "Módulos", "Permisos-Perfil", "Usuarios"]
+        # Diccionario de iconos para módulos base
+        iconos = {
+            "Perfiles": "👤", "Perfil": "👤",
+            "Módulos": "📦", "Módulo": "📦",
+            "Permisos-Perfil": "🔐",
+            "Usuarios": "👥", "Usuario": "👥"
+        }
         
         menu_html = ""
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
+            # Si es Seguridad, ponemos primero los accesos fijos a las rutas de gestión
             if m_padre == "Seguridad":
                 links += '<a href="/perfiles">👤 Perfiles</a>'
                 links += '<a href="/modulos">📦 Módulos</a>'
                 links += '<a href="/permisos">🔐 Permisos-Perfil</a>'
                 links += '<a href="/usuarios">👥 Usuarios</a>'
             
-            # Agregar módulos de la BD que NO sean los base para no duplicar
-            subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'] not in base_seguridad]
+            # Módulos dinámicos: Solo agregamos si NO son los de gestión básica (para evitar duplicados visuales)
+            base_names = ["Perfiles", "Perfil", "Módulos", "Módulo", "Permisos-Perfil", "Usuarios", "Usuario"]
+            subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'] not in base_names]
+            
             for s in subs:
-                links += f'<a href="/m/{s["id"]}">{s["strNombreModulo"]}</a>'
+                ico = iconos.get(s['strNombreModulo'], "📄")
+                links += f'<a href="/m/{s["id"]}">{ico} {s["strNombreModulo"]}</a>'
             
             menu_html += f"""<div class="dropdown">
                 <button class="dropbtn">{m_padre} ▾</button>
@@ -90,7 +99,7 @@ def render_layout(title, content, user=None):
         .nav-link{{color:#94a3b8; text-decoration:none; font-size:0.9rem;}}
         .dropdown{{position:relative; display:inline-block;}}
         .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 0;}}
-        .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:200px; box-shadow:0 8px 16px rgba(0,0,0,0.5); border-radius:8px; border:1px solid #334155; overflow:hidden;}}
+        .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:200px; box-shadow:0 8px 16px rgba(0,0,0,0.5); border-radius:8px; border:1px solid #334155; z-index:1000;}}
         .dropdown-content a{{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem;}}
         .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
         .dropdown:hover .dropdown-content{{display:block;}}
@@ -102,9 +111,8 @@ def render_layout(title, content, user=None):
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
         .badge{{background:#1e3a8a; padding:4px 10px; border-radius:6px; font-size:0.75rem; color:#38bdf8;}}
         input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:12px; border-radius:8px; width:100%; margin-top:5px;}}
-        .modal{{display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
+        .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
         .modal-content{{background:#ffffff; color:#334155; margin:10% auto; padding:25px; width:450px; border-radius:12px;}}
-        .modal-content h3{{margin-top:0; color:#1e293b;}}
         .modal-content input, .modal-content select{{background:#f8fafc; border:1px solid #e2e8f0; color:#334155;}}
         .user-badge{{background:#be185d; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; margin-right:8px; font-size:0.8rem;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
@@ -118,25 +126,44 @@ def application(environ, start_response):
     init_db()
     u_data = verify_jwt(environ)
 
-    if not u_data and path not in ["/", "/login", "/api/login"]:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-    # --- LOGIN --- (Simplificado para el ejemplo)
+    # --- LOGIN CON RECAPTCHA ---
     if path in ["/", "/login"]:
-        content = '<div class="card" style="max-width:350px; margin:auto;"><h2>Login</h2><form id="fL"><input name="u" placeholder="Usuario"><input type="password" name="p" style="margin-top:10px;"><button type="button" onclick="login()" class="btn-blue" style="width:100%; margin-top:20px;">Entrar</button></form></div><script>async function login(){const res=await fetch("/api/login",{method:"POST",body:new FormData(document.getElementById("fL"))}); if((await res.json()).ok) location.href="/dashboard"; else alert("Error");}</script>'
+        content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
+            <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
+            <form id="fL">
+                <input type="text" name="u" placeholder="Usuario" required style="margin-bottom:15px;">
+                <input type="password" name="p" placeholder="Contraseña" required style="margin-bottom:20px;">
+                <div style="margin-bottom:20px; display:flex; justify-content:center;">
+                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+                </div>
+                <button type="button" onclick="doLogin()" class="btn-blue" style="width:100%;">Entrar</button>
+            </form></div>
+            <script>
+                async function doLogin() {
+                    if(!grecaptcha.getResponse()) { alert("Por favor complete el reCAPTCHA"); return; }
+                    const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
+                    if((await res.json()).ok) window.location.href='/dashboard'; else alert("Credenciales incorrectas");
+                }
+            </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
+    # --- API LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        # Por simplicidad, acepta cualquier usuario con pass '123' o busca en BD
-        tk = jwt_encode({"u": fs.getvalue("u"), "exp": time.time()+3600})
-        start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/")]); return [b'{"ok":true}']
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
+        user = cur.fetchone(); cur.close(); conn.close()
+        if user:
+            tk = jwt_encode({"u": u, "exp": time.time()+3600})
+            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
+            return [b'{"ok":true}']
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # --- DASHBOARD ---
-    if path == "/dashboard":
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
+    if not u_data:
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- MÓDULOS ---
+    # --- MÓDULOS (CRUD) ---
     if path == "/modulos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
@@ -159,21 +186,21 @@ def application(environ, start_response):
             <table><thead><tr><th>NOMBRE DEL MÓDULO</th><th>MENÚ ASIGNADO</th><th>ACCIONES</th></tr></thead><tbody>{rows_h if rows_h else '<tr><td colspan="3" align="center">No hay registros</td></tr>'}</tbody></table>
         </div>
         <div id="mMod" class="modal"><div class="modal-content">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3>Nuevo Módulo</h3>
-                <span onclick="document.getElementById('mMod').style.display='none'" style="cursor:pointer;">✕</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3 style="margin:0;">Nuevo Módulo</h3>
+                <span onclick="document.getElementById('mMod').style.display='none'" style="cursor:pointer; font-size:1.5rem;">×</span>
             </div>
             <form id="fMod">
-                <label style="font-size:0.85rem; font-weight:bold;">Nombre del Módulo *</label>
-                <input name="n" placeholder="Ej. Principal 1.1" required>
-                <label style="font-size:0.85rem; font-weight:bold; display:block; margin-top:15px;">Agrupar en Menú</label>
+                <label style="font-weight:bold; font-size:0.9rem;">Nombre del Módulo *</label>
+                <input name="n" required placeholder="Ej. Principal 1.1">
+                <label style="font-weight:bold; font-size:0.9rem; display:block; margin-top:15px;">Agrupar en Menú</label>
                 <select name="p">
                     <option value="Seguridad">Seguridad</option>
                     <option value="Principal 1">Principal 1</option>
                     <option value="Principal 2">Principal 2</option>
                 </select>
-                <div style="margin-top:30px; text-align:right; display:flex; gap:10px; justify-content:flex-end;">
-                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:#f1f5f9; border:1px solid #e2e8f0; padding:10px 20px; border-radius:8px; cursor:pointer;">Cancelar</button>
+                <div style="margin-top:30px; text-align:right;">
+                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:none; border:none; color:#64748b; cursor:pointer; margin-right:15px;">Cancelar</button>
                     <button class="btn-blue" style="background:#1e3a8a;">Guardar</button>
                 </div>
             </form>
@@ -185,7 +212,7 @@ def application(environ, start_response):
         </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
 
-    # --- API SAVE ---
+    # --- API AUX ---
     if path == "/api/save_mod" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         conn = conectar_bd(); cur = conn.cursor()
@@ -193,7 +220,8 @@ def application(environ, start_response):
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
+    # --- REDIRECTS Y OTROS ---
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    start_response("303 See Other", [("Location", "/dashboard")]); return [b""]
+    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
