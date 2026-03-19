@@ -32,8 +32,14 @@ def conectar_bd():
 
 def init_db():
     conn = conectar_bd(); cur = conn.cursor(buffered=True)
+    # Crear tablas base
     cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
-    cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50), strMenuPadre VARCHAR(50))")
+    cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50))")
+    # FORZAR COLUMNA strMenuPadre SI NO EXISTE
+    try:
+        cur.execute("ALTER TABLE modulos ADD COLUMN strMenuPadre VARCHAR(50) DEFAULT 'Seguridad'")
+    except: pass # Ya existe
+    
     cur.execute("CREATE TABLE IF NOT EXISTS permisos_perfil (id INT AUTO_INCREMENT PRIMARY KEY, idPerfil INT, idModulo INT, can_view TINYINT(1), can_add TINYINT(1), can_edit TINYINT(1), can_del TINYINT(1))")
     cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), imgUsuario LONGTEXT)")
     conn.commit(); cur.close(); conn.close()
@@ -54,12 +60,13 @@ def render_layout(title, content, user=None):
             if m_padre == "Seguridad":
                 links += '<a href="/perfiles">👤 Perfiles</a><a href="/modulos">📦 Módulos</a><a href="/permisos">🔐 Permisos-Perfil</a>'
             
-            subs = [m for m in all_mods if m['strMenuPadre'] == m_padre]
+            # Usamos .get() para evitar el KeyError si la columna no cargó correctamente
+            subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre]
             for s in subs:
-                links += f'<a href="/m/{s["id"]}">{s["strNombreModulo"]}</a>'
+                links += f'<a href="/modulos?id={s["id"]}">{s["strNombreModulo"]}</a>'
             
             menu_html += f"""<div class="dropdown">
-                <button class="dropbtn">{m_padre} {'▴' if m_padre=='Seguridad' else '▾'}</button>
+                <button class="dropbtn">{m_padre} ▾</button>
                 <div class="dropdown-content">{links}</div>
             </div>"""
 
@@ -101,10 +108,10 @@ def render_layout(title, content, user=None):
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-    init_db()
+    init_db() # Esto asegura la estructura de la BD en cada carga
     u_data = verify_jwt(environ)
 
-    # --- LOGIN ---
+    # --- RUTA LOGIN ---
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
@@ -120,7 +127,7 @@ def application(environ, start_response):
                 document.getElementById('btnIn').onclick = async () => {
                     if(!grecaptcha.getResponse()) { alert("Captcha requerido"); return; }
                     const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
-                    if((await res.json()).ok) window.location.href='/dashboard'; else alert("Error");
+                    if((await res.json()).ok) window.location.href='/dashboard'; else alert("Credenciales incorrectas");
                 };
             </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
@@ -143,7 +150,7 @@ def application(environ, start_response):
 
     # --- DASHBOARD ---
     if path == "/dashboard":
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Inicio", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Inicio", "<div class='card'><h1>Bienvenido al Sistema</h1></div>", u_data).encode("utf-8")]
 
     # --- PERFILES ---
     if path == "/perfiles":
@@ -154,13 +161,13 @@ def application(environ, start_response):
         content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>Nombre</th><th>Admin</th><th>Acción</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
 
-    # --- MÓDULOS (DISEÑO SOLICITADO) ---
+    # --- MÓDULOS ---
     if path == "/modulos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
         cur.close(); conn.close()
         
-        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td><span style='background:#1e3a8a; padding:4px 8px; border-radius:5px;'>{r['strMenuPadre']}</span></td><td style='color:#38bdf8;'>Editar <span style='color:#ef4444; margin-left:10px;'>Eliminar</span></td></tr>" for r in rows])
+        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td><span style='background:#1e3a8a; padding:4px 8px; border-radius:5px;'>{r.get('strMenuPadre', 'Seguridad')}</span></td><td style='color:#38bdf8;'>Editar <span style='color:#ef4444; margin-left:10px;'>Eliminar</span></td></tr>" for r in rows])
         
         content = f"""<div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -180,7 +187,7 @@ def application(environ, start_response):
                     <option value="Principal 2">Principal 2</option>
                 </select>
                 <div style="margin-top:20px; text-align:right;">
-                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" class="btn-ghost">Cancelar</button>
+                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:transparent; color:#94a3b8; border:none; cursor:pointer; margin-right:15px;">Cancelar</button>
                     <button class="btn-blue">Guardar</button>
                 </div>
             </form>
@@ -192,7 +199,7 @@ def application(environ, start_response):
         </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
 
-    # --- MATRIZ DE PERMISOS ---
+    # --- MATRIZ PERMISOS ---
     if path == "/permisos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
@@ -229,7 +236,7 @@ def application(environ, start_response):
         cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
-    # --- API AUXILIARES ---
+    # --- API AUX ---
     if path == "/api/save_mod" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         conn = conectar_bd(); cur = conn.cursor()
