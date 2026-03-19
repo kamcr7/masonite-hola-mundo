@@ -51,7 +51,7 @@ def render_layout(title, content, user=None):
         cur.close(); conn.close()
         
         menu_html = ""
-        base_names = ["Perfiles", "Perfil", "Módulos", "Módulo", "Permisos-Perfil", "Usuarios", "Usuario"]
+        base_names = ["Perfiles", "Módulos", "Permisos-Perfil", "Usuarios"]
         
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
@@ -61,7 +61,6 @@ def render_layout(title, content, user=None):
                 links += '<a href="/permisos">🔐 Permisos-Perfil</a>'
                 links += '<a href="/usuarios">👥 Usuarios</a>'
             
-            # Solo agregar módulos extras que no sean los de gestión base
             subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'] not in base_names]
             for s in subs:
                 links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
@@ -72,7 +71,7 @@ def render_layout(title, content, user=None):
             </div>"""
 
         nav = f"""<div class="top-nav">
-            <div class="nav-left"><span class="logo">🛡️ Sistema de Gestión</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
+            <div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
             <div class="nav-right">
                 <span class="user-badge">{user['u'][0].upper()}</span>
                 <b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a>
@@ -94,12 +93,16 @@ def render_layout(title, content, user=None):
         .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
         .dropdown:hover .dropdown-content{{display:block;}}
         .container{{padding:30px 40px;}}
-        .card{{background:#1e3a8a0a; border-radius:12px; padding:25px; border:1px solid #334155; background:#1e293b;}}
+        .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
+        .badge{{background:#1e3a8a; padding:4px 10px; border-radius:6px; font-size:0.75rem; color:#38bdf8;}}
         input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:12px; border-radius:8px; width:100%; margin-top:5px;}}
+        .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
+        .modal-content{{background:#ffffff; color:#334155; margin:10% auto; padding:25px; width:450px; border-radius:12px;}}
+        .modal-content input, .modal-content select{{background:#f8fafc; border:1px solid #e2e8f0; color:#334155;}}
         .user-badge{{background:#be185d; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; margin-right:8px; font-size:0.8rem;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -140,16 +143,16 @@ def application(environ, start_response):
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- PERFILES ---
+    # --- RUTA PERFILES ---
     if path == "/perfiles":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
         cur.close(); conn.close()
-        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'Sí' if r['bitAdministrador'] else 'No'}</td><td><button class='btn-blue' style='padding:5px 10px;'>✎</button></td></tr>" for r in rows])
-        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>Nombre</th><th>Admin</th><th>Acción</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'SÍ' if r['bitAdministrador'] else 'NO'}</td><td style='color:#38bdf8;'>Editar</td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>NOMBRE PERFIL</th><th>ADMIN</th><th>ACCIONES</th></tr></thead><tbody>{rows_h if rows_h else '<tr><td colspan=4>No hay perfiles</td></tr>'}</tbody></table></div>"
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
 
-    # --- PERMISOS ---
+    # --- RUTA PERMISOS ---
     if path == "/permisos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
@@ -162,18 +165,60 @@ def application(environ, start_response):
             tbody += f"<tr><td>{m['strNombreModulo']}</td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td></tr>"
         
         opt = "".join([f"<option value='{x['id']}' {'selected' if str(x['id'])==pid else ''}>{x['strNombrePerfil']}</option>" for x in perfs])
-        content = f"<div class='card'><h2>Matriz de Permisos</h2>Perfil: <select onchange='location.href=\"/permisos?pid=\"+this.value' style='width:300px;'><option value=''>-- Seleccionar --</option>{opt}</select><table><thead><tr><th>Módulo</th><th>VER</th><th>ADD</th><th>EDIT</th><th>DEL</th></tr></thead><tbody>{tbody}</tbody></table></div>"
+        content = f"""<div class='card'><h2>Matriz de Permisos</h2>
+            <div style='margin-bottom:20px;'>Perfil: <select onchange='location.href="/permisos?pid="+this.value' style='width:300px; display:inline-block;'><option value=''>-- Seleccionar Perfil --</option>{opt}</select></div>
+            <table><thead><tr><th>MÓDULO</th><th>CONSULTAR</th><th>AGREGAR</th><th>EDITAR</th><th>ELIMINAR</th></tr></thead><tbody>{tbody if mods else '<tr><td colspan=5>Cree módulos primero</td></tr>'}</tbody></table>
+            <button class='btn-blue' style='margin-top:20px; float:right;'>Guardar Matriz de Permisos</button>
+        </div>"""
         cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
-    # --- MÓDULOS ---
+    # --- RUTA MÓDULOS ---
     if path == "/modulos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
         cur.close(); conn.close()
-        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','Seguridad')}</td><td>Editar</td></tr>" for r in rows])
-        content = f"<div class='card'><h2>Gestión de Módulos</h2><table><thead><tr><th>Módulo</th><th>Menú</th><th>Acción</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td><span class='badge'>{r.get('strMenuPadre','Seguridad')}</span></td><td style='color:#38bdf8;'>Editar <span style='color:#ef4444; margin-left:10px;'>Eliminar</span></td></tr>" for r in rows])
+        content = f"""<div class='card'>
+            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                <h2 style='margin:0;'>Gestión de Módulos</h2>
+                <button class='btn-blue' onclick='document.getElementById("mMod").style.display="block"'>+ Nuevo Módulo</button>
+            </div>
+            <table><thead><tr><th>NOMBRE DEL MÓDULO</th><th>MENÚ ASIGNADO</th><th>ACCIONES</th></tr></thead><tbody>{rows_h if rows_h else '<tr><td colspan=3>No hay módulos</td></tr>'}</tbody></table>
+        </div>
+        <div id="mMod" class="modal"><div class="modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3 style="margin:0;">Nuevo Módulo</h3>
+                <span onclick="document.getElementById('mMod').style.display='none'" style="cursor:pointer; font-size:1.5rem;">×</span>
+            </div>
+            <form id="fMod">
+                <label style="font-weight:bold; font-size:0.9rem;">Nombre del Módulo *</label>
+                <input name="n" required placeholder="Ej. Principal 1.1">
+                <label style="font-weight:bold; font-size:0.9rem; display:block; margin-top:15px;">Agrupar en Menú</label>
+                <select name="p">
+                    <option value="Seguridad">Seguridad</option>
+                    <option value="Principal 1">Principal 1</option>
+                    <option value="Principal 2">Principal 2</option>
+                </select>
+                <div style="margin-top:30px; text-align:right;">
+                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:none; border:none; color:#64748b; cursor:pointer; margin-right:15px;">Cancelar</button>
+                    <button class="btn-blue" style="background:#1e3a8a;">Guardar</button>
+                </div>
+            </form>
+        </div></div>
+        <script>document.getElementById('fMod').onsubmit=async(e)=>{{e.preventDefault(); await fetch('/api/save_mod',{{method:'POST',body:new FormData(e.target)}}); location.reload();}};</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
 
-    # --- DEFAULT ---
-    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
+    # --- API SAVE ---
+    if path == "/api/save_mod" and method == "POST":
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        conn = conectar_bd(); cur = conn.cursor()
+        cur.execute("INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s,%s)", (fs.getvalue("n"), fs.getvalue("p")))
+        conn.commit(); cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
+
+    if path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
+
+    # --- DASHBOARD ---
+    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Panel de Control</h1></div>", u_data).encode("utf-8")]
