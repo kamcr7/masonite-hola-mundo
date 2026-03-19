@@ -6,10 +6,11 @@ from http import cookies
 # CONFIGURACIÓN
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
-JWT_SECRET = "CLAVE_MAESTRA_2026"
+JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
 
 def hash_password(p): return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
 def b64url_encode(d): return base64.urlsafe_b64encode(d).rstrip(b"=").decode("utf-8")
+
 def jwt_encode(p):
     h = b64url_encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode("utf-8"))
     py = b64url_encode(json.dumps(p).encode("utf-8"))
@@ -30,7 +31,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN (LAYOUT)
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -38,40 +39,53 @@ def render_layout(title, content, user=None):
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
+        
         menu_html = ""
+        # Evita duplicados visuales en el dropdown
         bloqueados = ["perfil", "módulo", "modulo", "usuario", "permisos-perfil"]
+        
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
-            links = f'<a href="/perfiles">👤 Perfiles</a><a href="/modulos">📦 Módulos</a><a href="/permisos">🔐 Permisos</a>' if m_padre == "Seguridad" else ""
+            links = ""
+            if m_padre == "Seguridad":
+                links += '<a href="/perfiles">👤 Perfiles</a>'
+                links += '<a href="/modulos">📦 Módulos</a>'
+                links += '<a href="/permisos">🔐 Permisos-Perfil</a>'
+                links += '<a href="/usuarios">👥 Usuarios</a>'
+            
             subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'].lower().strip() not in bloqueados]
-            for s in subs: links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
+            for s in subs:
+                links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
+            
             menu_html += f'<div class="dropdown"><button class="dropbtn">{m_padre} ▾</button><div class="dropdown-content">{links}</div></div>'
 
         nav = f"""<div class="top-nav">
-            <div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span>{menu_html}</div>
-            <div class="nav-right"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:15px;">Salir</a></div>
+            <div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
+            <div class="nav-right"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a></div>
         </div>"""
     
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         body{{font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; margin:0;}}
-        .top-nav{{background:#0b1120; padding:0 40px; height:60px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b;}}
+        .top-nav{{background:#0b1120; padding:0 40px; height:60px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; position:sticky; top:0; z-index:100;}}
+        .nav-left{{display:flex; gap:15px; align-items:center;}}
+        .logo{{font-weight:bold; color:#38bdf8; font-size:1.1rem;}}
+        .nav-link{{color:#94a3b8; text-decoration:none; font-size:0.9rem;}}
         .dropdown{{position:relative; display:inline-block;}}
-        .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; padding:20px 10px; font-size:0.9rem;}}
-        .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:180px; border:1px solid #334155; border-radius:8px; z-index:1000;}}
+        .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 10px;}}
+        .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:200px; box-shadow:0 8px 16px rgba(0,0,0,0.5); border-radius:8px; border:1px solid #334155; z-index:1000;}}
         .dropdown-content a{{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem;}}
         .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
         .dropdown:hover .dropdown-content{{display:block;}}
         .container{{padding:30px 40px;}}
         .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
-        .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold;}}
-        .btn-red{{background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;}}
+        .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
-        th{{text-align:left; color:#94a3b8; padding:12px; border-bottom:2px solid #334155;}}
-        td{{padding:12px; border-bottom:1px solid #334155;}}
-        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:6px; width:100%;}}
+        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
+        td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
+        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px;}}
         .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
-        .modal-content{{background:#ffffff; color:#1e293b; margin:10% auto; padding:25px; width:400px; border-radius:12px;}}
+        .modal-content{{background:#ffffff; color:#334155; margin:10% auto; padding:25px; width:450px; border-radius:12px;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
 # =========================================================
@@ -80,11 +94,29 @@ def render_layout(title, content, user=None):
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-    
-    # --- RUTA 1: PROCESAR LOGIN (API) ---
+    u_data = verify_jwt(environ)
+
+    # 1. RUTAS PÚBLICAS (LOGIN)
+    if path in ["/", "/login"]:
+        content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
+            <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
+            <form id="fL">
+                <input type="text" name="u" placeholder="Usuario" style="width:100%; margin-bottom:15px; background:#0f172a; color:white; border:1px solid #334155; padding:10px; border-radius:8px;">
+                <input type="password" name="p" placeholder="Contraseña" style="width:100%; margin-bottom:20px; background:#0f172a; color:white; border:1px solid #334155; padding:10px; border-radius:8px;">
+                <center><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div></center>
+                <button type="button" onclick="doLogin()" class="btn-blue" style="width:100%; margin-top:20px;">Iniciar Sesión</button>
+            </form></div>
+            <script>async function doLogin(){ 
+                if(!grecaptcha.getResponse()){alert("Completa el Captcha"); return;}
+                const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
+                const data = await res.json();
+                if(data.ok) location.href='/dashboard'; else alert("Credenciales incorrectas");
+            }</script>"""
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
+
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
         user = cur.fetchone(); cur.close(); conn.close()
@@ -94,66 +126,91 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # --- RUTA 2: PANTALLA LOGIN ---
-    if path in ["/", "/login"]:
-        content = """<div class="card" style="max-width:350px; margin:80px auto; text-align:center;">
-            <h2 style="color:#38bdf8;">Acceso al Sistema</h2>
-            <form id="fL">
-                <input type="text" name="u" placeholder="Usuario" required style="margin-bottom:15px;">
-                <input type="password" name="p" placeholder="Contraseña" required style="margin-bottom:20px;">
-                <center><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div></center>
-                <button type="submit" class="btn-blue" style="width:100%; margin-top:20px;">Entrar</button>
-            </form></div>
-            <script>document.getElementById('fL').onsubmit=async(e)=>{{ e.preventDefault();
-                if(!grecaptcha.getResponse()){{ alert("Captcha obligatorio"); return; }}
-                const res=await fetch('/api/login',{{method:'POST', body:new FormData(e.target)}});
-                const d=await res.json(); if(d.ok) location.href='/dashboard'; else alert('Error de credenciales');
-            }}</script>"""
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
-
-    # --- RUTA 3: VERIFICAR SESIÓN ---
-    u_data = verify_jwt(environ)
+    # SEGURIDAD: REDIRECCIÓN SI NO HAY SESIÓN
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- RUTA 4: DASHBOARD Y CRUD ---
-    # API para guardar Perfiles y Módulos
-    if path in ["/api/save_mod", "/api/p_save"] and method == "POST":
+    # 2. CRUD DE MÓDULOS (API)
+    if path == "/api/save_mod" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        n, p = fs.getvalue("n"), fs.getvalue("p", "Seguridad")
-        q = "INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s,%s)" if path=="/api/save_mod" else "INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES (%s,%s)"
-        conn = conectar_bd(); cur = conn.cursor(); cur.execute(q, (n, p)); conn.commit(); cur.close(); conn.close()
+        n, p = fs.getvalue("n"), fs.getvalue("p")
+        conn = conectar_bd(); cur = conn.cursor()
+        cur.execute("INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s, %s)", (n, p))
+        conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # API para eliminar
-    if path in ["/api/del_mod", "/api/p_del"] and method == "POST":
+    if path == "/api/del_mod" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        t = "modulos" if path=="/api/del_mod" else "perfiles"
-        conn = conectar_bd(); cur = conn.cursor(); cur.execute(f"DELETE FROM {t} WHERE id=%s",(fs.getvalue("id"),)); conn.commit(); cur.close(); conn.close()
+        mid = fs.getvalue("id")
+        conn = conectar_bd(); cur = conn.cursor()
+        cur.execute("DELETE FROM modulos WHERE id = %s", (mid,))
+        conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # Vistas de Gestión
+    # 3. PANTALLA DE PERFILES
     if path == "/perfiles":
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True); cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall(); cur.close(); conn.close()
-        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td><button class='btn-red' onclick='delItem({r['id']},\"/api/p_del\")'>Eliminar</button></td></tr>" for r in rows])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Perfiles</h2><button class='btn-blue' onclick='document.getElementById(\"mP\").style.display=\"block\"'>+ Nuevo</button></div><table>{rows_h}</table></div>"
-        content += f'<div id="mP" class="modal"><div class="modal-content"><h3>Nuevo Perfil</h3><form onsubmit="event.preventDefault(); saveItem(this,\'/api/p_save\')"><input name="n" placeholder="Nombre" required><br><br><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall(); cur.close(); conn.close()
+        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'SÍ' if r['bitAdministrador'] else 'NO'}</td><td style='color:#38bdf8;'>Editar</td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>Nombre</th><th>Admin</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
+
+    # 4. PANTALLA DE MÓDULOS (VISTA)
+    if path == "/modulos":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM modulos"); rows = cur.fetchall(); cur.close(); conn.close()
+        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','Seguridad')}</td><td><span style='color:#ef4444; cursor:pointer;' onclick='delMod({r['id']})'>Eliminar</span></td></tr>" for r in rows])
+        content = f"""<div class='card'>
+            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                <h2 style='margin:0;'>Módulos del Sistema</h2>
+                <button class='btn-blue' onclick='document.getElementById("mMod").style.display="block"'>+ Nuevo Módulo</button>
+            </div>
+            <table><thead><tr><th>Nombre</th><th>Menú Padre</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table>
+        </div>
+        <div id="mMod" class="modal"><div class="modal-content">
+            <h3>Registrar Nuevo Módulo</h3>
+            <form id="fMod">
+                <input name="n" required placeholder="Nombre (Ej: Reportes)" style="width:100%; margin-bottom:15px; padding:10px; border-radius:8px; border:1px solid #ccc;">
+                <select name="p" style="width:100%; margin-bottom:20px; padding:10px; border-radius:8px; border:1px solid #ccc;">
+                    <option value="Seguridad">Seguridad</option><option value="Principal 1">Principal 1</option><option value="Principal 2">Principal 2</option>
+                </select>
+                <div style="text-align:right;">
+                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:none; border:none; color:#64748b; cursor:pointer; margin-right:15px;">Cancelar</button>
+                    <button type="submit" class="btn-blue">Guardar Módulo</button>
+                </div>
+            </form>
+        </div></div>
+        <script>
+            document.getElementById('fMod').onsubmit = async(e) => {{ e.preventDefault();
+                await fetch('/api/save_mod', {{method:'POST', body:new FormData(e.target)}});
+                location.reload();
+            }};
+            async function delMod(id) {{ if(confirm('¿Eliminar este módulo?')) {{
+                const fd = new FormData(); fd.append('id', id);
+                await fetch('/api/del_mod', {{method:'POST', body:fd}});
+                location.reload();
+            }}}}
+        </script>"""
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
+
+    # 5. MATRIZ DE PERMISOS
+    if path == "/permisos":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
+        pid = urllib.parse.parse_qs(environ.get('QUERY_STRING', '')).get('pid', [None])[0]
+        opt = "".join([f"<option value='{p['id']}' {'selected' if str(p['id'])==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         
-    elif path == "/modulos":
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True); cur.execute("SELECT * FROM modulos"); rows = cur.fetchall(); cur.close(); conn.close()
-        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','')}</td><td><button class='btn-red' onclick='delItem({r['id']},\"/api/del_mod\")'>Eliminar</button></td></tr>" for r in rows])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Módulos</h2><button class='btn-blue' onclick='document.getElementById(\"mM\").style.display=\"block\"'>+ Nuevo</button></div><table>{rows_h}</table></div>"
-        content += f'<div id="mM" class="modal"><div class="modal-content"><h3>Nuevo Módulo</h3><form onsubmit="event.preventDefault(); saveItem(this,\'/api/save_mod\')"><input name="n" placeholder="Nombre" required><br><br><select name="p"><option value="Seguridad">Seguridad</option><option value="Principal 1">Principal 1</option></select><br><br><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
-    
-    else:
-        content = "<div class='card'><h1>Dashboard</h1><p>Sistema Clínico Activo.</p></div>"
+        inner = "<div style='text-align:center; padding:50px; color:#64748b;'><h3>⚠️ Seleccione un perfil para administrar.</h3></div>"
+        if pid:
+            cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
+            tbody = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
+            inner = f"<table><thead><tr><th>Módulo</th><th>CONSULTAR</th><th>AGREGAR</th><th>EDITAR</th><th>ELIMINAR</th></tr></thead><tbody>{tbody}</tbody></table><div style='text-align:right; margin-top:20px;'><button class='btn-blue'>Guardar Cambios</button></div>"
+        
+        content = f"<div class='card'><h2>Matriz de Permisos</h2><div style='margin-bottom:20px;'>Perfil: <select onchange='location.href=\"/permisos?pid=\"+this.value' style='width:250px;'><option value=''>-- Seleccionar --</option>{opt}</select></div>{inner}</div>"
+        cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    full_html = content + """<script>
-        async function saveItem(f, u){ await fetch(u, {method:'POST', body:new FormData(f)}); location.reload(); }
-        async function delItem(id, u){ if(confirm('¿Eliminar registro?')){ const fd=new FormData(); fd.append('id',id); await fetch(u,{method:'POST', body:fd}); location.reload(); } }
-        window.onclick = (e) => { if(e.target.className=='modal') e.target.style.display='none'; }
-    </script>"""
-    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", full_html, u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido al Panel de Control</h1><p>Seleccione una opción del menú superior.</p></div>", u_data).encode("utf-8")]
