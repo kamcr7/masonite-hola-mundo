@@ -50,31 +50,21 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
         
-        # Diccionario de iconos para módulos base
-        iconos = {
-            "Perfiles": "👤", "Perfil": "👤",
-            "Módulos": "📦", "Módulo": "📦",
-            "Permisos-Perfil": "🔐",
-            "Usuarios": "👥", "Usuario": "👥"
-        }
-        
         menu_html = ""
+        base_names = ["Perfiles", "Perfil", "Módulos", "Módulo", "Permisos-Perfil", "Usuarios", "Usuario"]
+        
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
-            # Si es Seguridad, ponemos primero los accesos fijos a las rutas de gestión
             if m_padre == "Seguridad":
                 links += '<a href="/perfiles">👤 Perfiles</a>'
                 links += '<a href="/modulos">📦 Módulos</a>'
                 links += '<a href="/permisos">🔐 Permisos-Perfil</a>'
                 links += '<a href="/usuarios">👥 Usuarios</a>'
             
-            # Módulos dinámicos: Solo agregamos si NO son los de gestión básica (para evitar duplicados visuales)
-            base_names = ["Perfiles", "Perfil", "Módulos", "Módulo", "Permisos-Perfil", "Usuarios", "Usuario"]
+            # Solo agregar módulos extras que no sean los de gestión base
             subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'] not in base_names]
-            
             for s in subs:
-                ico = iconos.get(s['strNombreModulo'], "📄")
-                links += f'<a href="/m/{s["id"]}">{ico} {s["strNombreModulo"]}</a>'
+                links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
             
             menu_html += f"""<div class="dropdown">
                 <button class="dropbtn">{m_padre} ▾</button>
@@ -104,16 +94,12 @@ def render_layout(title, content, user=None):
         .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
         .dropdown:hover .dropdown-content{{display:block;}}
         .container{{padding:30px 40px;}}
-        .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
+        .card{{background:#1e3a8a0a; border-radius:12px; padding:25px; border:1px solid #334155; background:#1e293b;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
-        .badge{{background:#1e3a8a; padding:4px 10px; border-radius:6px; font-size:0.75rem; color:#38bdf8;}}
         input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:12px; border-radius:8px; width:100%; margin-top:5px;}}
-        .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
-        .modal-content{{background:#ffffff; color:#334155; margin:10% auto; padding:25px; width:450px; border-radius:12px;}}
-        .modal-content input, .modal-content select{{background:#f8fafc; border:1px solid #e2e8f0; color:#334155;}}
         .user-badge{{background:#be185d; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; margin-right:8px; font-size:0.8rem;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -126,28 +112,19 @@ def application(environ, start_response):
     init_db()
     u_data = verify_jwt(environ)
 
-    # --- LOGIN CON RECAPTCHA ---
+    # --- LOGIN ---
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
             <form id="fL">
                 <input type="text" name="u" placeholder="Usuario" required style="margin-bottom:15px;">
                 <input type="password" name="p" placeholder="Contraseña" required style="margin-bottom:20px;">
-                <div style="margin-bottom:20px; display:flex; justify-content:center;">
-                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
-                </div>
+                <div style="margin-bottom:20px; display:flex; justify-content:center;"><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div></div>
                 <button type="button" onclick="doLogin()" class="btn-blue" style="width:100%;">Entrar</button>
             </form></div>
-            <script>
-                async function doLogin() {
-                    if(!grecaptcha.getResponse()) { alert("Por favor complete el reCAPTCHA"); return; }
-                    const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
-                    if((await res.json()).ok) window.location.href='/dashboard'; else alert("Credenciales incorrectas");
-                }
-            </script>"""
+            <script>async function doLogin(){ if(!grecaptcha.getResponse()){alert("Captcha!");return;} const res=await fetch('/api/login',{method:'POST',body:new FormData(document.getElementById('fL'))}); if((await res.json()).ok) location.href='/dashboard'; else alert("Error");}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    # --- API LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
@@ -163,65 +140,40 @@ def application(environ, start_response):
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- MÓDULOS (CRUD) ---
+    # --- PERFILES ---
+    if path == "/perfiles":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
+        cur.close(); conn.close()
+        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'Sí' if r['bitAdministrador'] else 'No'}</td><td><button class='btn-blue' style='padding:5px 10px;'>✎</button></td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>Nombre</th><th>Admin</th><th>Acción</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
+
+    # --- PERMISOS ---
+    if path == "/permisos":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
+        cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
+        qs = urllib.parse.parse_qs(environ.get('QUERY_STRING', ''))
+        pid = qs.get('pid', [None])[0]
+        
+        tbody = ""
+        for m in mods:
+            tbody += f"<tr><td>{m['strNombreModulo']}</td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td><td align='center'><input type='checkbox'></td></tr>"
+        
+        opt = "".join([f"<option value='{x['id']}' {'selected' if str(x['id'])==pid else ''}>{x['strNombrePerfil']}</option>" for x in perfs])
+        content = f"<div class='card'><h2>Matriz de Permisos</h2>Perfil: <select onchange='location.href=\"/permisos?pid=\"+this.value' style='width:300px;'><option value=''>-- Seleccionar --</option>{opt}</select><table><thead><tr><th>Módulo</th><th>VER</th><th>ADD</th><th>EDIT</th><th>DEL</th></tr></thead><tbody>{tbody}</tbody></table></div>"
+        cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
+
+    # --- MÓDULOS ---
     if path == "/modulos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
         cur.close(); conn.close()
-        
-        rows_h = "".join([f"""<tr>
-            <td>{r['strNombreModulo']}</td>
-            <td><span class="badge">{r.get('strMenuPadre','Seguridad')}</span></td>
-            <td><span style="color:#2563eb; cursor:pointer;">Editar</span> <span style="color:#ef4444; margin-left:10px; cursor:pointer;">Eliminar</span></td>
-        </tr>""" for r in rows])
-
-        content = f"""<div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h2 style="margin:0;">Gestión de Módulos</h2>
-                <div style="display:flex; gap:10px;">
-                    <input type="text" placeholder="Buscar por nombre..." style="width:250px; margin:0;">
-                    <button class="btn-blue" onclick="document.getElementById('mMod').style.display='block'">+ Nuevo Módulo</button>
-                </div>
-            </div>
-            <table><thead><tr><th>NOMBRE DEL MÓDULO</th><th>MENÚ ASIGNADO</th><th>ACCIONES</th></tr></thead><tbody>{rows_h if rows_h else '<tr><td colspan="3" align="center">No hay registros</td></tr>'}</tbody></table>
-        </div>
-        <div id="mMod" class="modal"><div class="modal-content">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h3 style="margin:0;">Nuevo Módulo</h3>
-                <span onclick="document.getElementById('mMod').style.display='none'" style="cursor:pointer; font-size:1.5rem;">×</span>
-            </div>
-            <form id="fMod">
-                <label style="font-weight:bold; font-size:0.9rem;">Nombre del Módulo *</label>
-                <input name="n" required placeholder="Ej. Principal 1.1">
-                <label style="font-weight:bold; font-size:0.9rem; display:block; margin-top:15px;">Agrupar en Menú</label>
-                <select name="p">
-                    <option value="Seguridad">Seguridad</option>
-                    <option value="Principal 1">Principal 1</option>
-                    <option value="Principal 2">Principal 2</option>
-                </select>
-                <div style="margin-top:30px; text-align:right;">
-                    <button type="button" onclick="document.getElementById('mMod').style.display='none'" style="background:none; border:none; color:#64748b; cursor:pointer; margin-right:15px;">Cancelar</button>
-                    <button class="btn-blue" style="background:#1e3a8a;">Guardar</button>
-                </div>
-            </form>
-        </div></div>
-        <script>
-            document.getElementById('fMod').onsubmit = async (e) => {{
-                e.preventDefault(); await fetch('/api/save_mod', {{method:'POST', body:new FormData(e.target)}}); location.reload();
-            }};
-        </script>"""
+        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','Seguridad')}</td><td>Editar</td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Módulos</h2><table><thead><tr><th>Módulo</th><th>Menú</th><th>Acción</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
 
-    # --- API AUX ---
-    if path == "/api/save_mod" and method == "POST":
-        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        conn = conectar_bd(); cur = conn.cursor()
-        cur.execute("INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s,%s)", (fs.getvalue("n"), fs.getvalue("p")))
-        conn.commit(); cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
-
-    # --- REDIRECTS Y OTROS ---
-    if path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-
+    # --- DEFAULT ---
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
