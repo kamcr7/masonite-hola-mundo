@@ -27,7 +27,7 @@ def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
-# --- LAYOUT ---
+# --- LAYOUT MEJORADO ---
 def render_layout(title, content, user=None):
     nav = ""
     if user:
@@ -35,7 +35,7 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
         
-        # Filtramos para no mostrar los nombres técnicos como "Usuario" o "Perfil" en el menú
+        # Filtro estricto para evitar duplicados en el menú
         bloqueados = ["perfil", "módulo", "modulo", "usuario", "permisos-perfil"]
         menu_html = ""
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
@@ -73,41 +73,57 @@ def render_layout(title, content, user=None):
         .modal-content input, .modal-content select{{background:#f1f5f9; color:#1e293b; border:1px solid #cbd5e1; padding:10px; width:100%; border-radius:8px; margin-bottom:15px;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
-# --- WSGI ---
+# --- CONTROLADOR ---
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    if path in ["/", "/login"]:
-        # (Lógica de login igual a la anterior...)
-        start_response("200 OK", [("Content-Type", "text/html")])
-        return [render_layout("Login", "<h2>Login</h2>").encode("utf-8")]
+    # CORRECCIÓN: Pantalla de Login forzada
+    if path in ["/", "/login"] and not u_data:
+        content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
+            <h2 style="color:#38bdf8;">Acceso al Sistema</h2>
+            <form id="fL">
+                <input type="text" name="u" placeholder="Usuario" style="margin-bottom:15px;">
+                <input type="password" name="p" placeholder="Contraseña" style="margin-bottom:20px;">
+                <center><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div></center>
+                <button type="button" onclick="doLogin()" class="btn-blue" style="width:100%; margin-top:20px;">Entrar</button>
+            </form></div>
+            <script>async function doLogin(){ 
+                const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
+                const data = await res.json(); if(data.ok) location.href='/dashboard'; else alert("Error de acceso");
+            }</script>"""
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
+
+    if path == "/api/login" and method == "POST":
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
+        user = cur.fetchone(); cur.close(); conn.close()
+        if user:
+            tk = jwt_encode({"u": u, "exp": time.time()+3600})
+            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
+            return [b'{"ok":true}']
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- API UNIFICADA ---
+    # --- API CRUD (POST) ---
     if method == "POST":
         conn = conectar_bd(); cur = conn.cursor()
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         
-        # Eliminar genérico
-        if path.startswith("/api/del_"):
-            tabla = path.split("_")[2] + "s"
-            cur.execute(f"DELETE FROM {tabla} WHERE id=%s", (fs.getvalue("id"),))
-        
-        # Guardar Usuario
+        if path == "/api/del_user": cur.execute("DELETE FROM usuarios WHERE id=%s", (fs.getvalue("id"),))
+        elif path == "/api/del_mod": cur.execute("DELETE FROM modulos WHERE id=%s", (fs.getvalue("id"),))
+        elif path == "/api/del_per": cur.execute("DELETE FROM perfiles WHERE id=%s", (fs.getvalue("id"),))
         elif path == "/api/save_user":
             img = base64.b64encode(fs["img"].file.read()).decode("utf-8") if "img" in fs and fs["img"].filename else ""
             cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strCelular, idPerfil, strEstado, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                         (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), fs.getvalue("c"), fs.getvalue("pid"), fs.getvalue("est"), img))
-        
-        # Guardar Módulo
         elif path == "/api/save_mod":
             cur.execute("INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s, %s)", (fs.getvalue("n"), fs.getvalue("p")))
-
-        # Guardar Perfil
         elif path == "/api/save_per":
             cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES (%s, %s)", (fs.getvalue("n"), fs.getvalue("a")))
 
@@ -116,37 +132,20 @@ def application(environ, start_response):
 
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-        usrs = cur.fetchall()
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
-        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
-        rows = "".join([f"<tr><td><img src='data:image/png;base64,{u['strImagen']}' style='width:35px;height:35px;border-radius:50%;'></td><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button onclick='delItem({u['id']}, \"user\")' style='color:red;'>Eliminar</button></td></tr>" for u in usrs])
-        content = f"""<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Usuarios</h2><button class='btn-blue' onclick='showM("mUsr")'>+ Nuevo Usuario</button></div><table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows}</table></div>
-        <div id="mUsr" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fUsr">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                <input name="u" placeholder="Nombre Usuario" required><input name="e" placeholder="Correo" type="email" required>
-                <input name="p" placeholder="Contraseña" type="password" required><input name="c" placeholder="Celular">
-                <select name="pid">{p_opts}</select><select name="est"><option>Activo</option><option>Inactivo</option></select>
-            </div><input type="file" name="img"><button type="submit" class="btn-blue">Guardar</button></form></div></div>"""
-
-    elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
-        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m.get('strMenuPadre','Seguridad')}</td><td><button onclick='delItem({m['id']}, \"mod\")' style='color:red;'>Eliminar</button></td></tr>" for m in mods])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Módulos</h2><button class='btn-blue' onclick='showM(\"mMod\")'>+ Nuevo</button></div><table><tr><th>NOMBRE</th><th>MENÚ</th><th>ACCIONES</th></tr>{rows}</table></div>"
-        content += f'<div id="mMod" class="modal"><div class="modal-content"><h3>Nuevo Módulo</h3><form id="fMod"><input name="n" placeholder="Nombre" required><select name="p"><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option></select><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
-
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles"); pers = cur.fetchall()
-        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td>{'SÍ' if p['bitAdministrador'] else 'NO'}</td><td><button onclick='delItem({p['id']}, \"per\")' style='color:red;'>Eliminar</button></td></tr>" for p in pers])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Perfiles</h2><button class='btn-blue' onclick='showM(\"mPer\")'>+ Nuevo</button></div><table><tr><th>ID</th><th>PERFIL</th><th>ADMIN</th><th>ACCIONES</th></tr>{rows}</table></div>"
-        content += f'<div id="mPer" class="modal"><div class="modal-content"><h3>Nuevo Perfil</h3><form id="fPer"><input name="n" placeholder="Nombre" required><select name="a"><option value="1">SÍ</option><option value="0">NO</option></select><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
+        rows = "".join([f"<tr><td><img src='data:image/png;base64,{u['strImagen']}' style='width:35px;height:35px;border-radius:50%;'></td><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button onclick='delItem({u['id']}, \"user\")' style='color:#ef4444; border:none; background:none; cursor:pointer;'>Eliminar</button></td></tr>" for u in cur.fetchall()])
+        content = f"<div class='card'><h2>Gestión de Usuarios</h2><table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows}</table><button class='btn-blue' onclick='showM(\"mUsr\")' style='margin-top:15px;'>+ Nuevo Usuario</button></div>"
+        content += '<div id="mUsr" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fUsr"><input name="u" placeholder="Usuario"><input name="e" placeholder="Email"><input name="p" type="password" placeholder="Pass"><input name="c" placeholder="Celular"><select name="pid"><option value="1">Admin</option></select><select name="est"><option>Activo</option></select><input type="file" name="img"><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
 
     elif path == "/permisos":
-        content = "<div class='card'><h2>Gestión de Permisos</h2><p>Seleccione un perfil para ver la matriz...</p></div>"
-
-    else: content = "<div class='card'><h1>Bienvenido</h1></div>"
+        # Matriz de permisos visual
+        cur.execute("SELECT * FROM modulos")
+        mods = cur.fetchall()
+        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
+        content = f"<div class='card'><h2>Matriz de Permisos</h2><table><tr><th>Módulo</th><th>Consultar</th><th>Agregar</th><th>Editar</th><th>Eliminar</th></tr>{rows}</table><button class='btn-blue' style='margin-top:20px;'>Guardar Matriz</button></div>"
+    
+    else: content = "<div class='card'><h1>Bienvenido al Panel</h1></div>"
 
     scripts = """<script>
         const showM = id => document.getElementById(id).style.display='block';
@@ -154,7 +153,7 @@ def application(environ, start_response):
             let f = document.getElementById(fid);
             if(f) f.onsubmit = async (e) => { e.preventDefault(); await fetch(url, {method:'POST', body:new FormData(e.target)}); location.reload(); };
         };
-        setupF('fUsr', '/api/save_user'); setupF('fMod', '/api/save_mod'); setupF('fPer', '/api/save_per');
+        setupF('fUsr', '/api/save_user');
         async function delItem(id, tipo) { 
             if(confirm('¿Eliminar?')) { 
                 let fd = new FormData(); fd.append('id', id); 
