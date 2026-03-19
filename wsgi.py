@@ -81,7 +81,7 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
     
-    # 1. API LOGIN (DEBE IR ANTES DE VERIFY_JWT)
+    # --- RUTA 1: PROCESAR LOGIN (API) ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
@@ -94,7 +94,7 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # 2. PANTALLA LOGIN
+    # --- RUTA 2: PANTALLA LOGIN ---
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; margin:80px auto; text-align:center;">
             <h2 style="color:#38bdf8;">Acceso al Sistema</h2>
@@ -111,12 +111,13 @@ def application(environ, start_response):
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    # VERIFICACIÓN DE TOKEN
+    # --- RUTA 3: VERIFICAR SESIÓN ---
     u_data = verify_jwt(environ)
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # 3. CRUD APIS (PERFILES Y MÓDULOS)
+    # --- RUTA 4: DASHBOARD Y CRUD ---
+    # API para guardar Perfiles y Módulos
     if path in ["/api/save_mod", "/api/p_save"] and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         n, p = fs.getvalue("n"), fs.getvalue("p", "Seguridad")
@@ -124,13 +125,14 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(); cur.execute(q, (n, p)); conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
+    # API para eliminar
     if path in ["/api/del_mod", "/api/p_del"] and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         t = "modulos" if path=="/api/del_mod" else "perfiles"
         conn = conectar_bd(); cur = conn.cursor(); cur.execute(f"DELETE FROM {t} WHERE id=%s",(fs.getvalue("id"),)); conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # 4. PANTALLAS DE GESTIÓN
+    # Vistas de Gestión
     if path == "/perfiles":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True); cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall(); cur.close(); conn.close()
         rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td><button class='btn-red' onclick='delItem({r['id']},\"/api/p_del\")'>Eliminar</button></td></tr>" for r in rows])
@@ -142,17 +144,16 @@ def application(environ, start_response):
         rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','')}</td><td><button class='btn-red' onclick='delItem({r['id']},\"/api/del_mod\")'>Eliminar</button></td></tr>" for r in rows])
         content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Módulos</h2><button class='btn-blue' onclick='document.getElementById(\"mM\").style.display=\"block\"'>+ Nuevo</button></div><table>{rows_h}</table></div>"
         content += f'<div id="mM" class="modal"><div class="modal-content"><h3>Nuevo Módulo</h3><form onsubmit="event.preventDefault(); saveItem(this,\'/api/save_mod\')"><input name="n" placeholder="Nombre" required><br><br><select name="p"><option value="Seguridad">Seguridad</option><option value="Principal 1">Principal 1</option></select><br><br><button type="submit" class="btn-blue">Guardar</button></form></div></div>'
-
-    elif path == "/permisos":
-        content = "<div class='card'><h2>Permisos</h2><p>Selecciona un perfil...</p></div>"
+    
     else:
-        content = "<div class='card'><h1>Dashboard</h1><p>Bienvenido al sistema.</p></div>"
+        content = "<div class='card'><h1>Dashboard</h1><p>Sistema Clínico Activo.</p></div>"
 
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
     full_html = content + """<script>
         async function saveItem(f, u){ await fetch(u, {method:'POST', body:new FormData(f)}); location.reload(); }
-        async function delItem(id, u){ if(confirm('¿Seguro?')){ const fd=new FormData(); fd.append('id',id); await fetch(u,{method:'POST', body:fd}); location.reload(); } }
+        async function delItem(id, u){ if(confirm('¿Eliminar registro?')){ const fd=new FormData(); fd.append('id',id); await fetch(u,{method:'POST', body:fd}); location.reload(); } }
+        window.onclick = (e) => { if(e.target.className=='modal') e.target.style.display='none'; }
     </script>"""
-    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", full_html, u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", full_html, u_data).encode("utf-8")]
