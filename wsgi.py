@@ -39,7 +39,7 @@ def init_db():
     conn.commit(); cur.close(); conn.close()
 
 # =========================================================
-# MAQUETACIÓN VISUAL
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -82,16 +82,17 @@ def render_layout(title, content, user=None):
         .container{{padding:40px;}}
         .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
-        .btn-save{{background:#1e3a8a; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; margin-top:20px; float:right;}}
+        .btn-red{{background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-size:0.8rem;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
-        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155; background: #1e293b;}}
-        td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem; color:#e2e8f0;}}
-        .user-badge{{background:#be185d; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; margin-right:5px;}}
+        th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
+        td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
+        .badge-si{{background:rgba(16,185,129,0.1); color:#10b981; padding:4px 10px; border-radius:20px; font-size:0.7rem; border:1px solid #064e3b;}}
+        .badge-no{{background:rgba(245,158,11,0.1); color:#f59e0b; padding:4px 10px; border-radius:20px; font-size:0.7rem; border:1px solid #451a03;}}
         input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px; width:100%; box-sizing:border-box;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
 # =========================================================
-# CONTROLADOR WSGI
+# APP WSGI
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
@@ -99,32 +100,27 @@ def application(environ, start_response):
     init_db()
     u_data = verify_jwt(environ)
 
-    # --- PANTALLA LOGIN (CON RECAPTCHA) ---
+    # --- LOGIN ---
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
-            <h2 style="color:#38bdf8; margin-bottom:20px;">Clínica Santa Mónica</h2>
+            <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
             <form id="fL">
                 <input type="text" name="u" placeholder="Usuario" required style="margin-bottom:15px;">
                 <input type="password" name="p" placeholder="Contraseña" required style="margin-bottom:20px;">
                 <div style="margin-bottom:20px; display:flex; justify-content:center;">
                     <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
                 </div>
-                <button type="button" id="btnIn" class="btn-blue" style="width:100%; padding:12px;">Entrar al Sistema</button>
-            </form>
-            <div id="msg" style="color:#ef4444; margin-top:15px; font-size:0.85rem;"></div>
-        </div>
-        <script>
-            document.getElementById('btnIn').onclick = async () => {
-                if(!grecaptcha.getResponse()) { alert("Por favor completa el captcha"); return; }
-                const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
-                const d = await res.json();
-                if(d.ok) window.location.href='/dashboard';
-                else { document.getElementById('msg').innerText = "Credenciales incorrectas"; grecaptcha.reset(); }
-            };
-        </script>"""
+                <button type="button" id="btnIn" class="btn-blue" style="width:100%;">Entrar</button>
+            </form><div id="msg" style="color:#ef4444; margin-top:10px;"></div></div>
+            <script>
+                document.getElementById('btnIn').onclick = async () => {
+                    if(!grecaptcha.getResponse()) { alert("Valida el captcha"); return; }
+                    const res = await fetch('/api/login', {method:'POST', body:new FormData(document.getElementById('fL'))});
+                    if((await res.json()).ok) window.location.href='/dashboard'; else alert("Error");
+                };
+            </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    # --- API LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
@@ -137,90 +133,111 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # --- VERIFICACIÓN DE SESIÓN ---
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- PANTALLA DASHBOARD ---
-    if path == "/dashboard":
-        content = f"""<div class='card' style='text-align:center; padding:50px;'>
-            <h1>Bienvenido, {u_data['u']}</h1>
-            <p style='color:#94a3b8;'>Accede a las opciones de administración desde el menú <b>Seguridad</b>.</p>
-        </div>"""
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Inicio", content, u_data).encode("utf-8")]
+    # --- PERFILES (CRUD COMPLETO) ---
+    if path == "/perfiles":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
+        cur.close(); conn.close()
+        
+        rows_html = "".join([f"""<tr>
+            <td>{r['id']}</td>
+            <td><b>{r['strNombrePerfil']}</b></td>
+            <td>Perfil de sistema</td>
+            <td><span class='{"badge-si" if r['bitAdministrador'] else "badge-no"}'>{"Sí" if r['bitAdministrador'] else "No"}</span></td>
+            <td><button class="btn-red" onclick="eliminar({r['id']})">🗑️</button></td>
+        </tr>""" for r in rows])
 
-    # --- PANTALLA MATRIZ PERMISOS ---
+        content = f"""<div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>Gestión de Perfiles</h2>
+                <button class="btn-blue" onclick="document.getElementById('fP').style.display='block'">+ Nuevo</button>
+            </div>
+            <div id="fP" style="display:none; margin-top:20px; border:1px dashed #334155; padding:15px;">
+                <form id="formP" style="display:flex; gap:10px;">
+                    <input name="n" placeholder="Nombre Perfil" required>
+                    <label>Admin: <input type="checkbox" name="a" style="width:auto;"></label>
+                    <button class="btn-blue">Guardar</button>
+                </form>
+            </div>
+            <table>
+                <thead><tr><th>#</th><th>Nombre</th><th>Descripción</th><th>Admin</th><th>Acciones</th></tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+        </div>
+        <script>
+            document.getElementById('formP').onsubmit = async (e) => {{
+                e.preventDefault();
+                await fetch('/api/save_perfil', {{method:'POST', body:new FormData(e.target)}});
+                location.reload();
+            }};
+            async def eliminar(id) {{
+                if(confirm("¿Seguro?")) {{
+                    const fd = new FormData(); fd.append('id', id);
+                    await fetch('/api/delete_perfil', {{method:'POST', body:fd}});
+                    location.reload();
+                }}
+            }}
+        </script>""".replace("async def eliminar(id)", "async function eliminar(id)") # Parche JS
+        
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
+
+    # --- MATRIZ PERMISOS ---
     if path == "/permisos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
         cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
-        
         qs = urllib.parse.parse_qs(environ.get('QUERY_STRING', ''))
-        selected_pid = qs.get('pid', [None])[0]
+        pid = qs.get('pid', [None])[0]
         
-        permisos_actuales = {}
-        if selected_pid:
-            cur.execute("SELECT * FROM permisos_perfil WHERE idPerfil=%s", (selected_pid,))
-            for p in cur.fetchall(): permisos_actuales[p['idModulo']] = p
+        permisos = {}
+        if pid:
+            cur.execute("SELECT * FROM permisos_perfil WHERE idPerfil=%s", (pid,))
+            for p in cur.fetchall(): permisos[p['idModulo']] = p
         
-        opt_perfil = "".join([f"<option value='{p['id']}' {'selected' if str(p['id'])==selected_pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
+        opt = "".join([f"<option value='{x['id']}' {'selected' if str(x['id'])==pid else ''}>{x['strNombrePerfil']}</option>" for x in perfs])
         
         tbody = ""
         for m in mods:
-            p = permisos_actuales.get(m['id'], {'can_view':0, 'can_add':0, 'can_edit':0, 'can_del':0})
-            tbody += f"""<tr>
-                <td>{m['strNombreModulo']}<input type="hidden" name="mid" value="{m['id']}"></td>
-                <td align="center"><input type="checkbox" name="v_{m['id']}" {'checked' if p['can_view'] else ''}></td>
-                <td align="center"><input type="checkbox" name="a_{m['id']}" {'checked' if p['can_add'] else ''}></td>
-                <td align="center"><input type="checkbox" name="e_{m['id']}" {'checked' if p['can_edit'] else ''}></td>
-                <td align="center"><input type="checkbox" name="d_{m['id']}" {'checked' if p['can_del'] else ''}></td>
-            </tr>"""
+            p = permisos.get(m['id'], {'can_view':0, 'can_add':0, 'can_edit':0, 'can_del':0})
+            tbody += f"<tr><td>{m['strNombreModulo']}<input type='hidden' name='mid' value='{m['id']}'></td>"
+            for k in ['v','a','e','d']:
+                key = {'v':'can_view','a':'can_add','e':'can_edit','d':'can_del'}[k]
+                tbody += f"<td align='center'><input type='checkbox' name='{k}_{m['id']}' {'checked' if p[key] else ''}></td>"
+            tbody += "</tr>"
 
         content = f"""<div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
-                <h2>Matriz de Permisos</h2>
-                <div style="width:300px;">
-                    Perfil: <select onchange="window.location.href='/permisos?pid='+this.value">
-                        <option value="">-- Seleccionar perfil --</option>{opt_perfil}
-                    </select>
-                </div>
-            </div>
-            {f'''<form id="fMatriz">
-                <input type="hidden" name="pid" value="{selected_pid}">
-                <table>
-                    <thead><tr><th>Módulo</th><th>Consultar</th><th>Agregar</th><th>Editar</th><th>Eliminar</th></tr></thead>
-                    <tbody>{tbody}</tbody>
-                </table>
-                <button type="submit" class="btn-save">Guardar Matriz de Permisos</button>
-            </form>''' if selected_pid else '<div style="text-align:center; padding:60px; color:#64748b;">Seleccione un perfil para administrar permisos.</div>'}
+            <h2>Matriz de Permisos</h2>
+            Perfil: <select onchange="location.href='/permisos?pid='+this.value"><option value=''>-- Seleccionar --</option>{opt}</select>
+            {f'<form id="fM"><input type="hidden" name="pid" value="{pid}"><table><thead><tr><th>Módulo</th><th>V</th><th>A</th><th>E</th><th>D</th></tr></thead><tbody>{tbody}</tbody></table><button class="btn-save">Guardar Permisos</button></form>' if pid else ''}
         </div>
         <script>
-            if(document.getElementById('fMatriz')){{
-                document.getElementById('fMatriz').onsubmit = async (e) => {{
-                    e.preventDefault();
-                    const res = await fetch('/api/save_matriz', {{method:'POST', body:new FormData(e.target)}});
-                    if((await res.json()).ok) alert("Permisos actualizados!");
-                }};
-            }}
+            if(document.getElementById('fM')) document.getElementById('fM').onsubmit = async (e) => {{
+                e.preventDefault(); await fetch('/api/save_permisos', {{method:'POST', body:new FormData(e.target)}}); alert("OK");
+            }};
         </script>"""
         cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
-    # --- API: GUARDAR MATRIZ ---
-    if path == "/api/save_matriz" and method == "POST":
+    # --- APIS AUXILIARES ---
+    if path == "/api/save_perfil" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        pid = fs.getvalue("pid")
         conn = conectar_bd(); cur = conn.cursor()
-        cur.execute("DELETE FROM permisos_perfil WHERE idPerfil=%s", (pid,))
-        mods = fs.getlist("mid")
-        for mid in mods:
-            v = 1 if fs.getvalue(f"v_{mid}") else 0
-            a = 1 if fs.getvalue(f"a_{mid}") else 0
-            e = 1 if fs.getvalue(f"e_{mid}") else 0
-            d = 1 if fs.getvalue(f"d_{mid}") else 0
-            cur.execute("INSERT INTO permisos_perfil (idPerfil, idModulo, can_view, can_add, can_edit, can_del) VALUES (%s,%s,%s,%s,%s,%s)", (pid, mid, v, a, e, d))
+        cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES (%s,%s)", (fs.getvalue("n"), 1 if fs.getvalue("a") else 0))
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
+
+    if path == "/api/delete_perfil" and method == "POST":
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        conn = conectar_bd(); cur = conn.cursor()
+        cur.execute("DELETE FROM perfiles WHERE id=%s", (fs.getvalue("id"),))
+        conn.commit(); cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
+
+    if path == "/dashboard":
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Inicio", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
 
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
