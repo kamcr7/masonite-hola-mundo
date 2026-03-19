@@ -30,13 +30,6 @@ def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
-def init_db():
-    conn = conectar_bd(); cur = conn.cursor(buffered=True)
-    cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(50), bitAdministrador TINYINT(1))")
-    cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(50), strMenuPadre VARCHAR(50))")
-    cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(50), idPerfil INT, strPwd VARCHAR(255), idEstadoUsuario INT, strCorreo VARCHAR(150), imgUsuario LONGTEXT)")
-    conn.commit(); cur.close(); conn.close()
-
 # =========================================================
 # MAQUETACIÓN (LAYOUT)
 # =========================================================
@@ -48,8 +41,8 @@ def render_layout(title, content, user=None):
         cur.close(); conn.close()
         
         menu_html = ""
-        # Lista de palabras clave para BLOQUEAR duplicados (en minúsculas para comparar mejor)
-        bloqueados = ["perfil", "perfiles", "modulo", "modulos", "módulo", "módulos", "permiso", "permisos", "usuario", "usuarios"]
+        # Solo bloqueamos los nombres en SINGULAR que genera el sistema automáticamente
+        bloqueados = ["perfil", "módulo", "modulo", "usuario", "permisos-perfil"]
         
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
@@ -59,19 +52,17 @@ def render_layout(title, content, user=None):
                 links += '<a href="/permisos">🔐 Permisos-Perfil</a>'
                 links += '<a href="/usuarios">👥 Usuarios</a>'
             
-            # Filtrado estricto: solo agrega si NO está en la lista de bloqueados
             subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'].lower().strip() not in bloqueados]
             for s in subs:
                 links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
             
-            if links:
-                menu_html += f"""<div class="dropdown">
-                    <button class="dropbtn">{m_padre} ▾</button>
-                    <div class="dropdown-content">{links}</div>
-                </div>"""
+            menu_html += f"""<div class="dropdown">
+                <button class="dropbtn">{m_padre} ▾</button>
+                <div class="dropdown-content">{links}</div>
+            </div>"""
 
         nav = f"""<div class="top-nav">
-            <div class="nav-left"><span class="logo">🛡️ Sistema Gestión</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
+            <div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
             <div class="nav-right"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a></div>
         </div>"""
     
@@ -80,11 +71,11 @@ def render_layout(title, content, user=None):
     <style>
         body{{font-family:'Segoe UI',sans-serif; background:#0f172a; color:#f8fafc; margin:0;}}
         .top-nav{{background:#0b1120; padding:0 40px; height:60px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; position:sticky; top:0; z-index:100;}}
-        .nav-left{{display:flex; gap:20px; align-items:center;}}
-        .logo{{font-weight:bold; color:#38bdf8; font-size:1.1rem;}}
+        .nav-left{{display:flex; gap:15px; align-items:center;}}
+        .logo{{font-weight:bold; color:#38bdf8; font-size:1.1rem; margin-right:10px;}}
         .nav-link{{color:#94a3b8; text-decoration:none; font-size:0.9rem;}}
         .dropdown{{position:relative; display:inline-block;}}
-        .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 0;}}
+        .dropbtn{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 10px;}}
         .dropdown-content{{display:none; position:absolute; background:#1e293b; min-width:200px; box-shadow:0 8px 16px rgba(0,0,0,0.5); border-radius:8px; border:1px solid #334155; z-index:1000;}}
         .dropdown-content a{{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem;}}
         .dropdown-content a:hover{{background:#334155; color:#38bdf8;}}
@@ -95,25 +86,23 @@ def render_layout(title, content, user=None):
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid #334155;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
-        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:12px; border-radius:8px; width:100%; margin-top:5px;}}
+        select, input{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px;}}
     </style></head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
 # =========================================================
-# CONTROLADOR WSGI
+# CONTROLADOR
 # =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-    init_db()
     u_data = verify_jwt(environ)
 
-    # LOGIN
     if path in ["/", "/login"]:
         content = """<div class="card" style="max-width:350px; margin:100px auto; text-align:center;">
-            <h2 style="color:#38bdf8;">Acceso al Sistema</h2>
+            <h2 style="color:#38bdf8;">Acceso</h2>
             <form id="fL">
-                <input type="text" name="u" placeholder="Usuario" required style="margin-bottom:15px;">
-                <input type="password" name="p" placeholder="Contraseña" required style="margin-bottom:20px;">
+                <input type="text" name="u" placeholder="Usuario" style="width:100%; margin-bottom:15px;">
+                <input type="password" name="p" placeholder="Contraseña" style="width:100%; margin-bottom:20px;">
                 <center><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div></center>
                 <button type="button" onclick="doLogin()" class="btn-blue" style="width:100%; margin-top:20px;">Entrar</button>
             </form></div>
@@ -135,29 +124,54 @@ def application(environ, start_response):
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- RUTA PERFILES ---
+    # --- PERFILES ---
     if path == "/perfiles":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
         cur.close(); conn.close()
-        rows_h = "".join([f"<tr><td>{r['strNombrePerfil']}</td><td>{'Sí' if r['bitAdministrador'] else 'No'}</td><td>Editar</td></tr>" for r in rows])
-        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>Nombre</th><th>Admin</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'Sí' if r['bitAdministrador'] else 'No'}</td><td>Editar</td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Perfiles</h2><table><thead><tr><th>ID</th><th>Perfil</th><th>Admin</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Perfiles", content, u_data).encode("utf-8")]
 
-    # --- RUTA PERMISOS ---
+    # --- PERMISOS (CON SELECTOR) ---
     if path == "/permisos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
         cur.execute("SELECT id, strNombreModulo FROM modulos"); mods = cur.fetchall()
+        
+        qs = urllib.parse.parse_qs(environ.get('QUERY_STRING', ''))
+        pid = qs.get('pid', [None])[0]
+        
+        opt = "".join([f"<option value='{p['id']}' {'selected' if str(p['id'])==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         tbody = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"<div class='card'><h2>Matriz de Permisos</h2><table><thead><tr><th>Módulo</th><th>Ver</th><th>Add</th><th>Edit</th><th>Del</th></tr></thead><tbody>{tbody}</tbody></table></div>"
+        
+        content = f"""<div class='card'>
+            <h2>Gestión de Permisos</h2>
+            <div style='margin-bottom:20px;'>
+                Seleccionar Perfil: 
+                <select onchange='location.href="/permisos?pid="+this.value' style='width:250px;'>
+                    <option value=''>-- Seleccionar --</option>{opt}
+                </select>
+            </div>
+            <table><thead><tr><th>Módulo</th><th>CONSULTAR</th><th>AGREGAR</th><th>EDITAR</th><th>ELIMINAR</th></tr></thead><tbody>{tbody}</tbody></table>
+            <div style='text-align:right; margin-top:20px;'><button class='btn-blue'>Guardar Matriz</button></div>
+        </div>"""
         cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Permisos", content, u_data).encode("utf-8")]
 
-    # --- RUTA MÓDULOS ---
+    # --- USUARIOS ---
+    if path == "/usuarios":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
+        rows = cur.fetchall(); cur.close(); conn.close()
+        rows_h = "".join([f"<tr><td>{r['strNombreUsuario']}</td><td>{r['strNombrePerfil']}</td><td>{r['strCorreo']}</td><td>Editar</td></tr>" for r in rows])
+        content = f"<div class='card'><h2>Gestión de Usuarios</h2><table><thead><tr><th>Usuario</th><th>Perfil</th><th>Correo</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Usuarios", content, u_data).encode("utf-8")]
+
+    # --- MÓDULOS ---
     if path == "/modulos":
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
-        cur.close(); conn.close()
+        cur.execute("SELECT * FROM modulos"); rows = cur.fetchall(); cur.close(); conn.close()
         rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','Seguridad')}</td><td>Eliminar</td></tr>" for r in rows])
         content = f"<div class='card'><h2>Gestión de Módulos</h2><table><thead><tr><th>Nombre</th><th>Menú</th><th>Acciones</th></tr></thead><tbody>{rows_h}</tbody></table></div>"
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Módulos", content, u_data).encode("utf-8")]
@@ -165,5 +179,4 @@ def application(environ, start_response):
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # DASHBOARD
-    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Bienvenido</h1></div>", u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Dashboard", "<div class='card'><h1>Panel de Control</h1></div>", u_data).encode("utf-8")]
