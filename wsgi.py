@@ -85,16 +85,19 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # 🚨 MODO RESCATE: Si no hay usuarios, crear el admin por defecto
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT COUNT(*) as total FROM usuarios")
-    if cur.fetchone()['total'] == 0:
-        cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strEstado) VALUES (%s, %s, %s)", 
-                   ('admin', hash_password('123456'), 'Activo'))
-        conn.commit()
-    cur.close(); conn.close()
+    # 🚨 MODO RESCATE ACTUALIZADO (Sin columnas dudosas)
+    try:
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT COUNT(*) as total FROM usuarios")
+        if cur.fetchone()['total'] == 0:
+            # Solo insertamos lo básico para que no falle por columnas faltantes
+            cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd) VALUES (%s, %s)", 
+                       ('admin', hash_password('123456')))
+            conn.commit()
+        cur.close(); conn.close()
+    except: pass # Si falla el rescate, que no tumbe el sitio
 
-    # 1. LOGIN
+    # LOGIN
     if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px; margin:100px auto; text-align:center;'>
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
@@ -133,10 +136,8 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(); fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         if path == "/api/save_user":
             img = base64.b64encode(fs["img"].file.read()).decode("utf-8") if "img" in fs and fs["img"].filename else ""
-            p_id = fs.getvalue("pid")
-            p_id = int(p_id) if p_id and p_id.isdigit() else None
-            cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strCelular, idPerfil, strEstado, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), fs.getvalue("c"), p_id, fs.getvalue("est"), img))
+            cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, idPerfil, strImagen) VALUES (%s,%s,%s,%s,%s)",
+                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), fs.getvalue("pid"), img))
         elif path == "/api/del_user":
             cur.execute("DELETE FROM usuarios WHERE id=%s", (fs.getvalue("id"),))
         
@@ -146,27 +147,24 @@ def application(environ, start_response):
     # --- VISTA USUARIOS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     if path == "/usuarios":
-        cur.execute("SELECT u.*, COALESCE(p.strNombrePerfil, 'SIN PERFIL') as perfil_nombre FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
+        # SELECT seguro que no depende de strEstado
+        cur.execute("SELECT * FROM usuarios")
         usrs = cur.fetchall()
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
-        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
-        
         rows = ""
         for u in usrs:
             img = u.get('strImagen')
             src = f"data:image/png;base64,{img}" if img else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
-            est_c = "bg-green" if u.get('strEstado') == "Activo" else "bg-red"
-            rows += f"<tr><td><img src='{src}' style='width:35px;height:35px;border-radius:50%;'></td><td>{u['strNombreUsuario']}</td><td>{u.get('strCorreo','-')}</td><td>{u['perfil_nombre']}</td><td><span class='badge {est_c}'>{str(u['strEstado']).upper()}</span></td><td><button class='btn-red' onclick='delUsr({u['id']})'>Borrar</button></td></tr>"
+            rows += f"<tr><td><img src='{src}' style='width:35px;height:35px;border-radius:50%;'></td><td>{u['strNombreUsuario']}</td><td>{u.get('strCorreo','-')}</td><td><button class='btn-red' onclick='delUsr({u['id']})'>Borrar</button></td></tr>"
 
-        content = f"""<div class='card'><h2>Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo</button><table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows}</table></div>
-        <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU"><input name="u" placeholder="Usuario" required><input name="e" placeholder="Correo"><input name="p" type="password" placeholder="Clave" required><select name="pid"><option value="">Perfil</option>{p_opts}</select><select name="est"><option>Activo</option><option>Inactivo</option></select><input type="file" name="img"><button type="submit" class="btn-blue">Guardar</button><button type="button" onclick="this.parentElement.parentElement.parentElement.style.display='none'">Cerrar</button></form></div></div>
+        content = f"""<div class='card'><h2>Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo</button><table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>ACCIONES</th></tr>{rows}</table></div>
+        <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU"><input name="u" placeholder="Usuario" required><input name="e" placeholder="Correo"><input name="p" type="password" placeholder="Clave" required><input type="file" name="img"><button type="submit" class="btn-blue">Guardar</button><button type="button" onclick="this.parentElement.parentElement.parentElement.style.display='none'">Cerrar</button></form></div></div>
         <script>document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault();await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}});location.reload();}};
         async function delUsr(id){{if(confirm('¿Eliminar?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_user',{{method:'POST',body:fd}});location.reload();}}}}</script>"""
     
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
     else:
-        content = "<div class='card'><h2>Bienvenido</h2><p>Selecciona Usuarios en el menú de Seguridad.</p></div>"
+        content = "<div class='card'><h2>Dashboard</h2><p>Acceso concedido.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
