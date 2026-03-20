@@ -31,7 +31,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN (CSS & LAYOUT)
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -40,13 +40,10 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
         menu_html = ""
-        bloqueados = ["perfil", "módulo", "modulo", "usuario", "permisos-perfil"]
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
             if m_padre == "Seguridad":
                 links += '<a href="/perfiles">👤 Perfiles</a><a href="/modulos">📦 Módulos</a><a href="/permisos">🔐 Permisos</a><a href="/usuarios">👥 Usuarios</a>'
-            subs = [m for m in all_mods if m.get('strMenuPadre') == m_padre and m['strNombreModulo'].lower().strip() not in bloqueados]
-            for s in subs: links += f'<a href="/m/{s["id"]}">📄 {s["strNombreModulo"]}</a>'
             menu_html += f'<div class="dropdown"><button class="dropbtn">{m_padre} ▾</button><div class="dropdown-content">{links}</div></div>'
         nav = f"""<div class="top-nav"><div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div><div class="nav-right"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a></div></div>"""
     
@@ -88,13 +85,22 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # LOGIN CON RECAPTCHA
+    # 🚨 MODO RESCATE: Si no hay usuarios, crear el admin por defecto
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT COUNT(*) as total FROM usuarios")
+    if cur.fetchone()['total'] == 0:
+        cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strEstado) VALUES (%s, %s, %s)", 
+                   ('admin', hash_password('123456'), 'Activo'))
+        conn.commit()
+    cur.close(); conn.close()
+
+    # 1. LOGIN
     if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px; margin:100px auto; text-align:center;'>
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
             <form id='fL'>
-            <input name='u' placeholder='Usuario' style='margin-bottom:10px;' required>
-            <input name='p' type='password' placeholder='Contraseña' required>
+            <input name='u' placeholder='Usuario (admin)' style='margin-bottom:10px;' required>
+            <input name='p' type='password' placeholder='Contraseña (123456)' required>
             <div style="margin:20px 0; display:flex; justify-content:center;">
                 <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div>
             </div>
@@ -127,7 +133,6 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(); fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         if path == "/api/save_user":
             img = base64.b64encode(fs["img"].file.read()).decode("utf-8") if "img" in fs and fs["img"].filename else ""
-            # Corrección: Asegurar que idPerfil sea INT
             p_id = fs.getvalue("pid")
             p_id = int(p_id) if p_id and p_id.isdigit() else None
             cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strCelular, idPerfil, strEstado, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)",
@@ -140,49 +145,28 @@ def application(environ, start_response):
 
     # --- VISTA USUARIOS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-
     if path == "/usuarios":
-        # Usamos COALESCE para evitar que la fila desaparezca si el perfil es nulo
-        cur.execute("""
-            SELECT u.*, COALESCE(p.strNombrePerfil, 'SIN PERFIL') as perfil_nombre 
-            FROM usuarios u 
-            LEFT JOIN perfiles p ON u.idPerfil = p.id
-        """)
+        cur.execute("SELECT u.*, COALESCE(p.strNombrePerfil, 'SIN PERFIL') as perfil_nombre FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         usrs = cur.fetchall()
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles")
-        perfs = cur.fetchall()
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
         
         rows = ""
         for u in usrs:
-            img_data = u.get('strImagen')
-            img_src = f"data:image/png;base64,{img_data}" if img_data else f"https://ui-avatars.com/api/?name={u.get('strNombreUsuario')}&background=random"
-            estado_cls = "bg-green" if u.get('strEstado') == "Activo" else "bg-red"
-            
-            rows += f"""<tr>
-                <td><img src='{img_src}' style='width:35px;height:35px;border-radius:50%;object-fit:cover;'></td>
-                <td><b>{u.get('strNombreUsuario','-')}</b></td>
-                <td>{u.get('strCorreo','-')}</td>
-                <td>{u.get('perfil_nombre','-')}</td>
-                <td><span class='badge {estado_cls}'>{str(u.get('strEstado','Inactivo')).upper()}</span></td>
-                <td><button class='btn-red' onclick='delUsr({u['id']})'>Eliminar</button></td>
-            </tr>"""
-        
-        content = f"""<div class='card'><div style='display:flex; justify-content:space-between; align-items:center;'><h2>Gestión de Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo Usuario</button></div>
-            <table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows if rows else "<tr><td colspan='6' style='text-align:center;'>No hay usuarios registrados</td></tr>"}</table></div>
-            <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                <div><label>Nombre de Usuario *</label><input name="u" required></div><div><label>Correo Electrónico *</label><input name="e" type="email" required></div>
-                <div><label>Contraseña *</label><input name="p" type="password" required></div><div><label>Número Celular</label><input name="c"></div>
-                <div><label>Perfil *</label><select name="pid" required><option value="">-- Seleccione --</option>{p_opts}</select></div>
-                <div><label>Estado</label><select name="est"><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
-            </div><label style="margin-top:10px;">Fotografía (Opcional)</label><input type="file" name="img" accept="image/*"><button type="submit" class="btn-blue" style="width:100%; margin-top:20px;">Guardar Usuario</button>
-            <button type="button" onclick="document.getElementById('mU').style.display='none'" style="width:100%; background:transparent; border:none; color:#64748b; cursor:pointer; margin-top:10px;">Cancelar</button></form></div></div>
-            <script>document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault(); const res = await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}}); if(res.ok) location.reload(); else alert('Error al guardar');}};
-            async function delUsr(id){{if(confirm('¿Eliminar usuario?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_user',{{method:'POST',body:fd}});location.reload();}}}}</script>"""
+            img = u.get('strImagen')
+            src = f"data:image/png;base64,{img}" if img else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
+            est_c = "bg-green" if u.get('strEstado') == "Activo" else "bg-red"
+            rows += f"<tr><td><img src='{src}' style='width:35px;height:35px;border-radius:50%;'></td><td>{u['strNombreUsuario']}</td><td>{u.get('strCorreo','-')}</td><td>{u['perfil_nombre']}</td><td><span class='badge {est_c}'>{str(u['strEstado']).upper()}</span></td><td><button class='btn-red' onclick='delUsr({u['id']})'>Borrar</button></td></tr>"
 
+        content = f"""<div class='card'><h2>Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo</button><table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows}</table></div>
+        <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU"><input name="u" placeholder="Usuario" required><input name="e" placeholder="Correo"><input name="p" type="password" placeholder="Clave" required><select name="pid"><option value="">Perfil</option>{p_opts}</select><select name="est"><option>Activo</option><option>Inactivo</option></select><input type="file" name="img"><button type="submit" class="btn-blue">Guardar</button><button type="button" onclick="this.parentElement.parentElement.parentElement.style.display='none'">Cerrar</button></form></div></div>
+        <script>document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault();await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}});location.reload();}};
+        async function delUsr(id){{if(confirm('¿Eliminar?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_user',{{method:'POST',body:fd}});location.reload();}}}}</script>"""
+    
+    elif path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
     else:
-        content = "<div class='card'><h1>Bienvenido</h1><p>Usa el menú superior para navegar.</p></div>"
+        content = "<div class='card'><h2>Bienvenido</h2><p>Selecciona Usuarios en el menú de Seguridad.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
