@@ -31,7 +31,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN
+# MAQUETACIÓN (CSS & LAYOUT)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -67,7 +67,6 @@ def render_layout(title, content, user=None):
         .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
         .btn-red{{background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;}}
-        .btn-edit{{background:#0ea5e9; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; margin-right:5px;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; padding:15px; border-bottom:2px solid #334155; text-transform:uppercase;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
@@ -89,7 +88,7 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # 1. LOGIN CON RECAPTCHA
+    # LOGIN CON RECAPTCHA
     if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px; margin:100px auto; text-align:center;'>
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
@@ -128,86 +127,62 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(); fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         if path == "/api/save_user":
             img = base64.b64encode(fs["img"].file.read()).decode("utf-8") if "img" in fs and fs["img"].filename else ""
+            # Corrección: Asegurar que idPerfil sea INT
+            p_id = fs.getvalue("pid")
+            p_id = int(p_id) if p_id and p_id.isdigit() else None
             cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strCelular, idPerfil, strEstado, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), fs.getvalue("c"), fs.getvalue("pid"), fs.getvalue("est"), img))
+                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), fs.getvalue("c"), p_id, fs.getvalue("est"), img))
         elif path == "/api/del_user":
             cur.execute("DELETE FROM usuarios WHERE id=%s", (fs.getvalue("id"),))
-        elif path == "/api/save_per":
-            id_p = fs.getvalue("id"); n, a = fs.getvalue("n"), fs.getvalue("a", "0")
-            if id_p: cur.execute("UPDATE perfiles SET strNombrePerfil=%s, bitAdministrador=%s WHERE id=%s", (n, a, id_p))
-            else: cur.execute("INSERT INTO perfiles (strNombrePerfil, bitAdministrador) VALUES (%s,%s)", (n, a))
-        elif path == "/api/del_per": cur.execute("DELETE FROM perfiles WHERE id=%s", (fs.getvalue("id"),))
-        elif path == "/api/save_mod":
-            id_m = fs.getvalue("id"); n, p = fs.getvalue("n"), fs.getvalue("p")
-            if id_m: cur.execute("UPDATE modulos SET strNombreModulo=%s, strMenuPadre=%s WHERE id=%s", (n, p, id_m))
-            else: cur.execute("INSERT INTO modulos (strNombreModulo, strMenuPadre) VALUES (%s,%s)", (n, p))
-        elif path == "/api/del_mod": cur.execute("DELETE FROM modulos WHERE id=%s", (fs.getvalue("id"),))
         
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # --- VISTAS ---
+    # --- VISTA USUARIOS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
     if path == "/usuarios":
-        try:
-            cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-            usrs = cur.fetchall()
-            cur.execute("SELECT id, strNombrePerfil FROM perfiles")
-            perfs = cur.fetchall()
-            p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
-            
-            rows = ""
-            for u in usrs:
-                # Blindaje contra campos faltantes
-                img_data = u.get('strImagen')
-                img_src = f"data:image/png;base64,{img_data}" if img_data else "https://ui-avatars.com/api/?name=" + u.get('strNombreUsuario', 'U')
-                estado_cls = "bg-green" if u.get('strEstado') == "Activo" else "bg-red"
-                
-                rows += f"""<tr>
-                    <td><img src='{img_src}' style='width:35px;height:35px;border-radius:50%;object-fit:cover;' onerror="this.src='https://via.placeholder.com/35'"></td>
-                    <td><b>{u.get('strNombreUsuario','-')}</b></td>
-                    <td>{u.get('strCorreo','-')}</td>
-                    <td>{u.get('strNombrePerfil','SIN PERFIL')}</td>
-                    <td><span class='badge {estado_cls}'>{u.get('strEstado','Inactivo').upper()}</span></td>
-                    <td><button class='btn-red' onclick='delUsr({u['id']})'>Eliminar</button></td>
-                </tr>"""
-            
-            content = f"""<div class='card'><div style='display:flex; justify-content:space-between; align-items:center;'><h2>Gestión de Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo Usuario</button></div>
-                <table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows}</table></div>
-                <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU">
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                    <div><label>Nombre de Usuario *</label><input name="u" required></div><div><label>Correo Electrónico *</label><input name="e" type="email" required></div>
-                    <div><label>Contraseña *</label><input name="p" type="password" required></div><div><label>Número Celular</label><input name="c"></div>
-                    <div><label>Perfil *</label><select name="pid">{p_opts}</select></div><div><label>Estado</label><select name="est"><option>Activo</option><option>Inactivo</option></select></div>
-                </div><label style="margin-top:10px;">Fotografía de Perfil</label><input type="file" name="img"><button type="submit" class="btn-blue" style="width:100%; margin-top:20px;">Guardar Usuario</button>
-                <button type="button" onclick="document.getElementById('mU').style.display='none'" style="width:100%; background:transparent; border:none; color:#64748b; cursor:pointer; margin-top:10px;">Cancelar</button></form></div></div>
-                <script>document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault();await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}});location.reload();}};
-                async function delUsr(id){{if(confirm('¿Eliminar usuario?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_user',{{method:'POST',body:fd}});location.reload();}}}}</script>"""
-        except Exception as e:
-            content = f"<div class='card'><h2>Error en Pantalla</h2><p style='color:#ef4444;'>{str(e)}</p></div>"
-
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles"); rows = cur.fetchall()
-        rows_h = "".join([f"<tr><td>{r['id']}</td><td>{r['strNombrePerfil']}</td><td>{'SÍ' if r['bitAdministrador'] else 'NO'}</td><td><button class='btn-edit' onclick='editPer({r['id']}, \"{r['strNombrePerfil']}\", {r['bitAdministrador']})'>Editar</button><button class='btn-red' onclick='delPer({r['id']})'>Eliminar</button></td></tr>" for r in rows])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Perfiles</h2><button class='btn-blue' onclick='document.getElementById(\"mPer\").style.display=\"block\"'>+ Nuevo Perfil</button></div><table><tr><th>ID</th><th>NOMBRE</th><th>ADMIN</th><th>ACCIONES</th></tr>{rows_h}</table></div><div id='mPer' class='modal'><div class='modal-content'><h3>Datos Perfil</h3><form id='fPer'><input type='hidden' name='id' id='eid'><input name='n' id='en' placeholder='Nombre' required><select name='a' id='ea'><option value='0'>Usuario</option><option value='1'>Admin</option></select><button type='submit' class='btn-blue'>Guardar</button></form></div></div><script>const editPer=(id,n,a)=>{{document.getElementById('eid').value=id;document.getElementById('en').value=n;document.getElementById('ea').value=a;document.getElementById('mPer').style.display='block';}};document.getElementById('fPer').onsubmit=async(e)=>{{e.preventDefault();await fetch('/api/save_per',{{method:'POST',body:new FormData(e.target)}});location.reload();}};async function delPer(id){{if(confirm('¿Eliminar?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_per',{{method:'POST',body:fd}});location.reload();}}}}</script>"
-
-    elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos"); rows = cur.fetchall()
-        rows_h = "".join([f"<tr><td>{r['strNombreModulo']}</td><td>{r.get('strMenuPadre','')}</td><td><button class='btn-edit' onclick='editMod({r['id']}, \"{r['strNombreModulo']}\", \"{r['strMenuPadre']}\")'>Editar</button><button class='btn-red' onclick='delMod({r['id']})'>Eliminar</button></td></tr>" for r in rows])
-        content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Módulos</h2><button class='btn-blue' onclick='document.getElementById(\"mMod\").style.display=\"block\"'>+ Nuevo</button></div><table><tr><th>Nombre</th><th>Padre</th><th>Acciones</th></tr>{rows_h}</table></div><div id='mMod' class='modal'><div class='modal-content'><h3>Datos Módulo</h3><form id='fMod'><input type='hidden' name='id' id='mid'><input name='n' id='mn' required><select name='p' id='mp'><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option></select><button type='submit' class='btn-blue'>Guardar</button></form></div></div><script>const editMod=(id,n,p)=>{{document.getElementById('mid').value=id;document.getElementById('mn').value=n;document.getElementById('mp').value=p;document.getElementById('mMod').style.display='block';}};document.getElementById('fMod').onsubmit=async(e)=>{{e.preventDefault();await fetch('/api/save_mod',{{method:'POST',body:new FormData(e.target)}});location.reload();}};async function delMod(id){{if(confirm('¿Eliminar?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_mod',{{method:'POST',body:fd}});location.reload();}}}}</script>"
-
-    elif path == "/permisos":
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles"); perfs = cur.fetchall()
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
+        # Usamos COALESCE para evitar que la fila desaparezca si el perfil es nulo
+        cur.execute("""
+            SELECT u.*, COALESCE(p.strNombrePerfil, 'SIN PERFIL') as perfil_nombre 
+            FROM usuarios u 
+            LEFT JOIN perfiles p ON u.idPerfil = p.id
+        """)
+        usrs = cur.fetchall()
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles")
+        perfs = cur.fetchall()
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
-        m_rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"""<div class='card'><h2>Matriz de Permisos</h2><label>Seleccione Perfil:</label><select id="selPer" style="width:300px; margin-bottom:20px;" onchange="document.getElementById('tP').style.display=this.value?'block':'none'"><option value="">-- Seleccionar --</option>{p_opts}</select><div id="tP" style="display:none;"><table><tr><th>Módulo</th><th>C</th><th>A</th><th>E</th><th>D</th></tr>{m_rows}</table><button class='btn-blue' style='margin-top:20px;'>Guardar Permisos</button></div></div>"""
+        
+        rows = ""
+        for u in usrs:
+            img_data = u.get('strImagen')
+            img_src = f"data:image/png;base64,{img_data}" if img_data else f"https://ui-avatars.com/api/?name={u.get('strNombreUsuario')}&background=random"
+            estado_cls = "bg-green" if u.get('strEstado') == "Activo" else "bg-red"
+            
+            rows += f"""<tr>
+                <td><img src='{img_src}' style='width:35px;height:35px;border-radius:50%;object-fit:cover;'></td>
+                <td><b>{u.get('strNombreUsuario','-')}</b></td>
+                <td>{u.get('strCorreo','-')}</td>
+                <td>{u.get('perfil_nombre','-')}</td>
+                <td><span class='badge {estado_cls}'>{str(u.get('strEstado','Inactivo')).upper()}</span></td>
+                <td><button class='btn-red' onclick='delUsr({u['id']})'>Eliminar</button></td>
+            </tr>"""
+        
+        content = f"""<div class='card'><div style='display:flex; justify-content:space-between; align-items:center;'><h2>Gestión de Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo Usuario</button></div>
+            <table><tr><th>IMG</th><th>USUARIO</th><th>CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr>{rows if rows else "<tr><td colspan='6' style='text-align:center;'>No hay usuarios registrados</td></tr>"}</table></div>
+            <div id="mU" class="modal"><div class="modal-content"><h3>Nuevo Usuario</h3><form id="fU">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+                <div><label>Nombre de Usuario *</label><input name="u" required></div><div><label>Correo Electrónico *</label><input name="e" type="email" required></div>
+                <div><label>Contraseña *</label><input name="p" type="password" required></div><div><label>Número Celular</label><input name="c"></div>
+                <div><label>Perfil *</label><select name="pid" required><option value="">-- Seleccione --</option>{p_opts}</select></div>
+                <div><label>Estado</label><select name="est"><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
+            </div><label style="margin-top:10px;">Fotografía (Opcional)</label><input type="file" name="img" accept="image/*"><button type="submit" class="btn-blue" style="width:100%; margin-top:20px;">Guardar Usuario</button>
+            <button type="button" onclick="document.getElementById('mU').style.display='none'" style="width:100%; background:transparent; border:none; color:#64748b; cursor:pointer; margin-top:10px;">Cancelar</button></form></div></div>
+            <script>document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault(); const res = await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}}); if(res.ok) location.reload(); else alert('Error al guardar');}};
+            async function delUsr(id){{if(confirm('¿Eliminar usuario?')){{const fd=new FormData();fd.append('id',id);await fetch('/api/del_user',{{method:'POST',body:fd}});location.reload();}}}}</script>"""
 
-    elif path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
     else:
-        content = "<div class='card'><h1>Dashboard</h1><p>Bienvenido al panel administrativo de Clínica Santa Mónica.</p></div>"
+        content = "<div class='card'><h1>Bienvenido</h1><p>Usa el menú superior para navegar.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
