@@ -2,7 +2,6 @@
 import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies 
 
-# Configuración de Conexión
 DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
 JWT_SECRET = "CLAVE_MAESTRA_2026"
 
@@ -20,27 +19,32 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# FUNCIÓN DE REPARACIÓN DE TABLA (EJECUCIÓN AUTOMÁTICA)
+# RECONSTRUCCIÓN TOTAL DE LA TABLA
 # =========================================================
-def reparar_y_crear_admin():
+def reconstruir_base_datos():
     try:
         conn = conectar_bd(); cur = conn.cursor()
-        # 1. Aseguramos que la tabla tenga la estructura que el código espera
+        # ¡IMPORTANTE! Borramos la tabla vieja para eliminar columnas que dan error (como strImagen faltante)
+        cur.execute("DROP TABLE IF EXISTS usuarios")
+        
+        # Creamos la tabla con TODAS las columnas que pide tu sistema
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS usuarios (
+            CREATE TABLE usuarios (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                strNombreUsuario VARCHAR(100) NOT NULL,
-                strPwd VARCHAR(255) NOT NULL,
+                strNombreUsuario VARCHAR(100),
+                strPwd VARCHAR(255),
                 strCorreo VARCHAR(100),
-                strEstado VARCHAR(20) DEFAULT 'Activo'
+                idPerfil INT DEFAULT NULL,
+                strEstado VARCHAR(20) DEFAULT 'Activo',
+                strImagen LONGTEXT
             )
         """)
-        # 2. Limpiamos si hay basura y creamos el admin de cero
-        cur.execute("DELETE FROM usuarios WHERE strNombreUsuario = 'admin'")
+        
+        # Insertamos al admin
         cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strEstado) VALUES (%s, %s, %s)", 
                    ('admin', hash_password('123456'), 'Activo'))
-        conn.commit()
-        cur.close(); conn.close()
+        
+        conn.commit(); cur.close(); conn.close()
         return True
     except Exception as e:
         return str(e)
@@ -52,34 +56,34 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
-    # Intentar reparar la base de datos en cada carga de login para asegurar acceso
-    if path in ["/", "/login"]:
-        reparar_y_crear_admin()
+    # Si entras a la URL de restaurar, se limpia todo
+    if path == "/restaurar_total":
+        msg = reconstruir_base_datos()
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return [f"<h1>Resultado: {msg}</h1><p><a href='/login'>Ir al Login</a></p>".encode("utf-8")]
 
-    # VISTA DE LOGIN
+    # LOGIN
     if path in ["/", "/login"] and method == "GET":
         html = """
         <html><body style="background:#0f172a; color:white; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
             <div style="background:#1e293b; padding:40px; border-radius:10px; border:1px solid #334155; width:300px; text-align:center;">
                 <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
-                <p style="font-size:0.8rem; color:#94a3b8;">Acceso de Rescate Activado</p>
                 <form action="/api/login" method="POST">
                     <input name="u" value="admin" style="width:100%; padding:10px; margin:10px 0; border-radius:5px; border:1px solid #334155; background:#0f172a; color:white;">
-                    <input name="p" type="password" placeholder="Contraseña" style="width:100%; padding:10px; margin:10px 0; border-radius:5px; border:1px solid #334155; background:#0f172a; color:white;">
-                    <button type="submit" style="width:100%; padding:10px; background:#2563eb; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">INGRESAR</button>
+                    <input name="p" type="password" placeholder="Clave" style="width:100%; padding:10px; margin:10px 0; border-radius:5px; border:1px solid #334155; background:#0f172a; color:white;">
+                    <button type="submit" style="width:100%; padding:10px; background:#2563eb; color:white; border:none; border-radius:5px; cursor:pointer;">INGRESAR</button>
                 </form>
+                <hr style="border:0; border-top:1px solid #334155; margin:20px 0;">
+                <a href="/restaurar_total" style="color:#ef4444; font-size:0.8rem; text-decoration:none;">⚠️ Si falla, clic aquí para REPARAR TODO</a>
             </div>
         </body></html>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [html.encode("utf-8")]
 
-    # PROCESO DE LOGIN
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u = fs.getvalue("u")
-        p = hash_password(fs.getvalue("p"))
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
         
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        # Buscamos con los nombres de columna exactos que acabamos de crear arriba
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
         user = cur.fetchone(); cur.close(); conn.close()
         
@@ -88,12 +92,11 @@ def application(environ, start_response):
             start_response("303 See Other", [("Location", "/dashboard"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
             return [b""]
         else:
-            start_response("200 OK", [("Content-Type", "text/html")]); 
-            return [b"Error: No se pudo validar el usuario. Revisa los logs de Railway."]
+            start_response("200 OK", [("Content-Type", "text/html")])
+            return [b"Credenciales incorrectas. Intenta el boton 'Reparar Todo' si el admin no existe."]
 
-    # DASHBOARD SIMPLE (Para probar que entraste)
     if path == "/dashboard":
         start_response("200 OK", [("Content-Type", "text/html")])
-        return [b"<h1>BIENVENIDO ADMIN</h1><p>Has ingresado correctamente. <a href='/login'>Cerrar sesion</a></p>"]
+        return [b"<h1>ENTRASTE CORRECTAMENTE</h1><p>Ahora puedes volver a crear tus usuarios.</p>"]
 
-    start_response("404 Not Found", []); return [b"Pagina no encontrada"]
+    start_response("404 Not Found", []); return [b""]
