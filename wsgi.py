@@ -31,11 +31,14 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN (SCRIPTS DE PAGINACIÓN Y TOGGLE)
+# MAQUETACIÓN (CSS Y JS DE PAGINACIÓN)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
+        cur.close(); conn.close()
         menu_html = ""
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
@@ -63,36 +66,32 @@ def render_layout(title, content, user=None):
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; padding:15px; border-bottom:2px solid #334155;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
-        .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
-        .modal-content{{background:#ffffff; color:#334155; margin:5% auto; padding:25px; width:450px; border-radius:12px;}}
-        .modal-content input, .modal-content select {{width:100%; padding:10px; margin:10px 0; border:1px solid #ccc; border-radius:5px;}}
+        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px; width:100%;}}
         .pagination{{margin-top:20px; display:flex; gap:5px; justify-content:center;}}
         .page-btn{{padding:8px 12px; background:#1e293b; border:1px solid #334155; color:white; cursor:pointer; border-radius:4px;}}
+        .page-btn.active{{background:#2563eb; border-color:#2563eb;}}
     </style>
     <script>
         function paginate(tableId) {{
             const table = document.getElementById(tableId);
             if(!table) return;
             const rows = Array.from(table.tBodies[0].rows);
-            const perPage = 5;
-            const totalPages = Math.ceil(rows.length / perPage);
-            const container = document.getElementById('pagButtons');
-            if(totalPages <= 1) return;
-            function showPage(p) {{
-                rows.forEach((r, i) => r.style.display = (i >= (p-1)*perPage && i < p*perPage) ? '' : 'none');
-                Array.from(container.children).forEach((b, i) => b.style.background = (i+1 === p) ? '#2563eb' : '#1e293b');
+            const size = 5;
+            const pages = Math.ceil(rows.length / size);
+            const container = document.getElementById('pag');
+            if(pages <= 1) return;
+            
+            function show(p) {{
+                rows.forEach((r, i) => r.style.display = (i >= (p-1)*size && i < p*size) ? '' : 'none');
+                container.querySelectorAll('button').forEach((b, i) => b.style.background = (i+1 === p) ? '#2563eb' : '#1e293b');
             }}
-            for(let i=1; i<=totalPages; i++) {{
-                let btn = document.createElement('button'); btn.innerText = i; btn.className = 'page-btn';
-                btn.onclick = () => showPage(i); container.appendChild(btn);
+            for(let i=1; i<=pages; i++) {{
+                let b = document.createElement('button'); b.innerText = i; b.className = 'page-btn';
+                b.onclick = () => show(i); container.appendChild(b);
             }}
-            showPage(1);
+            show(1);
         }}
-        function togglePermisos() {{
-            const checks = document.querySelectorAll('#tP input[type="checkbox"]');
-            const allChecked = Array.from(checks).every(c => c.checked);
-            checks.forEach(c => c.checked = !allChecked);
-        }}
+        function setAll() {{ document.querySelectorAll('#tP input[type="checkbox"]').forEach(c => c.checked = true); }}
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -104,18 +103,20 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # LOGIN (ESTRICTAMENTE EL QUE TE FUNCIONA)
+    # LOGIN EXACTAMENTE COMO TU CÓDIGO FUNCIONAL
     if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px; margin:100px auto; text-align:center;'>
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
-            <form id='fL'><input name='u' placeholder='Usuario' style='width:100%; padding:10px; margin-bottom:10px;' required>
-            <input name='p' type='password' placeholder='Contraseña' style='width:100%; padding:10px;' required>
+            <form id='fL'>
+            <input name='u' placeholder='Usuario' style='margin-bottom:10px;' required>
+            <input name='p' type='password' placeholder='Contraseña' required>
             <div style="margin:20px 0; display:flex; justify-content:center;"><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div></div>
             <button type='button' onclick='doLogin()' class='btn-blue' style='width:100%;'>Entrar</button></form></div>
             <script>async function doLogin(){{
-                const c = grecaptcha.getResponse(); if(!c){{ alert("Captcha requerido"); return; }}
+                const captcha = grecaptcha.getResponse();
+                if(!captcha){{ alert("Verifica el captcha"); return; }}
                 const res=await fetch('/api/login',{{method:'POST', body:new FormData(document.getElementById('fL'))}});
-                const data=await res.json(); if(data.ok) location.href='/dashboard'; else alert('Error de login');
+                const data=await res.json(); if(data.ok) location.href='/dashboard'; else alert('Credenciales incorrectas');
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
@@ -134,36 +135,25 @@ def application(environ, start_response):
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- API POST (RECUPERADA) ---
-    if method == "POST":
-        conn = conectar_bd(); cur = conn.cursor(); fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        if path == "/api/save_user":
-            cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strEstado, idPerfil) VALUES (%s,%s,%s,%s,%s)",
-                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), "Activo", 1))
-        elif path == "/api/del_user":
-            cur.execute("DELETE FROM usuarios WHERE id=%s", (fs.getvalue("id"),))
-        conn.commit(); cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
-
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
     if path == "/usuarios":
-        cur.execute("SELECT * FROM usuarios"); usrs = cur.fetchall()
-        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td><button class='btn-red' onclick='del({u['id']})'>Eliminar</button></td></tr>" for u in usrs])
-        content = f"""<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo</button></div>
-        <table id='tMain'><thead><tr><th>Usuario</th><th>Correo</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table><div id='pagButtons' class='pagination'></div></div>
-        <div id='mU' class='modal'><div class='modal-content'><h3>Nuevo Usuario</h3><form id='fU'><input name='u' placeholder='Usuario'><input name='e' placeholder='Email'><input name='p' type='password' placeholder='Pass'><button class='btn-blue'>Guardar</button></form></div></div>
-        <script>paginate('tMain'); document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault(); await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}}); location.reload();}};</script>"""
+        cur.execute("SELECT * FROM usuarios")
+        usrs = cur.fetchall()
+        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td></tr>" for u in usrs])
+        content = f"<h2>Usuarios</h2><table id='mT'><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th></tr></thead><tbody>{rows}</tbody></table><div id='pag' class='pagination'></div><script>paginate('mT')</script>"
 
     elif path == "/permisos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
+        cur.execute("SELECT * FROM modulos")
+        mods = cur.fetchall()
         m_rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"""<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Permisos</h2><button class='btn-blue' onclick='togglePermisos()'>Marcar / Desmarcar Todos</button></div>
-        <div id='tP'><table><tr><th>Módulo</th><th>C</th><th>A</th><th>E</th><th>D</th></tr>{m_rows}</table></div></div>"""
+        content = f"""<div class='card'>
+            <div style='display:flex; justify-content:space-between;'><h2>Permisos</h2><button onclick='setAll()' class='btn-blue'>✔️ Seleccionar Todos</button></div>
+            <div id='tP'><table>{m_rows}</table></div></div>"""
     
     else:
-        content = "<h1>Dashboard</h1><p>Bienvenido al sistema.</p>"
+        content = "<h1>Dashboard</h1>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
