@@ -6,7 +6,7 @@ from http import cookies
 # CONFIGURACIÓN
 # =========================================================
 DB_URL = "mysql://root:xHpkRjCgnCeqzkrMpNVYcgCobhMVNRCi@mysql.railway.internal:3306/railway"
-JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_FINAL_FIX"
+JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_FINAL_FIX_V2"
 
 def hash_password(p): return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
 def b64url_encode(d): return base64.urlsafe_b64encode(d).rstrip(b"=").decode("utf-8")
@@ -36,12 +36,6 @@ def inicializar_datos():
     cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(100), strPwd VARCHAR(255), strCorreo VARCHAR(100), strEstado VARCHAR(20), idPerfil INT)")
     cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(100), strRuta VARCHAR(100), strMenuPadre VARCHAR(50))")
     cur.execute("CREATE TABLE IF NOT EXISTS permisos (idPerfil INT, idModulo INT, blnCrear TINYINT, blnEditar TINYINT, blnEliminar TINYINT, blnVer TINYINT, PRIMARY KEY(idPerfil, idModulo))")
-    
-    # Reparación de columnas por si acaso
-    for col in [("strRuta", "VARCHAR(100)"), ("strMenuPadre", "VARCHAR(50)")]:
-        try: cur.execute(f"ALTER TABLE modulos ADD COLUMN {col[0]} {col[1]}")
-        except: pass
-    
     conn.commit(); cur.close(); conn.close()
 
 # =========================================================
@@ -103,13 +97,13 @@ def render_layout(title, content, user=None):
         .modal-content input, .modal-content select {{ background: #f8fafc; border: 1px solid #cbd5e1; color: #1e293b; }}
         .close-x {{ position:absolute; top:15px; right:20px; color:#64748b; cursor:pointer; font-size:24px; }}
         .btn-salir {{ background: #ef4444; color:white; text-decoration:none; padding:8px 15px; border-radius:8px; font-size: 13px; }}
-        .label-req {{ font-weight: bold; margin-bottom: 5px; display: block; font-size: 14px; }}
+        .label-req {{ font-weight: bold; margin-bottom: 5px; display: block; font-size: 14px; color: #1e293b; }}
         .label-req::after {{ content: " *"; color: #ef4444; }}
     </style>
     <script>
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
-        function toggleAll() {{ document.querySelectorAll('input[type="checkbox"]').forEach(i => i.checked = !i.checked); }}
+        function toggleAll() {{ document.querySelectorAll('tbody input[type="checkbox"]').forEach(i => i.checked = !i.checked); }}
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
             const r = await res.json();
@@ -127,7 +121,7 @@ def application(environ, start_response):
     inicializar_datos()
     u_data = verify_jwt(environ)
 
-    # --- LOGIN ---
+    # Rutas públicas
     if path == "/login":
         content = '<div class="card" style="width:350px; margin:100px auto;"><h2>Iniciar Sesión</h2><form id="fL"><input name="u" placeholder="Usuario"><input name="p" type="password" placeholder="Contraseña"><button type="button" class="btn-emerald" style="width:100%" onclick="doLogin()">Entrar</button></form></div><script>async function doLogin(){{ const r=await fetch("/api/login",{{method:"POST",body:new FormData(document.getElementById("fL"))}}); const d=await r.json(); if(d.ok)location.href="/dashboard"; else alert("Datos incorrectos");}}</script>'
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode()]
@@ -144,6 +138,10 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
+    # Protección de rutas
+    if not u_data:
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
     # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
@@ -156,22 +154,23 @@ def application(environ, start_response):
         except Exception as e: r = json.dumps({"ok":False, "msg":str(e)}).encode()
         cur.close(); conn.close(); start_response("200 OK", [("Content-Type", "application/json")]); return [r]
 
-    if not u_data:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
     # --- VISTAS ---
     if path == "/modulos":
-        # Módulos estáticos del sistema + base de datos
         mods_fijos = [
             {'id': '-', 'strNombreModulo': 'Perfiles', 'strRuta': '/perfiles', 'strMenuPadre': 'Seguridad'},
             {'id': '-', 'strNombreModulo': 'Módulos', 'strRuta': '/modulos', 'strMenuPadre': 'Seguridad'},
             {'id': '-', 'strNombreModulo': 'Usuarios', 'strRuta': '/usuarios', 'strMenuPadre': 'Seguridad'},
-            {'id': '-', 'strNombreModulo': 'Permisos', 'strRuta': '/permisos', 'strMenuPadre': 'Seguridad'}
+            {'id': '-', 'strNombreModulo': 'Permisos', 'strRuta': '/permisos', 'strMenuPadre': 'Seguridad'},
+            {'id': '-', 'strNombreModulo': 'Principal 1', 'strRuta': '#', 'strMenuPadre': 'Sistema'},
+            {'id': '-', 'strNombreModulo': 'Principal 2', 'strRuta': '#', 'strMenuPadre': 'Sistema'}
         ]
         cur.execute("SELECT * FROM modulos"); mods_db = cur.fetchall()
-        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td>{m['strMenuPadre']}</td><td>{f'<button class...` onclick=\"runCrud(\'delete\',\'modulos\',{m[\'id\']})\">Eliminar</button>' if m['id']!='-' else 'Sistema'}</td></tr>" for m in mods_fijos + mods_db])
+        rows = ""
+        for m in mods_fijos + mods_db:
+            btn = "<em>Sistema</em>" if m['id'] == '-' else f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Eliminar</button>"
+            rows += f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td>{m['strMenuPadre']}</td><td>{btn}</td></tr>"
         
         content = f"""<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' onclick="openM('mM')">+ Nuevo Módulo</button>
             <table><thead><tr><th>Nombre</th><th>Ruta</th><th>Agrupar en Menú</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>
@@ -181,11 +180,11 @@ def application(environ, start_response):
             <label class="label-req">Nombre del Módulo</label><input id="mn" placeholder="Ej: Inventarios">
             <label class="label-req">Ruta</label><input id="mr" placeholder="/inventario">
             <label>Agrupar en Menú</label>
-            <div style="display:flex; gap:10px;">
-                <select id="mp" style="flex:1"><option value="">-- Sin asignar --</option><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option></select>
-                <button class="btn-emerald" style="height:42px" onclick="alert('Funcionalidad de crear nueva categoría')">Crear Nuevo</button>
+            <div style="display:flex; gap:10px; margin-bottom:20px;">
+                <select id="mp" style="flex:1; margin-bottom:0;"><option value="">-- Sin asignar --</option><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option></select>
+                <button class="btn-emerald" style="height:42px" onclick="const n=prompt('Nueva Categoría:'); if(n){{const s=document.getElementById('mp'); const o=document.createElement('option'); o.text=n; s.add(o); s.value=n;}}">Crear Nuevo</button>
             </div>
-            <div style="display:flex; gap:10px; margin-top:20px;">
+            <div style="display:flex; gap:10px;">
                 <button class="btn-blue" style="flex:1" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})">Guardar</button>
                 <button class="btn-emerald" style="background:#f1f5f9; color:#475569; flex:1" onclick="closeM('mM')">Cancelar</button>
             </div></div></div>"""
@@ -193,15 +192,16 @@ def application(environ, start_response):
     elif path == "/permisos":
         pid = int(urllib.parse.parse_qs(environ.get('QUERY_STRING','')).get('p',['0'])[0])
         cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        cur.execute("SELECT id, strNombreModulo as n FROM modulos"); mods_db = cur.fetchall()
-        all_mods = [{'id':1, 'n':'Perfiles'},{'id':2,'n':'Módulos'},{'id':3,'n':'Usuarios'},{'id':4,'n':'Permisos'}] + mods_db
+        # Consolidar todos los módulos para permisos
+        cur.execute("SELECT id, strNombreModulo as n FROM modulos")
+        all_mods = [{'id':1, 'n':'Perfiles'},{'id':2,'n':'Módulos'},{'id':3,'n':'Usuarios'},{'id':4,'n':'Permisos'},{'id':5,'n':'Principal 1'},{'id':6,'n':'Principal 2'}] + cur.fetchall()
         
         opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         m_rows = "".join([f"<tr><td>{m['n']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in all_mods])
         
         content = f"""<div class='card'><h2>🔐 Matriz de Permisos</h2>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <select style="width:300px" onchange="location.href='?p='+this.value"><option value='0'>-- Seleccionar Perfil --</option>{opts}</select>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <select style="width:300px; margin-bottom:0;" onchange="location.href='?p='+this.value"><option value='0'>-- Seleccionar Perfil --</option>{opts}</select>
                 <button class="btn-blue" onclick="toggleAll()">Seleccionar Todo</button>
             </div>
             <table><thead><tr><th>Módulo</th><th>Ver</th><th>Crear</th><th>Editar</th><th>Eliminar</th></tr></thead><tbody>{m_rows}</tbody></table>
@@ -210,7 +210,7 @@ def application(environ, start_response):
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
     else:
-        content = "<h2>Panel de Control</h2><p>Bienvenido al sistema administrativo de la Clínica.</p>"
+        content = f"<div class='card'><h2>Bienvenido, {u_data['u']}</h2><p>Usa el menú superior para navegar por el sistema.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
