@@ -89,7 +89,6 @@ def render_layout(title, content, user=None):
             if(res.ok) location.reload(); else alert("Error en el servidor");
         }}
 
-        // Función para cargar datos en el modal de edición
         function editM(modalId, data) {{
             for (let key in data) {{
                 let el = document.getElementById('edit_' + key);
@@ -152,29 +151,40 @@ def application(environ, start_response):
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # --- API CRUD (ACTUALIZADA) ---
+    # --- API CRUD (ACTUALIZADA CON RE-FOLIADO) ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
+        
+        # Ejecutar acción principal
         if p['action'] == 'delete': 
             cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
         elif p['action'] == 'save_modulo': 
             cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
         elif p['action'] == 'update_modulo':
             cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-        elif p['action'] == 'save_perfil': 
+        elif p['action'] == 'save_perfiles': # Cambiado para detectar tabla perfiles
             cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
         elif p['action'] == 'update_perfil':
             cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
+        elif p['action'] == 'save_perfil': 
+            cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
         elif p['action'] == 'save_usuario': 
             cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,'Activo')", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp']))
         elif p['action'] == 'update_usuario':
-            # Solo actualiza password si se envía uno nuevo
             if p['data'].get('p'):
                 cur.execute("UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s WHERE id=%s", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['id']))
             else:
                 cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s WHERE id=%s", (p['data']['u'], p['data']['idp'], p['id']))
         
+        # --- LÓGICA DE RE-FOLIADO DE IDs (Solo para Perfiles) ---
+        if p['table'] == 'perfiles' and p['action'] in ['delete', 'save_perfil']:
+            cur.execute("SET @count = 0;")
+            cur.execute("UPDATE perfiles SET id = (@count := @count + 1);")
+            cur.execute("SELECT COUNT(*) FROM perfiles")
+            total = cur.fetchone()[0]
+            cur.execute(f"ALTER TABLE perfiles AUTO_INCREMENT = {total + 1};")
+
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
