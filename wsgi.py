@@ -94,7 +94,7 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # --- API LOGIN ---
+    # --- API LOGIN (Sin cambios) ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
@@ -107,8 +107,16 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
 
+    # --- REDIRECCIÓN INICIAL ---
+    # Si entras a "/" te mandamos a "/login" a menos que ya estés logueado
+    if path == "/":
+        target = "/dashboard" if u_data else "/login"
+        start_response("303 See Other", [("Location", target)]); return [b""]
+
     # --- RUTA LOGIN ---
     if path == "/login":
+        if u_data: # Si ya tiene sesión, no le mostramos el login
+            start_response("303 See Other", [("Location", "/dashboard")]); return [b""]
         content = f"""<div class="card" style="width:350px; margin:100px auto; border-top: 4px solid var(--emerald);">
             <h2 style="text-align:center">Inicia Sesión</h2>
             <form id="fL">
@@ -144,7 +152,7 @@ def application(environ, start_response):
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
-    # --- VISTAS ---
+    # --- VISTAS RESTAURADAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
     if path == "/modulos":
