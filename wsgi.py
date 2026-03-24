@@ -5,7 +5,7 @@ from http import cookies
 # =========================================================
 # CONFIGURACIÓN
 # =========================================================
-DB_URL = os.getenv('DB_URL', 'mysql://root:mxvHDOGWiQGekUUTxIFAXnIpmRlHnFZu@mysql.railway.internal:3306/railway')
+DB_URL = os.getenv('DB_URL', 'mysql://root:xHpkRjCgnCeqzkrMpNVYcgCobhMVNRCi@mysql.railway.internal:3306/railway')
 JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
 
 def hash_password(p): return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
