@@ -4,7 +4,7 @@ from http import cookies
 
 # CONFIGURACIÓN
 DB_URL = "mysql://root:xHpkRjCgnCeqzkrMpNVYcgCobhMVNRCi@mysql.railway.internal:3306/railway"
-JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
+JWT_SECRET = "CLAVE_CORPORATIVA_2026"
 
 def hash_password(p): return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
 def b64url_encode(d): return base64.urlsafe_b64encode(d).rstrip(b"=").decode("utf-8")
@@ -29,111 +29,95 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN CON DISEÑO ORIGINAL
+# DISEÑO CORPORATIVO (ESTILO EMPRESA)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
         menu_html = ""
-        # Menús desplegables con el diseño original de tus capturas
-        for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
+        for m_padre in ["Seguridad", "Principal 1", "Principal 2", "prueba"]:
             links = ""
             if m_padre == "Seguridad":
-                links += '<a href="/perfiles">👤 Perfiles</a><a href="/modulos">📦 Módulos</a><a href="/permisos">🔐 Permisos</a><a href="/usuarios">👥 Usuarios</a>'
+                links += '<a href="/perfiles">Perfil</a><a href="/usuarios">Usuarios</a><a href="/permisos">Permisos</a>'
             menu_html += f'<div class="dropdown"><button class="dropbtn">{m_padre} ▾</button><div class="dropdown-content">{links}</div></div>'
         
-        nav = f"""<div class="top-nav">
-            <div class="nav-left"><span class="logo">🛡️ Clínica Santa Mónica</span><a href="/dashboard" class="nav-link">Inicio</a>{menu_html}</div>
-            <div class="nav-right"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none; margin-left:10px;">Salir</a></div>
+        nav = f"""<div class="header">
+            <div class="nav-container">
+                <div class="brand">🏢 EMPRESA</div>
+                <div class="menu-items">{menu_html}<a href="/logout" class="btn-salir">Salir</a></div>
+            </div>
         </div>"""
    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
-        body{{{{font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#0f172a; color:#f8fafc; margin:0; overflow-x:hidden;}}}}
+        body{{{{font-family:'Segoe UI', Arial, sans-serif; background:#f0f2f5; color:#334155; margin:0;}}}}
         
-        /* NAVBAR */
-        .top-nav{{{{background:#0b1120; padding:0 40px; height:60px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; position:sticky; top:0; z-index:100;}}}}
-        .nav-left{{{{display:flex; gap:15px; align-items:center;}}}}
-        .logo{{{{font-weight:bold; color:#38bdf8; font-size:1.1rem; margin-right:20px;}}}}
-        .nav-link{{{{color:#94a3b8; text-decoration:none; font-size:0.9rem; padding:20px 10px; transition:0.3s;}}}}
-        .nav-link:hover{{{{color:#38bdf8;}}}}
+        /* HEADER PROFESIONAL */
+        .header{{{{background:#2b4592; color:white; height:65px; box-shadow:0 2px 4px rgba(0,0,0,0.1);}}}}
+        .nav-container{{{{max-width:1400px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; height:100%; padding:0 20px;}}}}
+        .brand{{{{font-weight:bold; font-size:1.4rem; letter-spacing:1px;}}}}
         
-        /* DROPDOWNS */
-        .dropbtn{{{{background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:0.9rem; padding:20px 10px; font-family:inherit;}}}}
-        .dropdown{{{{position:relative; display:inline-block;}}}}
-        .dropdown-content{{{{display:none; position:absolute; background:#1e293b; min-width:200px; border-radius:8px; border:1px solid #334155; box-shadow:0 10px 15px -3px rgba(0,0,0,0.5); z-index:1000; overflow:hidden;}}}}
-        .dropdown-content a{{{{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem; transition:0.2s;}}}}
-        .dropdown-content a:hover{{{{background:#334155; color:#38bdf8;}}}}
+        /* MENU DESPLEGABLE */
+        .menu-items{{{{display:flex; align-items:center; gap:5px;}}}}
+        .dropbtn{{{{background:transparent; color:rgba(255,255,255,0.9); border:none; padding:22px 15px; cursor:pointer; font-size:0.95rem; font-family:inherit;}}}}
+        .dropdown{{{{position:relative;}}}}
+        .dropdown-content{{{{display:none; position:absolute; background:white; min-width:180px; box-shadow:0 8px 16px rgba(0,0,0,0.1); z-index:1000; border-radius:0 0 8px 8px;}}}}
+        .dropdown-content a{{{{color:#334155; padding:12px 16px; text-decoration:none; display:block; font-size:0.9rem;}}}}
+        .dropdown-content a:hover{{{{background:#f8fafc; color:#2b4592;}}}}
         .dropdown:hover .dropdown-content{{{{display:block;}}}}
-        .dropdown:hover .dropbtn{{{{color:#38bdf8;}}}}
+        .dropdown:hover .dropbtn{{{{background:rgba(255,255,255,0.1);}}}}
+        .btn-salir{{{{background:#e11d48; color:white; padding:8px 18px; border-radius:6px; text-decoration:none; font-weight:bold; margin-left:15px; font-size:0.85rem;}}}}
 
-        /* CONTENEDORES */
-        .container{{{{padding:30px 40px; max-width:1200px; margin:0 auto;}}}}
-        .card{{{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155; margin-bottom:20px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.2);}}}}
+        /* CONTENIDO PRINCIPAL */
+        .main-content{{{{padding:40px 20px; max-width:1200px; margin:0 auto;}}}}
+        .card-white{{{{background:white; border-radius:12px; padding:40px; box-shadow:0 1px 3px rgba(0,0,0,0.1); border:1px solid #e2e8f0; text-align:center;}}}}
         
-        /* TABLAS */
-        table{{{{width:100%; border-collapse:collapse; margin-top:20px; background:#1e293b;}}}}
-        th{{{{text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; padding:15px; border-bottom:2px solid #334155;}}}}
-        td{{{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem; color:#e2e8f0;}}}}
-        tr:hover td{{{{background:#1a2234;}}}}
-
-        /* BOTONES */
-        .btn-blue{{{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600; transition:0.2s;}}}}
-        .btn-blue:hover{{{{background:#1d4ed8; transform:translateY(-1px);}}}}
-        .btn-red{{{{background:#ef4444; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:0.8rem;}}}}
+        /* TABLAS ESTILO GESTIÓN */
+        .table-card{{{{background:white; border-radius:8px; border:1px solid #e2e8f0; overflow:hidden;}}}}
+        .table-header{{{{padding:20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;}}}}
+        table{{{{width:100%; border-collapse:collapse;}}}}
+        th{{{{background:#f8fafc; text-align:left; color:#64748b; font-size:0.8rem; text-transform:uppercase; padding:15px; border-bottom:1px solid #e2e8f0;}}}}
+        td{{{{padding:15px; border-bottom:1px solid #f1f5f9; font-size:0.95rem;}}}}
+        .btn-action{{{{color:#2563eb; text-decoration:none; margin-right:10px; font-size:0.85rem; font-weight:600;}}}}
+        .btn-delete{{{{color:#ef4444; text-decoration:none; font-size:0.85rem; font-weight:600;}}}}
         
         /* INPUTS */
-        input, select{{{{background:#0f172a; border:1px solid #334155; color:white; padding:12px; border-radius:8px; width:100%; margin-bottom:15px; font-size:0.9rem;}}}}
-        input:focus{{{{border-color:#38bdf8; outline:none;}}}}
+        input{{{{background:#fff; border:1px solid #cbd5e1; padding:12px; border-radius:8px; width:100%; margin-bottom:15px;}}}}
     </style>
-    <script>
-        function toggleAll() {{
-            const checks = document.querySelectorAll('input[type="checkbox"]');
-            const state = Array.from(checks).every(c => c.checked);
-            checks.forEach(c => c.checked = !state);
-        }}
-    </script>
-    </head><body>{nav}<div class='container'>{content}</div></body></html>"""
+    </head><body>{nav}<div class='main-content'>{content}</div></body></html>"""
 
-# =========================================================
-# CONTROLADOR WSGI
-# =========================================================
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
-    method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # VISTA DE LOGIN
-    if path in ["/", "/login"] and method == "GET":
-        content = """<div style='display:flex; justify-content:center; align-items:center; min-height:80vh;'>
-            <div class='card' style='width:380px; text-align:center;'>
-                <h2 style="color:#38bdf8; margin-bottom:10px;">Clínica Santa Mónica</h2>
-                <p style="color:#94a3b8; font-size:0.9rem; margin-bottom:25px;">Ingresa tus credenciales para continuar</p>
+    # LOGIN ESTILO CORPORATIVO
+    if path in ["/", "/login"]:
+        content = """<div style='margin-top:50px; display:flex; justify-content:center;'>
+            <div class='card-white' style='width:400px;'>
+                <h2 style='color:#1e293b; margin-top:0;'>Bienvenido</h2>
+                <p style='color:#64748b; margin-bottom:30px;'>Inicia sesión en tu cuenta de Empresa</p>
                 <form id='fL'>
                     <input name='u' placeholder='Usuario' required>
                     <input name='p' type='password' placeholder='Contraseña' required>
-                    <div style="margin:20px 0; display:flex; justify-content:center;">
-                        <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div>
+                    <div style='display:flex; justify-content:center; margin:20px 0;'>
+                        <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
                     </div>
-                    <button type='button' onclick='doLogin()' class='btn-blue' style='width:100%; padding:14px;'>Entrar al Sistema</button>
+                    <button type='button' onclick='doLogin()' style='background:#2b4592; color:white; border:none; padding:15px; width:100%; border-radius:8px; cursor:pointer; font-weight:bold;'>Ingresar</button>
                 </form>
             </div>
         </div>
         <script>
             async function doLogin() {
-                const c = grecaptcha.getResponse(); 
-                if(!c) { alert("Por favor, completa el captcha"); return; }
                 const res = await fetch('/api/login', { method:'POST', body:new FormData(document.getElementById('fL')) });
-                const data = await res.json(); 
-                if(data.ok) location.href='/dashboard'; 
-                else alert('Usuario o contraseña incorrectos');
+                const data = await res.json();
+                if(data.ok) location.href='/dashboard'; else alert('Acceso denegado');
             }
         </script>"""
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Acceso", content).encode("utf-8")]
+        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    # API DE LOGIN
-    if path == "/api/login" and method == "POST":
+    if path == "/api/login":
+        # ... (Lógica de login igual a la anterior)
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
@@ -141,48 +125,37 @@ def application(environ, start_response):
         user = cur.fetchone(); cur.close(); conn.close()
         if user:
             tk = jwt_encode({"u": u, "exp": time.time()+3600})
-            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly; SameSite=Lax")])
+            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # SEGURIDAD
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # VISTAS INTERNAS
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-
-    if path == "/usuarios":
-        cur.execute("SELECT * FROM usuarios"); usrs = cur.fetchall()
-        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td><span style='color:#4ade80;'>●</span> {u['strEstado']}</td><td><button class='btn-red'>Eliminar</button></td></tr>" for u in usrs])
-        content = f"""<div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <h2 style='margin:0;'>Gestión de Usuarios</h2>
-                <button class='btn-blue'>+ Nuevo Usuario</button>
-            </div>
-            <table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table>
+    # VISTAS INTERNAS ESTILO "EMPRESA"
+    if path == "/dashboard":
+        content = f"""<div class='card-white' style='max-width:700px; margin:0 auto;'>
+            <div style='background:#f1f5f9; width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px;'>👤</div>
+            <h1 style='margin:0;'>Bienvenido al Sistema</h1>
+            <h2 style='color:#2b4592;'>{u_data['u']} - <span style='color:#64748b; font-size:1rem;'>ADMINISTRADOR</span></h2>
+            <p style='color:#64748b;'>Selecciona un módulo en el menú superior para comenzar.</p>
         </div>"""
-
-    elif path == "/permisos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
-        m_rows = "".join([f"<tr><td><b>{m['strNombreModulo']}</b></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"""<div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <h2 style='margin:0;'>Matriz de Permisos</h2>
-                <button onclick='toggleAll()' class='btn-blue' style='background:#334155;'>Invertir Selección</button>
+    
+    elif path == "/perfiles":
+        content = """<div class='table-card'>
+            <div class='table-header'>
+                <h3 style='margin:0;'>Gestión de Perfiles</h3>
+                <button style='background:#2b4592; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;'>+ Nuevo Perfil</button>
             </div>
-            <table><thead><tr><th>Módulo</th><th>Crear (C)</th><th>Actualizar (A)</th><th>Eliminar (E)</th><th>Detalle (D)</th></tr></thead><tbody>{m_rows}</tbody></table>
-            <div style='margin-top:20px; text-align:right;'><button class='btn-blue'>Guardar Cambios</button></div>
+            <table><thead><tr><th>Nombre del Perfil</th><th style='text-align:right;'>Acciones</th></tr></thead>
+            <tbody>
+                <tr><td>Edelion</td><td style='text-align:right;'><a href='#' class='btn-action'>Editar</a><a href='#' class='btn-delete'>Eliminar</a></td></tr>
+                <tr><td>VENTAS</td><td style='text-align:right;'><a href='#' class='btn-action'>Editar</a><a href='#' class='btn-delete'>Eliminar</a></td></tr>
+                <tr><td>ADMINISTRADOR</td><td style='text-align:right;'><a href='#' class='btn-action'>Editar</a><a href='#' class='btn-delete'>Eliminar</a></td></tr>
+            </tbody></table>
         </div>"""
-
+    
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
-    
-    else: # DASHBOARD
-        content = f"""<div class='card' style='text-align:center; padding:50px;'>
-            <h1 style='color:#38bdf8;'>Panel de Control</h1>
-            <p style='color:#94a3b8; font-size:1.1rem;'>Bienvenido de nuevo, <b>{u_data['u']}</b>. Selecciona una opción en el menú superior.</p>
-        </div>"""
 
-    cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
