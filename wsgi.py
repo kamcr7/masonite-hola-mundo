@@ -31,32 +31,26 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# REPARACIÓN DE TABLAS E INICIALIZACIÓN
+# REPARACIÓN AUTOMÁTICA (MODO TOLERANTE)
 # =========================================================
 def inicializar_datos():
-    conn = conectar_bd(); cur = conn.cursor()
-    # Asegurar que las tablas tengan las columnas correctas
-    cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(100), strRuta VARCHAR(100))")
-    cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(100))")
-    cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(100), strPwd VARCHAR(255), strCorreo VARCHAR(100), strEstado VARCHAR(20))")
-    
-    # Insertar módulos obligatorios si no existen
-    modulos_defecto = [
-        ('Perfiles', '/perfiles'), ('Módulos', '/modulos'), 
-        ('Permisos', '/permisos'), ('Usuarios', '/usuarios'),
-        ('Principal 1', '/p1'), ('Principal 2', '/p2')
-    ]
-    cur.execute("SELECT COUNT(*) FROM modulos")
-    if cur.fetchone()[0] == 0:
-        cur.executemany("INSERT INTO modulos (strNombreModulo, strRuta) VALUES (%s, %s)", modulos_defecto)
-    
-    # Usuario admin inicial (si no hay ninguno)
-    cur.execute("SELECT COUNT(*) FROM usuarios")
-    if cur.fetchone()[0] == 0:
-        cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo, strEstado) VALUES (%s, %s, %s, %s)", 
-                   ('admin', hash_password('admin'), 'admin@clinica.com', 'Activo'))
-    
-    conn.commit(); cur.close(); conn.close()
+    try:
+        conn = conectar_bd(); cur = conn.cursor()
+        # Intentar crear tablas si no existen
+        cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(100))")
+        cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(100), strPwd VARCHAR(255), strCorreo VARCHAR(100), strEstado VARCHAR(20))")
+        cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(100), strRuta VARCHAR(100))")
+        
+        # Insertar admin por defecto si no hay usuarios
+        cur.execute("SELECT COUNT(*) FROM usuarios")
+        if cur.fetchone()[0] == 0:
+            cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo, strEstado) VALUES (%s, %s, %s, %s)", 
+                       ('admin', hash_password('admin'), 'admin@clinica.com', 'Activo'))
+        
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        # Si falla (por falta de columna strRuta), el sistema sigue funcionando para mostrar el Login
+        print(f"Aviso: Base de datos incompleta. {e}")
 
 # =========================================================
 # DISEÑO Y COMPONENTES
@@ -78,8 +72,6 @@ def render_layout(title, content, user=None):
                             <a href="/usuarios">👥 Usuarios</a>
                         </div>
                     </div>
-                    <a href="/p1" class="nav-link">Principal 1</a>
-                    <a href="/p2" class="nav-link">Principal 2</a>
                 </div>
                 <div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div>
             </div>
@@ -113,7 +105,6 @@ def render_layout(title, content, user=None):
     </style>
     <script>
         async function runCrud(action, table, id, data={{}}) {{
-            if(action === 'delete' && !confirm('¿Eliminar este registro?')) return;
             const res = await fetch('/api/crud', {{
                 method: 'POST',
                 headers: {{'Content-Type': 'application/json'}},
@@ -121,13 +112,6 @@ def render_layout(title, content, user=None):
             }});
             const result = await res.json();
             if(result.ok) location.reload(); else alert('Error: ' + result.msg);
-        }}
-        
-        async function doLogin() {{
-            const fd = new FormData(document.getElementById('fL'));
-            const res = await fetch('/api/login', {{ method:'POST', body:fd }});
-            const data = await res.json();
-            if(data.ok) location.href='/dashboard'; else alert('Credenciales incorrectas');
         }}
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
@@ -139,19 +123,15 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
     
-    # 1. Reparar tablas y datos base antes de cualquier cosa
-    try:
-        inicializar_datos()
-    except Exception as e:
-        start_response("500 Internal Error", [("Content-Type", "text/plain")])
-        return [f"Error de DB: {str(e)}".encode("utf-8")]
+    # Inicialización silenciosa
+    inicializar_datos()
 
     u_data = verify_jwt(environ)
 
     # --- LOGIN ---
     if path in ["/", "/login"] and method == "GET":
         content = """<div class="card" style="width:380px; margin:80px auto; text-align:center;">
-            <h2>🛡️ Clínica Santa Mónica</h2>
+            <h2>🛡️ Acceso Clínica</h2>
             <form id="fL">
                 <input name="u" placeholder="Usuario">
                 <input name="p" type="password" placeholder="Contraseña">
@@ -160,7 +140,15 @@ def application(environ, start_response):
                 </div>
                 <button type="button" onclick="doLogin()" class="btn-emerald" style="width:100%;">Entrar</button>
             </form>
-        </div>"""
+        </div>
+        <script>
+            async function doLogin() {
+                const fd = new FormData(document.getElementById('fL'));
+                const res = await fetch('/api/login', { method:'POST', body:fd });
+                const data = await res.json();
+                if(data.ok) location.href='/dashboard'; else alert('Credenciales incorrectas');
+            }
+        </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
     # --- API LOGIN ---
@@ -176,7 +164,11 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # --- API CRUD (Lógica Real de los botones) ---
+    # Redirección si no hay sesión
+    if not u_data:
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
+    # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         try:
             payload = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
@@ -185,56 +177,30 @@ def application(environ, start_response):
                 cur.execute(f"DELETE FROM {payload['table']} WHERE id = %s", (payload['id'],))
             elif payload['action'] == 'create_perfil':
                 cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (payload['data']['nombre'],))
-            elif payload['action'] == 'create_usuario':
-                cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strEstado, strPwd) VALUES (%s, %s, 'Activo', %s)", 
-                           (payload['data']['u'], payload['data']['c'], hash_password('123456')))
-            
             conn.commit(); cur.close(); conn.close()
             start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
         except Exception as e:
             start_response("200 OK", [("Content-Type", "application/json")]); return [json.dumps({"ok":false, "msg":str(e)}).encode()]
 
-    if not u_data:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-    # --- VISTAS DEL DASHBOARD ---
+    # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     
-    if path == "/usuarios":
-        cur.execute("SELECT * FROM usuarios")
-        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td><td><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in cur.fetchall()])
-        content = f"""<h2>👥 Gestión de Usuarios</h2>
-            <div class='card'>
-                <button class='btn-emerald' onclick="const u=prompt('Usuario:'), c=prompt('Email:'); if(u) runCrud('create_usuario','usuarios',0,{{u,c}})">+ Nuevo Usuario</button>
-                <table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table>
-            </div>"""
-
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles")
-        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button></td></tr>" for p in cur.fetchall()])
+    if path == "/perfiles":
+        try:
+            cur.execute("SELECT * FROM perfiles")
+            rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Eliminar</button></td></tr>" for p in cur.fetchall()])
+        except: rows = "<tr><td colspan='3'>Error: Verifica las columnas en Railway</td></tr>"
         content = f"<h2>👤 Perfiles</h2><div class='card'><button class='btn-emerald' onclick=\"runCrud('create_perfil','perfiles',0,{{nombre:prompt('Nombre del Perfil:')}})\">+ Nuevo Perfil</button><table><thead><tr><th>ID</th><th>Perfil</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table></div>"
 
-    elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos")
-        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Eliminar</button></td></tr>" for m in cur.fetchall()])
-        content = f"<h2>📦 Módulos</h2><div class='card'><table><thead><tr><th>Módulo</th><th>Ruta</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>"
+    elif path == "/usuarios":
+        cur.execute("SELECT * FROM usuarios")
+        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td><td><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in cur.fetchall()])
+        content = f"<h2>👥 Usuarios</h2><div class='card'><table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table></div>"
 
-    elif path == "/permisos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
-        cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfs])
-        m_rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"""<div class='card'><h2>🔐 Matriz de Permisos</h2>
-            <div style='display:flex; gap:10px; margin-bottom:20px;'>
-                <select style='width:300px;'>{opts}</select>
-                <button class='btn-emerald' onclick="alert('Permisos guardados con éxito')">Guardar Permisos</button>
-            </div>
-            <table><thead><tr><th>Módulo</th><th>CREAR</th><th>EDITAR</th><th>ELIMINAR</th><th>VER</th></tr></thead><tbody>{m_rows}</tbody></table></div>"""
-    
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
     else:
-        content = f"<div class='card' style='text-align:center;'><h1>🛡️ Clínica Santa Mónica</h1><p>Bienvenido al sistema, <b>{u_data['u']}</b>.</p></div>"
+        content = f"<div class='card' style='text-align:center;'><h1>🛡️ Clínica Santa Mónica</h1><p>Bienvenido, <b>{u_data['u']}</b>.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
