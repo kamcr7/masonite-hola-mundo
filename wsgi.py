@@ -154,31 +154,45 @@ def application(environ, start_response):
         for m in (mods_fijos + mods_db):
             btn = f'<button class="btn-red" onclick="runCrud(\'delete\',\'modulos\',{m["id"]})">Borrar</button>' if m['id'] != 'S' else "<em>Sistema</em>"
             rows += f"<tr><td>{m['n']}</td><td>{m['p']}</td><td>{btn}</td></tr>"
-        content = f"<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' onclick=\"openM('mM')\">+ NUEVO</button><table>{rows}</table></div>"
+        content = f"""<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
+            <table><thead><tr><th>Nombre</th><th>Menu</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
+            <div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Modulo</h3>
+            <input id="mn" placeholder="Nombre"><input id="mr" placeholder="/ruta"><select id="mp"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
+            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})">GUARDAR</button></div></div>"""
+
+    elif path == "/perfiles":
+        cur.execute("SELECT * FROM perfiles")
+        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button></td></tr>" for p in cur.fetchall()])
+        content = f"""<div class='card'><h2>👤 Perfiles</h2><button class='btn-emerald' onclick="openM('mP')">+ NUEVO PERFIL</button>
+            <table><thead><tr><th>ID</th><th>Nombre</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
+            <div id="mP" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mP')">&times;</span><h3>Nuevo Perfil</h3>
+            <input id="pn" placeholder="Nombre"><button class="btn-emerald" style="width:100%" onclick="runCrud('save_perfil','perfiles',0,{{n:document.getElementById('pn').value}})">GUARDAR</button></div></div>"""
+
+    elif path == "/usuarios":
+        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
+        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in cur.fetchall()])
+        cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
+        content = f"""<div class='card'><h2>👥 Usuarios</h2><button class='btn-emerald' onclick="openM('mU')">+ NUEVO USUARIO</button>
+            <table><thead><tr><th>Usuario</th><th>Perfil</th><th>Estado</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
+            <div id="mU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mU')">&times;</span><h3>Nuevo Usuario</h3>
+            <input id="un" placeholder="Login"><input id="up" type="password" placeholder="Password"><select id="uip">{p_opts}</select>
+            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_usuario','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value}})">CREAR</button></div></div>"""
 
     elif path == "/permisos":
         pid = int(urllib.parse.parse_qs(environ.get('QUERY_STRING','')).get('p',['0'])[0])
         cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        table_html = "<p style='text-align:center; color:#94a3b8;'>Selecciona un perfil para editar permisos.</p>"
+        table_html = "<p style='text-align:center; color:#94a3b8; padding:20px;'>⚠️ Seleccione un perfil para gestionar permisos.</p>"
         if pid > 0:
             cur.execute("SELECT id, strNombreModulo as n FROM modulos")
             all_m = [{'id':1,'n':'Perfiles'},{'id':2,'n':'Usuarios'},{'id':3,'n':'Permisos'}] + cur.fetchall()
             m_rows = "".join([f"<tr><td>{m['n']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in all_m])
-            table_html = f"<table><thead><tr><th>Módulo</th><th>V</th><th>C</th><th>E</th><th>D</th></tr></thead><tbody>{m_rows}</tbody></table><button class='btn-emerald' style='width:100%; margin-top:20px'>GUARDAR</button>"
+            table_html = f"""<div style="text-align:right; margin:10px 0;"><button class="btn-emerald" style="background:#334155" onclick="toggleAll()">SELECCIONAR TODO</button></div>
+            <table><thead><tr><th>Modulo</th><th>Ver</th><th>Crear</th><th>Editar</th><th>Eliminar</th></tr></thead><tbody>{m_rows}</tbody></table>
+            <button class="btn-emerald" style="width:100%; margin-top:30px">GUARDAR PERMISOS</button>"""
         opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         content = f"<div class='card'><h2>🔐 Permisos</h2><select onchange=\"location.href='?p='+this.value\"><option value='0'>-- Elegir Perfil --</option>{opts}</select>{table_html}</div>"
-
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles")
-        rows = "".join([f"<tr><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">X</button></td></tr>" for p in cur.fetchall()])
-        content = f"<div class='card'><h2>👤 Perfiles</h2><table>{rows}</table></div>"
-
-    elif path == "/usuarios":
-        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td></tr>" for u in cur.fetchall()])
-        content = f"<div class='card'><h2>👥 Usuarios</h2><table>{rows}</table></div>"
     else:
-        content = f"<div class='card'><h2>Bienvenido</h2><p>Hola {u_data['u']}, usa el menú superior.</p></div>"
+        content = f"<div class='card'><h2>Bienvenido</h2><p>Hola <b>{u_data['u']}</b>, usa el menú superior para navegar.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode("utf-8")]
