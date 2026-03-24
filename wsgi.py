@@ -3,7 +3,7 @@ import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
 
 # =========================================================
-# CONFIGURACIÓN
+# CONFIGURACIÓN (URL ACTUALIZADA)
 # =========================================================
 DB_URL = os.getenv('DB_URL', 'mysql://root:xHpkRjCgnCeqzkrMpNVYcgCobhMVNRCi@mysql.railway.internal:3306/railway')
 JWT_SECRET = "CLAVE_MAESTRA_CLINICA_2026_SECURITY"
@@ -31,14 +31,11 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN (CSS Y JS DE PAGINACIÓN)
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
-        cur.close(); conn.close()
         menu_html = ""
         for m_padre in ["Seguridad", "Principal 1", "Principal 2"]:
             links = ""
@@ -60,27 +57,24 @@ def render_layout(title, content, user=None):
         .dropdown-content a{{color:#e2e8f0; padding:12px 16px; text-decoration:none; display:block; font-size:0.85rem;}}
         .dropdown:hover .dropdown-content{{display:block;}}
         .container{{padding:30px 40px;}}
-        .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155;}}
+        .card{{background:#1e293b; border-radius:12px; padding:25px; border:1px solid #334155; margin-bottom:20px;}}
         .btn-blue{{background:#2563eb; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;}}
         .btn-red{{background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;}}
         table{{width:100%; border-collapse:collapse; margin-top:20px;}}
         th{{text-align:left; color:#94a3b8; font-size:0.75rem; padding:15px; border-bottom:2px solid #334155;}}
         td{{padding:14px 15px; border-bottom:1px solid #334155; font-size:0.9rem;}}
-        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px; width:100%;}}
+        input, select{{background:#0f172a; border:1px solid #334155; color:white; padding:10px; border-radius:8px; width:100%; margin-bottom:10px;}}
         .pagination{{margin-top:20px; display:flex; gap:5px; justify-content:center;}}
-        .page-btn{{padding:8px 12px; background:#1e293b; border:1px solid #334155; color:white; cursor:pointer; border-radius:4px;}}
-        .page-btn.active{{background:#2563eb; border-color:#2563eb;}}
+        .page-btn{{padding:8px 12px; background:#1e293b; border:1px solid #334155; color:white; cursor:pointer; border-radius:4px; border:none;}}
+        .modal{{display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8);}}
+        .modal-content{{background:#ffffff; color:#334155; margin:5% auto; padding:25px; width:450px; border-radius:12px;}}
     </style>
     <script>
         function paginate(tableId) {{
-            const table = document.getElementById(tableId);
-            if(!table) return;
+            const table = document.getElementById(tableId); if(!table) return;
             const rows = Array.from(table.tBodies[0].rows);
-            const size = 5;
-            const pages = Math.ceil(rows.length / size);
-            const container = document.getElementById('pag');
-            if(pages <= 1) return;
-            
+            const size = 5; const pages = Math.ceil(rows.length / size);
+            const container = document.getElementById('pag'); if(pages <= 1) return;
             function show(p) {{
                 rows.forEach((r, i) => r.style.display = (i >= (p-1)*size && i < p*size) ? '' : 'none');
                 container.querySelectorAll('button').forEach((b, i) => b.style.background = (i+1 === p) ? '#2563eb' : '#1e293b');
@@ -91,7 +85,11 @@ def render_layout(title, content, user=None):
             }}
             show(1);
         }}
-        function setAll() {{ document.querySelectorAll('#tP input[type="checkbox"]').forEach(c => c.checked = true); }}
+        function toggleAll() {{
+            const checks = document.querySelectorAll('#tP input[type="checkbox"]');
+            const allChecked = Array.from(checks).every(c => c.checked);
+            checks.forEach(c => c.checked = !allChecked);
+        }}
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -103,20 +101,17 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # LOGIN EXACTAMENTE COMO TU CÓDIGO FUNCIONAL
+    # LOGIN
     if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px; margin:100px auto; text-align:center;'>
             <h2 style="color:#38bdf8;">Clínica Santa Mónica</h2>
-            <form id='fL'>
-            <input name='u' placeholder='Usuario' style='margin-bottom:10px;' required>
-            <input name='p' type='password' placeholder='Contraseña' required>
+            <form id='fL'><input name='u' placeholder='Usuario' required><input name='p' type='password' placeholder='Contraseña' required>
             <div style="margin:20px 0; display:flex; justify-content:center;"><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div></div>
             <button type='button' onclick='doLogin()' class='btn-blue' style='width:100%;'>Entrar</button></form></div>
             <script>async function doLogin(){{
-                const captcha = grecaptcha.getResponse();
-                if(!captcha){{ alert("Verifica el captcha"); return; }}
+                const c = grecaptcha.getResponse(); if(!c){{ alert("Verifica el captcha"); return; }}
                 const res=await fetch('/api/login',{{method:'POST', body:new FormData(document.getElementById('fL'))}});
-                const data=await res.json(); if(data.ok) location.href='/dashboard'; else alert('Credenciales incorrectas');
+                const data=await res.json(); if(data.ok) location.href='/dashboard'; else alert('Error');
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
@@ -135,25 +130,39 @@ def application(environ, start_response):
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
+    # --- API POST (FUNCIONALIDAD) ---
+    if method == "POST":
+        conn = conectar_bd(); cur = conn.cursor(); fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        if path == "/api/save_user":
+            cur.execute("INSERT INTO usuarios (strNombreUsuario, strCorreo, strPwd, strEstado, idPerfil) VALUES (%s,%s,%s,%s,1)",
+                        (fs.getvalue("u"), fs.getvalue("e"), hash_password(fs.getvalue("p")), "Activo"))
+        elif path == "/api/del_user":
+            cur.execute("DELETE FROM usuarios WHERE id=%s", (fs.getvalue("id"),))
+        conn.commit(); cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
+
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
     if path == "/usuarios":
-        cur.execute("SELECT * FROM usuarios")
-        usrs = cur.fetchall()
-        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td></tr>" for u in usrs])
-        content = f"<h2>Usuarios</h2><table id='mT'><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th></tr></thead><tbody>{rows}</tbody></table><div id='pag' class='pagination'></div><script>paginate('mT')</script>"
+        cur.execute("SELECT * FROM usuarios"); usrs = cur.fetchall()
+        rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td><td><button class='btn-red' onclick='delUsr({u['id']})'>X</button></td></tr>" for u in usrs])
+        content = f"""<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Usuarios</h2><button class='btn-blue' onclick='document.getElementById("mU").style.display="block"'>+ Nuevo</button></div>
+        <table id='mT'><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table><div id='pag' class='pagination'></div></div>
+        <div id='mU' class='modal'><div class='modal-content'><h3>Nuevo Usuario</h3><form id='fU'><input name='u' placeholder='Usuario'><input name='e' placeholder='Email'><input name='p' type='password' placeholder='Contraseña'><button class='btn-blue' style='width:100%'>Guardar</button></form></div></div>
+        <script>paginate('mT'); document.getElementById('fU').onsubmit=async(e)=>{{e.preventDefault(); await fetch('/api/save_user',{{method:'POST',body:new FormData(e.target)}}); location.reload();}};
+        async function delUsr(id){{if(confirm('¿Eliminar?')){{const fd=new FormData(); fd.append('id',id); await fetch('/api/del_user',{{method:'POST',body:fd}}); location.reload();}}}}</script>"""
 
     elif path == "/permisos":
-        cur.execute("SELECT * FROM modulos")
-        mods = cur.fetchall()
+        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
         m_rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
-        content = f"""<div class='card'>
-            <div style='display:flex; justify-content:space-between;'><h2>Permisos</h2><button onclick='setAll()' class='btn-blue'>✔️ Seleccionar Todos</button></div>
-            <div id='tP'><table>{m_rows}</table></div></div>"""
+        content = f"""<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Permisos</h2><button onclick='toggleAll()' class='btn-blue'>Marcar/Desmarcar Todo</button></div>
+            <div id='tP'><table><tr><th>Módulo</th><th>C</th><th>A</th><th>E</th><th>D</th></tr>{m_rows}</table></div></div>"""
     
+    elif path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
     else:
-        content = "<h1>Dashboard</h1>"
+        content = "<h1>Dashboard</h1><p>Conexión exitosa a la nueva base de datos.</p>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
