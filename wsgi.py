@@ -55,7 +55,7 @@ def render_layout(title, content, user=None):
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
-        :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
+        :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; --pill-active: #065f46; --pill-inactive: #7f1d1d; }}
         body {{ font-family:sans-serif; background:var(--bg); color:var(--text); margin:0; }}
         .top-nav {{ background:#070b14; height:60px; border-bottom:1px solid var(--border); display:flex; align-items:center; }}
         .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; }}
@@ -66,23 +66,28 @@ def render_layout(title, content, user=None):
         .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:8px; z-index:100; }}
         .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; font-size:13px; border-bottom: 1px solid #334155; }}
         .dropdown:hover .dropdown-content {{ display:block; }}
-        .container {{ padding:40px; max-width:1100px; margin:0 auto; }}
+        .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
         .card {{ background:var(--card); padding:25px; border-radius:12px; border:1px solid var(--border); }}
-        table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:8px; }}
-        th, td {{ padding:15px; border-bottom:1px solid var(--border); text-align:left; }}
+        table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:8px; overflow:hidden; }}
+        th {{ background:#1e293b; color:#94a3b8; font-size:12px; text-transform:uppercase; padding:15px; }}
+        td {{ padding:15px; border-bottom:1px solid var(--border); text-align:left; font-size:14px; }}
+        .avatar {{ width:40px; height:40px; border-radius:50%; object-fit: cover; background:#334155; display:inline-block; vertical-align:middle; margin-right:10px; }}
+        .status-pill {{ padding:4px 12px; border-radius:20px; font-size:11px; font-weight:bold; text-transform:uppercase; }}
+        .active {{ background:var(--pill-active); color:#34d399; }}
+        .inactive {{ background:var(--pill-inactive); color:#f87171; }}
         input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; }}
         .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:bold; }}
-        .btn-blue {{ background:#3b82f6; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; margin-right:5px; }}
-        .btn-red {{ background:#ef4444; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }}
+        .btn-blue {{ background:transparent; color:#3b82f6; border:none; cursor:pointer; font-weight:500; margin-right:10px; }}
+        .btn-red {{ background:transparent; color:#ef4444; border:none; cursor:pointer; font-weight:500; }}
         .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
-        .modal-content {{ background:var(--card); width:450px; margin:10% auto; padding:30px; border-radius:15px; position:relative; border: 1px solid var(--border); }}
+        .modal-content {{ background:var(--card); width:600px; margin:5% auto; padding:30px; border-radius:15px; position:relative; border: 1px solid var(--border); }}
+        .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
         .close-x {{ position:absolute; top:15px; right:20px; color:#94a3b8; cursor:pointer; font-size:24px; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 15px; border-radius:8px; font-size:13px; }}
     </style>
     <script>
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
-        function toggleAll() {{ document.querySelectorAll('tbody input[type="checkbox"]').forEach(i => i.checked = true); }}
         
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
@@ -95,7 +100,18 @@ def render_layout(title, content, user=None):
                 if(el) el.value = data[key];
             }}
             document.getElementById('edit_id').value = data.id;
+            if(data.img) document.getElementById('preview_edit').src = data.img;
             openM(modalId);
+        }}
+
+        function handleImg(e, previewId, hiddenId) {{
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onloadend = () => {{
+                document.getElementById(previewId).src = reader.result;
+                document.getElementById(hiddenId).value = reader.result;
+            }};
+            reader.readAsDataURL(file);
         }}
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
@@ -105,7 +121,7 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # --- API LOGIN ---
+    # --- API LOGIN --- (Mismo que anterior)
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
@@ -118,15 +134,12 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
 
-    # --- REDIRECCIÓN INICIAL ---
     if path == "/":
         target = "/dashboard" if u_data else "/login"
         start_response("303 See Other", [("Location", target)]); return [b""]
 
-    # --- RUTA LOGIN ---
     if path == "/login":
-        if u_data:
-            start_response("303 See Other", [("Location", "/dashboard")]); return [b""]
+        if u_data: start_response("303 See Other", [("Location", "/dashboard")]); return [b""]
         content = f"""<div class="card" style="width:350px; margin:100px auto; border-top: 4px solid var(--emerald);">
             <h2 style="text-align:center">Inicia Sesión</h2>
             <form id="fL">
@@ -143,74 +156,100 @@ def application(environ, start_response):
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    # --- PROTECCIÓN ---
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- LOGOUT ---
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # --- API CRUD (ACTUALIZADA CON RE-FOLIADO) ---
+    # --- API CRUD ACTUALIZADA PARA USUARIOS ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
         
-        # Ejecutar acción principal
         if p['action'] == 'delete': 
             cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-        elif p['action'] == 'save_modulo': 
-            cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
-        elif p['action'] == 'update_modulo':
-            cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-        elif p['action'] == 'save_perfiles': # Cambiado para detectar tabla perfiles
-            cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-        elif p['action'] == 'update_perfil':
-            cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-        elif p['action'] == 'save_perfil': 
-            cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-        elif p['action'] == 'save_usuario': 
-            cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,'Activo')", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp']))
+        elif p['action'] == 'save_usuario':
+            # Asegurar que existan los campos en tu DB: strCorreo, strCelular, strImagen, strEstado
+            sql = "INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado, strCorreo, strCelular, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+            cur.execute(sql, (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img']))
         elif p['action'] == 'update_usuario':
             if p['data'].get('p'):
-                cur.execute("UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s WHERE id=%s", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['id']))
+                sql = "UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s"
+                cur.execute(sql, (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
             else:
-                cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s WHERE id=%s", (p['data']['u'], p['data']['idp'], p['id']))
+                sql = "UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s"
+                cur.execute(sql, (p['data']['u'], p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
+        elif p['action'] == 'save_perfil':
+            cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
+            cur.execute("SET @count = 0; UPDATE perfiles SET id = (@count := @count + 1);") # Re-foliado automático
         
-        # --- LÓGICA DE RE-FOLIADO DE IDs (Solo para Perfiles) ---
-        if p['table'] == 'perfiles' and p['action'] in ['delete', 'save_perfil']:
-            cur.execute("SET @count = 0;")
-            cur.execute("UPDATE perfiles SET id = (@count := @count + 1);")
-            cur.execute("SELECT COUNT(*) FROM perfiles")
-            total = cur.fetchone()[0]
-            cur.execute(f"ALTER TABLE perfiles AUTO_INCREMENT = {total + 1};")
-
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
-    if path == "/modulos":
-        mods_fijos = [{'id':'S','n':'Perfiles','p':'Seguridad'}, {'id':'S','n':'Usuarios','p':'Seguridad'}, {'id':'S','n':'Permisos','p':'Seguridad'}]
-        cur.execute("SELECT id, strNombreModulo as n, strRuta as r, strMenuPadre as p FROM modulos"); mods_db = cur.fetchall()
+    if path == "/usuarios":
+        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
+        users = cur.fetchall()
         rows = ""
-        for m in (mods_fijos + mods_db):
-            if m['id'] != 'S':
-                btns = f"""<button class='btn-blue' onclick='editM("mEditM", {json.dumps(m)})'>Editar</button>
-                           <button class="btn-red" onclick="runCrud('delete','modulos',{m["id"]})">Borrar</button>"""
-            else:
-                btns = "<em>Sistema</em>"
-            rows += f"<tr><td>{m['n']}</td><td>{m['p']}</td><td>{btns}</td></tr>"
+        for u in users:
+            img_src = u.get('strImagen') or "https://ui-avatars.com/api/?name="+u['strNombreUsuario']
+            status_cls = "active" if u['strEstado'] == "Activo" else "inactive"
+            rows += f"""<tr>
+                <td><img src="{img_src}" class="avatar"></td>
+                <td><b>{u['strNombreUsuario']}</b></td>
+                <td style="color:#94a3b8">{u.get('strCorreo','-')}</td>
+                <td>{u['strNombrePerfil']}</td>
+                <td><span class="status-pill {status_cls}">{u['strEstado']}</span></td>
+                <td>
+                    <button class='btn-blue' onclick='editM("mEditU", {{id:{u['id']}, u:"{u['strNombreUsuario']}", em:"{u.get('strCorreo','')}", ph:"{u.get('strCelular','')}", idp:{u['idPerfil']}, st:"{u['strEstado']}", img:"{img_src}"}})'>Editar</button>
+                    <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Eliminar</button>
+                </td>
+            </tr>"""
+            
+        cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
         
-        content = f"""<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
-            <table><thead><tr><th>Nombre</th><th>Menu</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
-            <div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Modulo</h3>
-            <input id="mn" placeholder="Nombre"><input id="mr" placeholder="/ruta"><select id="mp"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})">GUARDAR</button></div></div>
-            <div id="mEditM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mEditM')">&times;</span><h3>Editar Modulo</h3>
-            <input type="hidden" id="edit_id"><input id="edit_n" placeholder="Nombre"><input id="edit_r" placeholder="/ruta"><select id="edit_p"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('update_modulo','modulos',document.getElementById('edit_id').value,{{n:document.getElementById('edit_n').value, r:document.getElementById('edit_r').value, p:document.getElementById('edit_p').value}})">ACTUALIZAR</button></div></div>"""
+        content = f"""<div class='card'>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>👥 Gestión de Usuarios</h2>
+                <button class='btn-emerald' onclick="openM('mU')">+ NUEVO USUARIO</button>
+            </div>
+            <table><thead><tr><th>IMG</th><th>Usuario</th><th>Correo</th><th>Perfil</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table>
+        </div>
+        <div id="mU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mU')">&times;</span><h3>Nuevo Usuario</h3>
+            <div class="grid-2">
+                <div><label>Nombre de Usuario</label><input id="un"></div>
+                <div><label>Correo Electrónico</label><input id="uem"></div>
+                <div><label>Contraseña</label><input id="up" type="password"></div>
+                <div><label>Número Celular</label><input id="uph"></div>
+                <div><label>Perfil</label><select id="uip">{p_opts}</select></div>
+                <div><label>Estado</label><select id="ust"><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
+            <label>Fotografía (Opcional)</label>
+            <input type="file" onchange="handleImg(event, 'preview_new', 'uimg_b64')">
+            <img id="preview_new" style="width:50px; height:50px; border-radius:50%; margin-bottom:15px; display:block;">
+            <input type="hidden" id="uimg_b64">
+            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_usuario','usuarios',0,{{u:document.getElementById('un').value, em:document.getElementById('uem').value, p:document.getElementById('up').value, ph:document.getElementById('uph').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value, img:document.getElementById('uimg_b64').value}})">GUARDAR USUARIO</button>
+        </div></div>
+
+        <div id="mEditU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mEditU')">&times;</span><h3>Editar Usuario</h3>
+            <input type="hidden" id="edit_id">
+            <div class="grid-2">
+                <div><label>Nombre de Usuario</label><input id="edit_u"></div>
+                <div><label>Correo Electrónico</label><input id="edit_em"></div>
+                <div><label>Contraseña (vacio para no cambiar)</label><input id="edit_p" type="password"></div>
+                <div><label>Número Celular</label><input id="edit_ph"></div>
+                <div><label>Perfil</label><select id="edit_idp">{p_opts}</select></div>
+                <div><label>Estado</label><select id="edit_st"><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
+            <label>Cambiar Fotografía</label>
+            <input type="file" onchange="handleImg(event, 'preview_edit', 'edit_img')">
+            <img id="preview_edit" style="width:50px; height:50px; border-radius:50%; margin-bottom:15px; display:block;">
+            <input type="hidden" id="edit_img">
+            <button class="btn-emerald" style="width:100%" onclick="runCrud('update_usuario','usuarios',document.getElementById('edit_id').value,{{u:document.getElementById('edit_u').value, em:document.getElementById('edit_em').value, p:document.getElementById('edit_p').value, ph:document.getElementById('edit_ph').value, idp:document.getElementById('edit_idp').value, st:document.getElementById('edit_st').value, img:document.getElementById('edit_img').value}})">ACTUALIZAR DATOS</button>
+        </div></div>"""
 
     elif path == "/perfiles":
         cur.execute("SELECT id, strNombrePerfil as n FROM perfiles"); perfs = cur.fetchall()
@@ -222,33 +261,6 @@ def application(environ, start_response):
             <div id="mEditP" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3>
             <input type="hidden" id="edit_id"><input id="edit_n" placeholder="Nombre"><button class="btn-emerald" style="width:100%" onclick="runCrud('update_perfil','perfiles',document.getElementById('edit_id').value,{{n:document.getElementById('edit_n').value}})">ACTUALIZAR</button></div></div>"""
 
-    elif path == "/usuarios":
-        cur.execute("SELECT u.id, u.strNombreUsuario as u, u.idPerfil as idp, u.strEstado, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-        users = cur.fetchall()
-        rows = "".join([f"<tr><td>{u['u']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button class='btn-blue' onclick='editM(\"mEditU\", {json.dumps(u)})'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in users])
-        cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-        content = f"""<div class='card'><h2>👥 Usuarios</h2><button class='btn-emerald' onclick="openM('mU')">+ NUEVO USUARIO</button>
-            <table><thead><tr><th>Usuario</th><th>Perfil</th><th>Estado</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
-            <div id="mU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mU')">&times;</span><h3>Nuevo Usuario</h3>
-            <input id="un" placeholder="Login"><input id="up" type="password" placeholder="Password"><select id="uip">{p_opts}</select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_usuario','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value}})">CREAR</button></div></div>
-            <div id="mEditU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mEditU')">&times;</span><h3>Editar Usuario</h3>
-            <input type="hidden" id="edit_id"><input id="edit_u" placeholder="Login"><input id="edit_p" type="password" placeholder="Nueva Contraseña (vacío para no cambiar)"><select id="edit_idp">{p_opts}</select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('update_usuario','usuarios',document.getElementById('edit_id').value,{{u:document.getElementById('edit_u').value, p:document.getElementById('edit_p').value, idp:document.getElementById('edit_idp').value}})">ACTUALIZAR</button></div></div>"""
-
-    elif path == "/permisos":
-        pid = int(urllib.parse.parse_qs(environ.get('QUERY_STRING','')).get('p',['0'])[0])
-        cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        table_html = "<p style='text-align:center; color:#94a3b8; padding:20px;'>⚠️ Seleccione un perfil para gestionar permisos.</p>"
-        if pid > 0:
-            cur.execute("SELECT id, strNombreModulo as n FROM modulos")
-            all_m = [{'id':1,'n':'Perfiles'},{'id':2,'n':'Usuarios'},{'id':3,'n':'Permisos'}] + cur.fetchall()
-            m_rows = "".join([f"<tr><td>{m['n']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in all_m])
-            table_html = f"""<div style="text-align:right; margin:10px 0;"><button class="btn-emerald" style="background:#334155" onclick="toggleAll()">SELECCIONAR TODO</button></div>
-            <table><thead><tr><th>Modulo</th><th>Ver</th><th>Crear</th><th>Editar</th><th>Eliminar</th></tr></thead><tbody>{m_rows}</tbody></table>
-            <button class="btn-emerald" style="width:100%; margin-top:30px">GUARDAR PERMISOS</button>"""
-        opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
-        content = f"<div class='card'><h2>🔐 Permisos</h2><select onchange=\"location.href='?p='+this.value\"><option value='0'>-- Elegir Perfil --</option>{opts}</select>{table_html}</div>"
     else:
         content = f"<div class='card'><h2>Bienvenido</h2><p>Hola <b>{u_data['u']}</b>, usa el menú superior para navegar.</p></div>"
 
