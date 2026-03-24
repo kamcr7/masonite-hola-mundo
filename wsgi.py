@@ -2,12 +2,15 @@
 import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
 
-# CONFIGURACIÓN
+# CONFIGURACIÓN (Asegúrate que esta URL sea la vigente en tu pestaña Variables de Railway)
 DB_URL = "mysql://root:xHpkRjCgnCeqzkrMpNVYcgCobhMVNRCi@mysql.railway.internal:3306/railway"
 JWT_SECRET = "CLAVE_2026"
 
-def hash_password(p): return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
-def b64url_encode(d): return base64.urlsafe_b64encode(d).rstrip(b"=").decode("utf-8")
+def hash_password(p): 
+    return hashlib.sha256((p or "").encode("utf-8")).hexdigest()
+
+def b64url_encode(d): 
+    return base64.urlsafe_b64encode(d).rstrip(b"=").decode("utf-8")
 
 def jwt_encode(p):
     h = b64url_encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode("utf-8"))
@@ -19,13 +22,21 @@ def verify_jwt(env):
     try:
         C = cookies.SimpleCookie(); C.load(env.get('HTTP_COOKIE', ''))
         t = C.get('token').value if 'token' in C else None
+        if not t: return None
         p = json.loads(base64.urlsafe_b64decode(t.split('.')[1] + "==").decode("utf-8"))
         return p if p['exp'] > time.time() else None
     except: return None
 
 def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
-    return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
+    return mysql.connector.connect(
+        host=res.hostname, 
+        port=res.port, 
+        user=res.username, 
+        password=res.password, 
+        database=res.path[1:], 
+        charset='utf8mb4'
+    )
 
 def render_layout(title, content, user=None):
     nav = ""
@@ -35,15 +46,16 @@ def render_layout(title, content, user=None):
             <div style="color:white;"><b>{user['u']}</b> | <a href="/logout" style="color:#ef4444; text-decoration:none;">Salir</a></div>
         </div>"""
     
+    # IMPORTANTE: Nota las dobles llaves {{ }} para que Python no falle
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
-        body{{background:#0f172a; color:white; font-family:sans-serif; margin:0;}}
-        .card{{background:#1e293b; padding:30px; border-radius:12px; max-width:800px; margin:50px auto; border:1px solid #334155;}}
-        input{{width:100%; padding:10px; margin:10px 0; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px;}}
-        .btn{{background:#2563eb; color:white; border:none; padding:12px; width:100%; border-radius:6px; cursor:pointer; font-weight:bold;}}
-        table{{width:100%; border-collapse:collapse; margin-top:20px;}}
-        th, td{{padding:12px; border-bottom:1px solid #334155; text-align:left;}}
+        body{{{{background:#0f172a; color:white; font-family:sans-serif; margin:0;}}}}
+        .card{{{{background:#1e293b; padding:30px; border-radius:12px; max-width:800px; margin:50px auto; border:1px solid #334155;}}}}
+        input{{{{width:100%; padding:10px; margin:10px 0; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px;}}}}
+        .btn{{{{background:#2563eb; color:white; border:none; padding:12px; width:100%; border-radius:6px; cursor:pointer; font-weight:bold;}}}}
+        table{{{{width:100%; border-collapse:collapse; margin-top:20px;}}}}
+        th, td{{{{padding:12px; border-bottom:1px solid #334155; text-align:left;}}}}
     </style>
     <script>
         function toggleAll() {{
@@ -56,10 +68,11 @@ def render_layout(title, content, user=None):
 
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
+    method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # LOGIN
-    if path in ["/", "/login"]:
+    # LOGIN (Vista)
+    if path in ["/", "/login"] and method == "GET":
         content = """<div class='card' style='max-width:350px;'>
             <h2 style='text-align:center; color:#38bdf8;'>Clínica Santa Mónica</h2>
             <form id='fL'>
@@ -82,30 +95,48 @@ def application(environ, start_response):
         </script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    if path == "/api/login":
+    # LOGIN (API)
+    if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
-        user = cur.fetchone(); cur.close(); conn.close()
-        if user:
-            tk = jwt_encode({"u": u, "exp": time.time()+3600})
-            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
-            return [b'{"ok":true}']
+        u = fs.getvalue("u")
+        p = fs.getvalue("p")
+        
+        # Generamos el hash de la contraseña ingresada
+        pw_hash = hash_password(p)
+        
+        try:
+            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, pw_hash))
+            user = cur.fetchone(); cur.close(); conn.close()
+            
+            if user:
+                tk = jwt_encode({"u": u, "exp": time.time()+3600})
+                start_response("200 OK", [
+                    ("Content-Type", "application/json"), 
+                    ("Set-Cookie", f"token={tk}; Path=/; HttpOnly; SameSite=Lax")
+                ])
+                return [b'{"ok":true}']
+        except Exception as e:
+            print(f"Error DB: {e}") # Esto saldrá en tus logs de Railway
+            
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
+    # PROTECCIÓN DE RUTAS
     if not u_data:
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # DASHBOARD / USUARIOS
+    # VISTAS PRIVADAS
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+    
     if path == "/usuarios" or path == "/dashboard":
-        cur.execute("SELECT * FROM usuarios"); usrs = cur.fetchall()
+        cur.execute("SELECT * FROM usuarios")
+        usrs = cur.fetchall()
         rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td></tr>" for u in usrs])
         content = f"<div class='card'><h2>Gestión de Usuarios</h2><table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th></tr></thead><tbody>{rows}</tbody></table></div>"
     
     elif path == "/permisos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
+        cur.execute("SELECT * FROM modulos")
+        mods = cur.fetchall()
         m_rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in mods])
         content = f"<div class='card'><div style='display:flex; justify-content:space-between;'><h2>Matriz de Permisos</h2><button onclick='toggleAll()' style='background:#1e293b; color:#38bdf8; border:1px solid #38bdf8; cursor:pointer; padding:5px 10px; border-radius:5px;'>Marcar Todo</button></div><table><tr><th>Módulo</th><th>C</th><th>A</th><th>E</th><th>D</th></tr>{m_rows}</table></div>"
 
