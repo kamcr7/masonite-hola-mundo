@@ -41,12 +41,29 @@ def inicializar_datos():
     except: pass
 
 # =========================================================
-# RENDERIZADO
+# RENDERIZADO (Con Principal 1 y 2 en la barra)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
-        # Menú básico para evitar errores si las columnas no existen
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        modulos_db = []
+        try:
+            cur.execute("SELECT * FROM modulos")
+            modulos_db = cur.fetchall()
+        except: pass
+        cur.close(); conn.close()
+
+        # Función para filtrar módulos por menú
+        def get_links(menu_name):
+            items = [m for m in modulos_db if m.get('strMenuPadre') == menu_name]
+            if menu_name == "Seguridad": # Items base de seguridad
+                base = [('👤 Perfiles','/perfiles'), ('📦 Módulos','/modulos'), ('👥 Usuarios','/usuarios'), ('🔐 Permisos','/permisos')]
+                html = "".join([f'<a href="{url}">{nom}</a>' for nom, url in base])
+                html += "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in items])
+                return html
+            return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in items])
+
         nav = f"""<div class="top-nav">
             <div class="nav-container">
                 <div class="nav-left">
@@ -54,12 +71,15 @@ def render_layout(title, content, user=None):
                     <a href="/dashboard" class="nav-link">Inicio</a>
                     <div class="dropdown">
                         <button class="dropbtn">Seguridad ▾</button>
-                        <div class="dropdown-content">
-                            <a href="/perfiles">👤 Perfiles</a>
-                            <a href="/modulos">📦 Módulos</a>
-                            <a href="/usuarios">👥 Usuarios</a>
-                            <a href="/permisos">🔐 Permisos</a>
-                        </div>
+                        <div class="dropdown-content">{get_links("Seguridad")}</div>
+                    </div>
+                    <div class="dropdown">
+                        <button class="dropbtn">Principal 1 ▾</button>
+                        <div class="dropdown-content">{get_links("Principal 1") or '<a href="#">(Vacío)</a>'}</div>
+                    </div>
+                    <div class="dropdown">
+                        <button class="dropbtn">Principal 2 ▾</button>
+                        <div class="dropdown-content">{get_links("Principal 2") or '<a href="#">(Vacío)</a>'}</div>
                     </div>
                 </div>
                 <div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div>
@@ -67,6 +87,7 @@ def render_layout(title, content, user=None):
         </div>"""
    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         :root {{ --bg: #0f172a; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
         body {{ font-family:'Segoe UI', sans-serif; background:var(--bg); color:var(--text); margin:0; }}
@@ -126,18 +147,22 @@ def application(environ, start_response):
     inicializar_datos()
     u_data = verify_jwt(environ)
 
-    # --- LOGIN ---
+    # --- LOGIN CON RECAPTCHA ---
     if path in ["/", "/login"] and method == "GET":
         content = """<div class="card" style="width:350px; margin:100px auto; text-align:center;">
             <h2 style="color:var(--emerald)">Iniciar Sesión</h2>
             <form id="fL">
                 <input name="u" placeholder="Usuario" required>
                 <input name="p" type="password" placeholder="Contraseña" required>
-                <button type="button" onclick="doLogin()" class="btn-emerald" style="width:100%; margin-top:10px;">Entrar</button>
+                <div style="margin:15px 0; display:flex; justify-content:center;">
+                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div>
+                </div>
+                <button type="button" onclick="doLogin()" class="btn-emerald" style="width:100%;">Entrar</button>
             </form>
         </div>
         <script>
             async function doLogin() {
+                if(!grecaptcha.getResponse()){ alert("Por favor completa el ReCaptcha"); return; }
                 const fd = new FormData(document.getElementById('fL'));
                 const res = await fetch('/api/login', { method:'POST', body:fd });
                 const data = await res.json();
@@ -166,7 +191,7 @@ def application(environ, start_response):
         try:
             if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
             elif p['action'] == 'save_perfil':
-                if p['id']: cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['nombre'], p['id']))
+                if p['id'] != 0: cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['nombre'], p['id']))
                 else: cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['nombre'],))
             elif p['action'] == 'save_modulo':
                 cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s, %s, %s)", (p['data']['n'], p['data']['r'], p['data']['p']))
@@ -196,14 +221,14 @@ def application(environ, start_response):
             <table><thead><tr><th>Nombre</th><th>Ruta</th><th>Menu</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>
             <div id="mM" class="modal"><div class="modal-content"><h3>Nuevo Módulo</h3>
             <input name="nombre" placeholder="Nombre"><input name="ruta" placeholder="Ruta">
-            <select name="padre"><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option><option>Prueba</option></select>
+            <select name="padre"><option>Seguridad</option><option>Principal 1</option><option>Principal 2</option></select>
             <button class="btn-emerald" onclick="runCrud('save_modulo','modulos',0,{{n:document.querySelector('#mM [name=nombre]').value, r:document.querySelector('#mM [name=ruta]').value, p:document.querySelector('#mM [name=padre]').value}})">Guardar</button>
             <button onclick="closeM('mM')">Cancelar</button></div></div>"""
 
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0")]); return [b""]
     else:
-        content = f"<h2>Bienvenido {u_data['u']}</h2><p>Selecciona una opción en Seguridad.</p>"
+        content = f"<h2>Bienvenido {u_data['u']}</h2><p>Los menús ya están configurados en la parte superior.</p>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
