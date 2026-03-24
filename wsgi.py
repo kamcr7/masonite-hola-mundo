@@ -31,29 +31,20 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# REPARACIÓN AUTOMÁTICA (MODO TOLERANTE)
+# REPARACIÓN Y ESTRUCTURA
 # =========================================================
 def inicializar_datos():
     try:
         conn = conectar_bd(); cur = conn.cursor()
-        # Intentar crear tablas si no existen
         cur.execute("CREATE TABLE IF NOT EXISTS perfiles (id INT AUTO_INCREMENT PRIMARY KEY, strNombrePerfil VARCHAR(100))")
         cur.execute("CREATE TABLE IF NOT EXISTS usuarios (id INT AUTO_INCREMENT PRIMARY KEY, strNombreUsuario VARCHAR(100), strPwd VARCHAR(255), strCorreo VARCHAR(100), strEstado VARCHAR(20))")
         cur.execute("CREATE TABLE IF NOT EXISTS modulos (id INT AUTO_INCREMENT PRIMARY KEY, strNombreModulo VARCHAR(100), strRuta VARCHAR(100))")
-        
-        # Insertar admin por defecto si no hay usuarios
-        cur.execute("SELECT COUNT(*) FROM usuarios")
-        if cur.fetchone()[0] == 0:
-            cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo, strEstado) VALUES (%s, %s, %s, %s)", 
-                       ('admin', hash_password('admin'), 'admin@clinica.com', 'Activo'))
-        
         conn.commit(); cur.close(); conn.close()
     except Exception as e:
-        # Si falla (por falta de columna strRuta), el sistema sigue funcionando para mostrar el Login
-        print(f"Aviso: Base de datos incompleta. {e}")
+        print(f"Error de estructura: {e}")
 
 # =========================================================
-# DISEÑO Y COMPONENTES
+# RENDERIZADO GLOBAL
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -68,7 +59,6 @@ def render_layout(title, content, user=None):
                         <div class="dropdown-content">
                             <a href="/perfiles">👤 Perfiles</a>
                             <a href="/modulos">📦 Módulos</a>
-                            <a href="/permisos">🔐 Permisos</a>
                             <a href="/usuarios">👥 Usuarios</a>
                         </div>
                     </div>
@@ -78,7 +68,6 @@ def render_layout(title, content, user=None):
         </div>"""
    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         :root {{ --bg: #0f172a; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
         body {{ font-family:'Segoe UI', sans-serif; background:var(--bg); color:var(--text); margin:0; }}
@@ -94,16 +83,20 @@ def render_layout(title, content, user=None):
         .dropdown:hover .dropdown-content {{ display:block; }}
         .container {{ padding:40px 20px; max-width:1100px; margin:0 auto; }}
         .card {{ background:var(--card); border-radius:16px; padding:30px; border:1px solid var(--border); margin-bottom:20px; }}
-        table {{ width:100%; border-collapse:collapse; margin-top:10px; }}
+        table {{ width:100%; border-collapse:collapse; }}
         th {{ text-align:left; color:#94a3b8; font-size:0.75rem; text-transform:uppercase; padding:15px; border-bottom:2px solid var(--border); }}
         td {{ padding:15px; border-bottom:1px solid var(--border); font-size:0.95rem; }}
         .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:bold; }}
         .btn-red {{ background:#ef4444; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; }}
-        .user-pill {{ background:rgba(16,185,129,0.1); color:var(--emerald); padding:5px 12px; border-radius:20px; font-size:0.85rem; border:1px solid rgba(16,185,129,0.2); }}
-        .btn-salir {{ background:#ef4444; color:white; padding:7px 15px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:0.8rem; margin-left:10px; }}
-        input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:10px; border-radius:8px; width:100%; margin-bottom:10px; }}
+        input {{ background:#0f172a; border:1px solid var(--border); color:white; padding:10px; border-radius:8px; width:100%; margin-bottom:10px; }}
+        /* Modal simple */
+        .modal {{ display:none; position:fixed; z-index:200; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.7); }}
+        .modal-content {{ background:var(--card); margin:10% auto; padding:20px; border:1px solid var(--border); width:400px; border-radius:12px; }}
     </style>
     <script>
+        function showModal(id) {{ document.getElementById(id).style.display = 'block'; }}
+        function hideModal(id) {{ document.getElementById(id).style.display = 'none'; }}
+
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{
                 method: 'POST',
@@ -122,85 +115,88 @@ def render_layout(title, content, user=None):
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
-    
-    # Inicialización silenciosa
     inicializar_datos()
-
     u_data = verify_jwt(environ)
 
-    # --- LOGIN ---
-    if path in ["/", "/login"] and method == "GET":
-        content = """<div class="card" style="width:380px; margin:80px auto; text-align:center;">
-            <h2>🛡️ Acceso Clínica</h2>
-            <form id="fL">
-                <input name="u" placeholder="Usuario">
-                <input name="p" type="password" placeholder="Contraseña">
-                <div style="display:flex; justify-content:center; margin:15px 0;">
-                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-theme="dark"></div>
-                </div>
-                <button type="button" onclick="doLogin()" class="btn-emerald" style="width:100%;">Entrar</button>
-            </form>
-        </div>
-        <script>
-            async function doLogin() {
-                const fd = new FormData(document.getElementById('fL'));
-                const res = await fetch('/api/login', { method:'POST', body:fd });
-                const data = await res.json();
-                if(data.ok) location.href='/dashboard'; else alert('Credenciales incorrectas');
-            }
-        </script>"""
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
-
-    # --- API LOGIN ---
-    if path == "/api/login" and method == "POST":
-        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p", ""))
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
-        user = cur.fetchone(); cur.close(); conn.close()
-        if user:
-            tk = jwt_encode({"u": u, "exp": time.time()+3600})
-            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
-            return [b'{"ok":true}']
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
-
-    # Redirección si no hay sesión
-    if not u_data:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-    # --- API CRUD ---
+    # API CRUD (Procesa todos los guardados y eliminaciones)
     if path == "/api/crud" and method == "POST":
         try:
             payload = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
             conn = conectar_bd(); cur = conn.cursor()
+            
             if payload['action'] == 'delete':
                 cur.execute(f"DELETE FROM {payload['table']} WHERE id = %s", (payload['id'],))
-            elif payload['action'] == 'create_perfil':
+            
+            elif payload['action'] == 'save_perfil':
                 cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (payload['data']['nombre'],))
+            
+            elif payload['action'] == 'save_usuario':
+                p_hash = hash_password(payload['data']['pwd'])
+                cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, strCorreo, strEstado) VALUES (%s, %s, %s, 'Activo')", 
+                           (payload['data']['u'], p_hash, payload['data']['m']))
+            
+            elif payload['action'] == 'save_modulo':
+                cur.execute("INSERT INTO modulos (strNombreModulo, strRuta) VALUES (%s, %s)", 
+                           (payload['data']['n'], payload['data']['r']))
+
             conn.commit(); cur.close(); conn.close()
             start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
         except Exception as e:
             start_response("200 OK", [("Content-Type", "application/json")]); return [json.dumps({"ok":false, "msg":str(e)}).encode()]
 
-    # --- VISTAS ---
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    
-    if path == "/perfiles":
-        try:
-            cur.execute("SELECT * FROM perfiles")
-            rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Eliminar</button></td></tr>" for p in cur.fetchall()])
-        except: rows = "<tr><td colspan='3'>Error: Verifica las columnas en Railway</td></tr>"
-        content = f"<h2>👤 Perfiles</h2><div class='card'><button class='btn-emerald' onclick=\"runCrud('create_perfil','perfiles',0,{{nombre:prompt('Nombre del Perfil:')}})\">+ Nuevo Perfil</button><table><thead><tr><th>ID</th><th>Perfil</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table></div>"
+    # VISTAS
+    if not u_data and path not in ["/login", "/api/login"]:
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    elif path == "/usuarios":
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+
+    # --- PANTALLA USUARIOS ---
+    if path == "/usuarios":
         cur.execute("SELECT * FROM usuarios")
         rows = "".join([f"<tr><td>{u['strNombreUsuario']}</td><td>{u['strCorreo']}</td><td>{u['strEstado']}</td><td><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in cur.fetchall()])
-        content = f"<h2>👥 Usuarios</h2><div class='card'><table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table></div>"
+        content = f"""<h2>👥 Gestión de Usuarios</h2>
+            <div class='card'>
+                <button class='btn-emerald' onclick="showModal('mU')">+ Nuevo Usuario</button>
+                <table><thead><tr><th>Usuario</th><th>Correo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table>
+            </div>
+            <div id="mU" class="modal"><div class="modal-content">
+                <h3>Nuevo Usuario</h3>
+                <input id="u_u" placeholder="Nombre de Usuario">
+                <input id="u_m" placeholder="Correo">
+                <input id="u_p" type="password" placeholder="Contraseña">
+                <button class="btn-emerald" onclick="runCrud('save_usuario','usuarios',0,{{u:document.getElementById('u_u').value, m:document.getElementById('u_m').value, pwd:document.getElementById('u_p').value}})">Guardar</button>
+                <button onclick="hideModal('mU')">Cancelar</button>
+            </div></div>"""
 
-    elif path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Path=/; Max-Age=0")]); return [b""]
+    # --- PANTALLA MÓDULOS ---
+    elif path == "/modulos":
+        try:
+            cur.execute("SELECT * FROM modulos")
+            mods = cur.fetchall()
+            rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Eliminar</button></td></tr>" for m in mods])
+        except: rows = "<tr><td colspan='3'>Error: Falta columna strRuta. Añádela en Railway.</td></tr>"
+        
+        content = f"""<h2>📦 Módulos del Sistema</h2>
+            <div class='card'>
+                <button class='btn-emerald' onclick="showModal('mM')">+ Nuevo Módulo</button>
+                <table><thead><tr><th>Nombre</th><th>Ruta</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table>
+            </div>
+            <div id="mM" class="modal"><div class="modal-content">
+                <h3>Nuevo Módulo</h3>
+                <input id="m_n" placeholder="Nombre (Ej: Inventario)">
+                <input id="m_r" placeholder="Ruta (Ej: /inventario)">
+                <button class="btn-emerald" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('m_n').value, r:document.getElementById('m_r').value}})">Guardar</button>
+                <button onclick="hideModal('mM')">Cancelar</button>
+            </div></div>"""
+
+    elif path == "/perfiles":
+        # (Lógica de perfiles similar a la que ya te funciona)
+        cur.execute("SELECT * FROM perfiles")
+        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button></td></tr>" for p in cur.fetchall()])
+        content = f"<h2>👤 Perfiles</h2><div class='card'><button class='btn-emerald' onclick=\"showModal('mP')\">+ Nuevo Perfil</button><table><thead><tr><th>ID</th><th>Perfil</th><th>Acciones</th></tr></thead><tbody>{rows}</tbody></table></div><div id='mP' class='modal'><div class='modal-content'><h3>Nuevo Perfil</h3><input id='p_n' placeholder='Nombre'><button class='btn-emerald' onclick=\"runCrud('save_perfil','perfiles',0,{{nombre:document.getElementById('p_n').value}})\">Guardar</button><button onclick=\"hideModal('mP')\">Cancelar</button></div></div>"
+
     else:
-        content = f"<div class='card' style='text-align:center;'><h1>🛡️ Clínica Santa Mónica</h1><p>Bienvenido, <b>{u_data['u']}</b>.</p></div>"
+        content = "<h2>Bienvenido</h2><p>Selecciona una opción del menú.</p>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Sistema", content, u_data).encode("utf-8")]
