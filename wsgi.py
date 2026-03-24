@@ -94,7 +94,7 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # --- LÓGICA DE LOGIN FUNCIONAL ---
+    # --- API LOGIN (Interceptar primero) ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
@@ -102,22 +102,13 @@ def application(environ, start_response):
         cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
         user = cur.fetchone(); cur.close(); conn.close()
         if user:
-            # Generamos token con el nombre de usuario
             tk = jwt_encode({"u": u, "exp": time.time()+3600})
-            start_response("200 OK", [
-                ("Content-Type", "application/json"), 
-                ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")
-            ])
+            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
             return [b'{"ok":true}']
-        start_response("200 OK", [("Content-Type", "application/json")])
-        return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
-
-    # Redirigir si no hay sesión (excepto en el login)
-    if not u_data and path != "/login":
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
+        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
 
     # --- PANTALLA DE LOGIN ---
-    if path == "/login":
+    if path == "/login" or (not u_data and path != "/api/login"):
         content = f"""<div class="card" style="width:350px; margin:100px auto; border-top: 4px solid var(--emerald);">
             <h2 style="text-align:center">Inicia Sesión</h2>
             <form id="fL">
@@ -133,10 +124,6 @@ def application(environ, start_response):
                 if(d.ok) location.href="/dashboard"; else alert(d.msg);
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
-
-    # --- LOGOUT ---
-    if path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
     # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
@@ -155,9 +142,17 @@ def application(environ, start_response):
     if path == "/modulos":
         mods_fijos = [{'id':'S','n':'Perfiles','p':'Seguridad'}, {'id':'S','n':'Usuarios','p':'Seguridad'}, {'id':'S','n':'Permisos','p':'Seguridad'}]
         cur.execute("SELECT id, strNombreModulo as n, strMenuPadre as p FROM modulos"); mods_db = cur.fetchall()
-        rows = "".join([f"<tr><td>{m['n']}</td><td>{m['p']}</td><td>{f'<button class=\"btn-red\" onclick=\"runCrud(\\'delete\\',\\'modulos\\',{m["id"]})\">Borrar</button>' if m['id']!='S' else '<em>Sistema</em>'}</td></tr>" for m in (mods_fijos + mods_db)])
+        rows = ""
+        for m in (mods_fijos + mods_db):
+            # LÍNEA CORREGIDA PARA EVITAR SYNTAX ERROR
+            if m['id'] != 'S':
+                btn = '<button class="btn-red" onclick="runCrud(\'delete\',\'modulos\',' + str(m['id']) + ')">Borrar</button>'
+            else:
+                btn = "<em>Sistema</em>"
+            rows += f"<tr><td>{m['n']}</td><td>{m['p']}</td><td>{btn}</td></tr>"
+        
         content = f"""<div class='card'><h2>📦 Gestión de Modulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
-            <table><thead><tr><th>Nombre</th><th>Menu</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
+            <table><thead><tr><th>Nombre</th><th>Menu</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>
             <div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Modulo</h3>
             <input id="mn" placeholder="Nombre"><input id="mr" placeholder="/ruta"><select id="mp"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
             <button class="btn-emerald" style="width:100%" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})">GUARDAR</button></div></div>"""
@@ -166,7 +161,7 @@ def application(environ, start_response):
         cur.execute("SELECT * FROM perfiles")
         rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Eliminar</button></td></tr>" for p in cur.fetchall()])
         content = f"""<div class='card'><h2>👤 Perfiles</h2><button class='btn-emerald' onclick="openM('mP')">+ NUEVO PERFIL</button>
-            <table><thead><tr><th>ID</th><th>Nombre</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
+            <table><thead><tr><th>ID</th><th>Nombre</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>
             <div id="mP" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mP')">&times;</span><h3>Nuevo Perfil</h3>
             <input id="pn" placeholder="Nombre"><button class="btn-emerald" style="width:100%" onclick="runCrud('save_perfil','perfiles',0,{{n:document.getElementById('pn').value}})">GUARDAR</button></div></div>"""
 
@@ -193,6 +188,9 @@ def application(environ, start_response):
             <button class="btn-emerald" style="width:100%; margin-top:30px">GUARDAR PERMISOS</button>"""
         opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         content = f"<div class='card'><h2>🔐 Permisos</h2><select onchange=\"location.href='?p='+this.value\"><option value='0'>-- Elegir Perfil --</option>{opts}</select>{table_html}</div>"
+
+    elif path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
     else:
         content = f"<div class='card'><h2>Bienvenido</h2><p>Hola {u_data['u']}, usa el menú para navegar.</p></div>"
 
