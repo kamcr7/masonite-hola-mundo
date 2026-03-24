@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, base64
+import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
 
 # =========================================================
@@ -33,7 +33,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4', consume_results=True)
 
 # =========================================================
-# MAQUETACIÓN (Tu diseño original)
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -50,7 +50,7 @@ def render_layout(title, content, user=None):
         <div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">{seg_links}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{get_links("Principal 1") or '<a>(Vacio)</a>'}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2") or '<a>(Vacio)</a>'}</div></div>
-        </div><div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
+        </div><div class="nav-right"><span class="user-pill" style="color:var(--emerald); margin-right:15px; font-size:13px;">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
@@ -77,7 +77,6 @@ def render_layout(title, content, user=None):
         .modal-content {{ background:var(--card); width:450px; margin:10% auto; padding:30px; border-radius:15px; position:relative; border: 1px solid var(--border); }}
         .close-x {{ position:absolute; top:15px; right:20px; color:#94a3b8; cursor:pointer; font-size:24px; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 15px; border-radius:8px; font-size:13px; }}
-        .user-pill {{ color:var(--emerald); background: rgba(16, 185, 129, 0.1); padding: 5px 12px; border-radius: 20px; font-size: 13px; margin-right: 15px; }}
     </style>
     <script>
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
@@ -95,10 +94,32 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # --- LOGIN (Pantalla de Inicio) ---
-    if path == "/login" or (not u_data and path != "/api/login"):
+    # --- LÓGICA DE LOGIN FUNCIONAL ---
+    if path == "/api/login" and method == "POST":
+        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
+        user = cur.fetchone(); cur.close(); conn.close()
+        if user:
+            # Generamos token con el nombre de usuario
+            tk = jwt_encode({"u": u, "exp": time.time()+3600})
+            start_response("200 OK", [
+                ("Content-Type", "application/json"), 
+                ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")
+            ])
+            return [b'{"ok":true}']
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
+
+    # Redirigir si no hay sesión (excepto en el login)
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
+    # --- PANTALLA DE LOGIN ---
+    if path == "/login":
         content = f"""<div class="card" style="width:350px; margin:100px auto; border-top: 4px solid var(--emerald);">
-            <h2 style="text-align:center">Inicia Sesion</h2>
+            <h2 style="text-align:center">Inicia Sesión</h2>
             <form id="fL">
                 <input name="u" placeholder="Usuario">
                 <input name="p" type="password" placeholder="Contraseña">
@@ -113,17 +134,9 @@ def application(environ, start_response):
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    if path == "/api/login" and method == "POST":
-        fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
-        u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s", (u, p))
-        user = cur.fetchone(); cur.close(); conn.close()
-        if user:
-            tk = jwt_encode({"u": u, "idp": user['idPerfil'], "exp": time.time()+3600})
-            start_response("200 OK", [("Content-Type", "application/json"), ("Set-Cookie", f"token={tk}; Path=/; HttpOnly")])
-            return [b'{"ok":true}']
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
+    # --- LOGOUT ---
+    if path == "/logout":
+        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
     # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
@@ -133,11 +146,6 @@ def application(environ, start_response):
         elif p['action'] == 'save_modulo': cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
         elif p['action'] == 'save_perfil': cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
         elif p['action'] == 'save_usuario': cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,'Activo')", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp']))
-        elif p['action'] == 'save_permisos':
-            cur.execute("DELETE FROM permisos WHERE idPerfil = %s", (p['id'],))
-            for row in p['data']['permisos']:
-                cur.execute("INSERT INTO permisos (idPerfil, idModulo, blnVer, blnCrear, blnEditar, blnEliminar) VALUES (%s,%s,%s,%s,%s,%s)", 
-                            (p['id'], row['idm'], row['v'], row['c'], row['e'], row['d']))
         conn.commit(); cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
 
@@ -148,7 +156,7 @@ def application(environ, start_response):
         mods_fijos = [{'id':'S','n':'Perfiles','p':'Seguridad'}, {'id':'S','n':'Usuarios','p':'Seguridad'}, {'id':'S','n':'Permisos','p':'Seguridad'}]
         cur.execute("SELECT id, strNombreModulo as n, strMenuPadre as p FROM modulos"); mods_db = cur.fetchall()
         rows = "".join([f"<tr><td>{m['n']}</td><td>{m['p']}</td><td>{f'<button class=\"btn-red\" onclick=\"runCrud(\\'delete\\',\\'modulos\\',{m["id"]})\">Borrar</button>' if m['id']!='S' else '<em>Sistema</em>'}</td></tr>" for m in (mods_fijos + mods_db)])
-        content = f"""<div class='card'><h2>📦 Gestion de Modulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
+        content = f"""<div class='card'><h2>📦 Gestión de Modulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
             <table><thead><tr><th>Nombre</th><th>Menu</th><th>Accion</th></tr></thead><tbody>{rows}</tbody></table></div>
             <div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Modulo</h3>
             <input id="mn" placeholder="Nombre"><input id="mr" placeholder="/ruta"><select id="mp"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
@@ -178,40 +186,15 @@ def application(environ, start_response):
         table_html = "<div style='text-align:center; padding:40px; color:#94a3b8;'>⚠️ Seleccione un perfil.</div>"
         if pid > 0:
             cur.execute("SELECT id, strNombreModulo as n FROM modulos")
-            all_m = [{'id':-1,'n':'Perfiles'},{'id':-2,'n':'Usuarios'},{'id':-3,'n':'Permisos'}] + cur.fetchall()
-            cur.execute("SELECT * FROM permisos WHERE idPerfil = %s", (pid,))
-            p_actuales = {row['idModulo']: row for row in cur.fetchall()}
-            m_rows = ""
-            for m in all_m:
-                pa = p_actuales.get(m['id'], {'blnVer':0, 'blnCrear':0, 'blnEditar':0, 'blnEliminar':0})
-                m_rows += f"""<tr data-idm="{m['id']}">
-                    <td>{m['n']}</td>
-                    <td><input type="checkbox" class="v" {'checked' if pa['blnVer'] else ''}></td>
-                    <td><input type="checkbox" class="c" {'checked' if pa['blnCrear'] else ''}></td>
-                    <td><input type="checkbox" class="e" {'checked' if pa['blnEditar'] else ''}></td>
-                    <td><input type="checkbox" class="d" {'checked' if pa['blnEliminar'] else ''}></td>
-                </tr>"""
+            all_m = [{'id':1,'n':'Perfiles'},{'id':2,'n':'Usuarios'},{'id':3,'n':'Permisos'}] + cur.fetchall()
+            m_rows = "".join([f"<tr><td>{m['n']}</td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td><td><input type='checkbox'></td></tr>" for m in all_m])
             table_html = f"""<div style="display:flex; justify-content:flex-end; margin: 20px 0;"><button class="btn-emerald" style="background:#334155" onclick="toggleAll()">SELECCIONAR TODO</button></div>
             <table><thead><tr><th>Modulo</th><th>Ver</th><th>Crear</th><th>Editar</th><th>Eliminar</th></tr></thead><tbody>{m_rows}</tbody></table>
-            <button class="btn-emerald" style="width:100%; margin-top:30px" onclick="guardarPermisos({pid})">GUARDAR PERMISOS</button>
-            <script>async function guardarPermisos(pid){{
-                const perms = [];
-                document.querySelectorAll('tbody tr').forEach(tr => {{
-                    perms.push({{
-                        idm: tr.dataset.idm,
-                        v: tr.querySelector('.v').checked ? 1:0, c: tr.querySelector('.c').checked ? 1:0,
-                        e: tr.querySelector('.e').checked ? 1:0, d: tr.querySelector('.d').checked ? 1:0
-                    }});
-                }});
-                await runCrud('save_permisos', 'permisos', pid, {{permisos: perms}});
-            }}</script>"""
+            <button class="btn-emerald" style="width:100%; margin-top:30px">GUARDAR PERMISOS</button>"""
         opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
         content = f"<div class='card'><h2>🔐 Permisos</h2><select onchange=\"location.href='?p='+this.value\"><option value='0'>-- Elegir Perfil --</option>{opts}</select>{table_html}</div>"
-
-    elif path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
     else:
-        content = f"<div class='card'><h2>Bienvenido</h2><p>Hola {u_data['u']}, usa el menu para navegar.</p></div>"
+        content = f"<div class='card'><h2>Bienvenido</h2><p>Hola {u_data['u']}, usa el menú para navegar.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode("utf-8")]
