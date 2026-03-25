@@ -246,16 +246,18 @@ def application(environ, start_response):
             }}
         </script>"""
 
-   # --- PANTALLA MODULOS CORREGIDA ---
+# --- PANTALLA MODULOS (SIN CAMPO RUTA) ---
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
         modulos = cur.fetchall()
+        # Nota: En la tabla seguimos mostrando la ruta para referencia, 
+        # pero en el formulario ya no aparecerá.
         rows = "".join([f"""<tr>
             <td><b>{m['strNombreModulo']}</b></td>
             <td><code>{m['strRuta']}</code></td>
             <td>{m['strMenuPadre']}</td>
             <td>
-                <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", r:\"{m['strRuta']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
+                <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
                 <button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>
             </td>
         </tr>""" for m in modulos])
@@ -265,7 +267,7 @@ def application(environ, start_response):
             <h2>📦 Gestión de Módulos</h2>
             <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
             <table>
-                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
+                <thead><tr><th>NOMBRE</th><th>RUTA (Auto)</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
             </table>
         </div>
@@ -277,8 +279,6 @@ def application(environ, start_response):
                 <label>Nombre del Módulo (Máx. 20)</label>
                 <input id='mn' placeholder='Ej: Facturación' maxlength="20" 
                        oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
-                <label>Ruta</label>
-                <input id='mr' placeholder='/ruta'>
                 <label>Menú Padre</label>
                 <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
                 <button class='btn-emerald' onclick="saveMod()">GUARDAR MÓDULO</button>
@@ -293,8 +293,6 @@ def application(environ, start_response):
                 <label>Nombre del Módulo</label>
                 <input id='ed_n' maxlength="20" 
                        oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
-                <label>Ruta</label>
-                <input id='ed_r'>
                 <label>Menú Padre</label>
                 <select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
                 <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR CAMBIOS</button>
@@ -304,19 +302,26 @@ def application(environ, start_response):
         <script>
             async function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
-                const r = document.getElementById('mr').value.trim();
                 const p = document.getElementById('mp').value;
-                if(!n || !r) return alert("Nombre y Ruta son obligatorios");
-                runCrud('save', 'modulos', 0, {{n, r, p}});
+                if(!n) return alert("El nombre es obligatorio");
+                
+                // Generamos una ruta automática basada en el nombre (ej: "Mi Modulo" -> "/mi-modulo")
+                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
+                
+                runCrud('save', 'modulos', 0, {{n, r: autoRuta, p}});
             }}
 
             async function updateMod() {{
                 const id = document.getElementById('ed_id').value;
                 const n = document.getElementById('ed_n').value.trim();
-                const r = document.getElementById('ed_r').value.trim();
                 const p = document.getElementById('ed_p').value;
-                if(!n || !r) return alert("Los campos no pueden estar vacíos");
-                runCrud('update', 'modulos', id, {{n, r, p}});
+                if(!n) return alert("El nombre no puede estar vacío");
+
+                // En el update, si no queremos cambiar la ruta, podemos enviar el nombre 
+                // y que el servidor decida, o regenerarla también:
+                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
+
+                runCrud('update', 'modulos', id, {{n, r: autoRuta, p}});
             }}
         </script>
         """
