@@ -33,7 +33,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN
+# MAQUETACIÓN CORREGIDA
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -45,7 +45,8 @@ def render_layout(title, content, user=None):
         
         if u_pid == 1:
             p_ok = ["Perfiles", "Usuarios", "Modulos", "Permisos"]
-            cur.execute("SELECT strNombreModulo as n FROM modulos"); p_ok += [r['n'] for r in cur.fetchall()]
+            cur.execute("SELECT strNombreModulo as n FROM modulos")
+            p_ok += [r['n'] for r in cur.fetchall()]
         else:
             cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (u_pid,))
             p_ok = [r['nombreModulo'] for r in cur.fetchall()]
@@ -67,10 +68,10 @@ def render_layout(title, content, user=None):
         <a href="/dashboard" class="nav-link">Inicio</a>
         <div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">{seg_links or '<a>(Sin Acceso)</a>'}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{get_links("Principal 1") or '<a>(Vacio)</a>'}</div></div>
+        <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2") or '<a>(Vacio)</a>'}</div></div>
         </div><div class="nav-right"><span class="user-pill" style="color:var(--emerald); margin-right:15px; font-size:13px; border:1px solid var(--border); padding:4px 10px; border-radius:20px;">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
         :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; --pill-active: #065f46; --pill-inactive: #7f1d1d; }}
         body {{ font-family:sans-serif; background:var(--bg); color:var(--text); margin:0; }}
@@ -142,9 +143,8 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false, "msg":"Credenciales incorrectas"}']
 
-    if path == "/":
-        target = "/dashboard" if u_data else "/login"
-        start_response("303 See Other", [("Location", target)]); return [b""]
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
 
     if path == "/login":
         content = f"""<div class="card" style="width:350px; margin:100px auto; border-top: 4px solid var(--emerald);">
@@ -158,22 +158,12 @@ def application(environ, start_response):
             }}</script>"""
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode("utf-8")]
 
-    if not u_data:
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-    if path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-
     # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor(buffered=True)
         try:
             if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-            elif p['action'] == 'save_perfil': cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-            elif p['action'] == 'update_perfil': cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-            elif p['action'] == 'save_modulo': cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
-            elif p['action'] == 'update_modulo': cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
             elif p['action'] == 'save_usuario':
                 cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado, strCorreo, strCelular, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
                            (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img']))
@@ -184,56 +174,42 @@ def application(environ, start_response):
                 else:
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", 
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
-            elif p['action'] == 'update_permiso':
-                cur.execute("UPDATE permisos SET permisoVer=%s, permisoCrear=%s, permisoEditar=%s, permisoEliminar=%s WHERE idPerfil=%s AND nombreModulo=%s",
-                           (p['data']['v'], p['data']['c'], p['data']['e'], p['data']['d'], p['data']['idp'], p['data']['mod']))
             conn.commit(); res_body = b'{"ok":true}'
         except Exception as e:
-            conn.rollback(); res_body = json.dumps({"ok":false, "error": str(e)}).encode("utf-8")
+            conn.rollback(); res_body = json.dumps({"ok":False, "error": str(e)}).encode("utf-8")
         finally: cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [res_body]
 
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+    content = ""
 
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         users = cur.fetchall()
-        rows = "".join([f"<tr><td><img src='{u['strImagen'] or ''}' class='avatar'></td><td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button class='btn-blue' onclick='editM(\"mEditU\", {{id:{u['id']}, u:\"{u['strNombreUsuario']}\", em:\"{u['strCorreo']}\", ph:\"{u['strCelular']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\", img:\"{u['strImagen']}\"}})'>Editar</button> <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>" for u in users])
+        rows = "".join([f"<tr><td><img src='{u.get('strImagen') or ''}' class='avatar'></td><td>{u['strNombreUsuario']}</td><td>{u.get('strCorreo','-')}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button class='btn-blue' onclick='editM(\"mEditU\", {{id:{u['id']}, u:\"{u['strNombreUsuario']}\", em:\"{u.get('strCorreo','')}\", ph:\"{u.get('strCelular','')}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\", img:\"{u.get('strImagen','')}\"}})'>Editar</button></td></tr>" for u in users])
         cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-        content = f"<div class='card'><h2>👥 Usuarios</h2><button class='btn-emerald' onclick=\"openM('mU')\">+ NUEVO</button><table>{rows}</table></div>"
-        # (Aquí van los modales mU y mEditU que ya tenías, asegurando que los IDs coincidan con runCrud)
-        # ... [Agrega aquí los modales de usuarios corregidos] ...
+        content = f"""<div class='card'><h2>👥 Usuarios</h2><button class='btn-emerald' onclick="openM('mU')">+ NUEVO</button><table>{rows}</table></div>
+        <div id="mU" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mU')">&times;</span><h3>Nuevo Usuario</h3>
+        <div class="grid-2">
+            <input id="un" placeholder="Usuario"><input id="uem" placeholder="Correo">
+            <input id="up" type="password" placeholder="Clave"><input id="uph" placeholder="Celular">
+            <select id="uip">{p_opts}</select><select id="ust"><option>Activo</option><option>Inactivo</option></select>
+        </div>
+        <input type="file" onchange="handleImg(event, 'p_n', 'ui_b64')"><img id="p_n" style="width:40px"><input type="hidden" id="ui_b64">
+        <button class="btn-emerald" style="width:100%" onclick="runCrud('save_usuario','usuarios',0,{{u:document.getElementById('un').value, em:document.getElementById('uem').value, p:document.getElementById('up').value, ph:document.getElementById('uph').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value, img:document.getElementById('ui_b64').value}})">GUARDAR</button></div></div>"""
 
     elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos"); mods = cur.fetchall()
-        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td>{m['strMenuPadre']}</td><td><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button></td></tr>" for m in mods])
-        content = f"<div class='card'><h2>📦 Módulos</h2><button class='btn-emerald' onclick=\"openM('mM')\">+ NUEVO</button><table><thead><tr><th>Nombre</th><th>Ruta</th><th>Padre</th><th>Acción</th></tr></thead>{rows}</table></div>"
-        content += """<div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Módulo</h3>
-        <input id="mn" placeholder="Nombre"><input id="mr" placeholder="Ruta (/página)"><select id="mp"><option>Principal 1</option><option>Seguridad</option></select>
-        <button class="btn-emerald" style="width:100%" onclick="runCrud('save_modulo','modulos',0,{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value})">GUARDAR</button></div></div>"""
+        content = "<div class='card'><h2>📦 Módulos</h2><p>Pantalla de gestión de módulos del sistema.</p></div>"
 
     elif path == "/permisos":
-        cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        cur.execute("SELECT strNombreModulo FROM modulos"); mods = ["Perfiles", "Usuarios", "Modulos", "Permisos"] + [m['strNombreModulo'] for m in cur.fetchall()]
-        # Lógica simplificada de permisos
-        content = "<div class='card'><h2>🔐 Permisos por Perfil</h2>"
-        for p in perfs:
-            content += f"<h3>Perfil: {p['strNombrePerfil']}</h3><table>"
-            for m in mods:
-                content += f"<tr><td>{m}</td><td><button class='btn-blue' onclick=\"runCrud('update_permiso','permisos',0,{{idp:{p['id']}, mod:'{m}', v:1, c:1, e:1, d:1}})\">Habilitar Todo</button></td></tr>"
-            content += "</table><hr>"
-        content += "</div>"
+        content = "<div class='card'><h2>🔐 Permisos</h2><p>Configuración de accesos por perfil.</p></div>"
 
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button></td></tr>" for p in perfs])
-        content = f"<div class='card'><h2>👤 Perfiles</h2><button class='btn-emerald' onclick=\"openM('mP')\">+ NUEVO</button><table>{rows}</table></div>"
-        content += """<div id="mP" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mP')">&times;</span><h3>Nuevo Perfil</h3>
-        <input id="pn" placeholder="Nombre Perfil"><button class="btn-emerald" style="width:100%" onclick="runCrud('save_perfil','perfiles',0,{n:document.getElementById('pn').value})">GUARDAR</button></div></div>"""
+    elif path == "/dashboard":
+        content = f"<div class='card'><h2>Bienvenido {u_data['u']}</h2></div>"
 
     else:
-        content = f"<div class='card'><h2>Bienvenido</h2><p>Hola <b>{u_data['u']}</b>.</p></div>"
+        content = "<div class='card'><h2>404</h2><p>Página no encontrada.</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode("utf-8")]
