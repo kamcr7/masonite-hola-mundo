@@ -113,7 +113,7 @@ def application(environ, start_response):
     conn = None
     cur = None
 
-   # --- API CRUD CORREGIDO ---
+   # --- API CRUD CORREGIDO CON PERMISOS ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
@@ -123,11 +123,9 @@ def application(environ, start_response):
             
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
-                    # Validación duplicados Usuarios
                     u_nom = p['data']['u'].strip()
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s)", (u_nom,))
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
-                    
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
                                (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
                 
@@ -138,19 +136,26 @@ def application(environ, start_response):
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
                 
                 elif p['table'] == 'modulos':
-                    # Validación duplicados Módulos
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s)", (m_nom,))
                     if cur.fetchone(): raise Exception("El módulo ya existe")
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                (m_nom, p['data']['r'], p['data']['p']))
+                
+                # --- NUEVA LÓGICA DE PERMISOS ---
+                elif p['table'] == 'permisos':
+                    id_p = p['data']['idp']
+                    # Borramos permisos actuales para sobreescribir
+                    cur.execute("DELETE FROM perfil_modulo WHERE idPerfil = %s", (id_p,))
+                    # Insertamos cada módulo marcado
+                    for id_m in p['data']['mods']:
+                        cur.execute("INSERT INTO perfil_modulo (idPerfil, idModulo) VALUES (%s, %s)", (id_p, id_m))
 
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s) AND id != %s", (u_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
-                    
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                (u_nom, p['data']['idp'], p['data']['st'], p['id']))
                 
@@ -161,7 +166,6 @@ def application(environ, start_response):
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
                 
                 elif p['table'] == 'modulos':
-                    # Validación duplicados Módulos Update
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s) AND id != %s", (m_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
@@ -178,7 +182,6 @@ def application(environ, start_response):
             cur = None; conn = None
         
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
-
     # --- PROTECCIÓN DE SESIÓN ---
     if not u_data and path != "/login":
         start_response("303 See Other", [("Location", "/login")]); return [b""]
@@ -399,7 +402,78 @@ def application(environ, start_response):
             }}
         </script>
         """
+       # --- PANTALLA PERMISOS (ALINEADO Y FUNCIONAL) ---
+    elif path == "/permisos":
+        # Traemos Perfiles y Módulos
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles")
+        perfiles = cur.fetchall()
+        
+        cur.execute("SELECT id, strNombreModulo FROM modulos")
+        modulos = cur.fetchall()
 
+        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
+        
+        # Generamos la lista de módulos para los checkboxes
+        mod_checks = "".join([f"""
+            <div class='check-item'>
+                <input type='checkbox' class='mod-check' value='{m['id']}' id='m_{m['id']}'>
+                <label for='m_{m['id']}'>{m['strNombreModulo']}</label>
+            </div>""" for m in modulos])
+
+        content = f"""
+        <div class='card'>
+            <h2>🔐 Gestión de Permisos</h2>
+            <p>Seleccione un perfil para ver y editar sus accesos:</p>
+            <select id='sel_perfil' onchange='cargarPermisos(this.value)' style='width: 100%; margin-bottom: 20px;'>
+                <option value=''>-- Seleccionar Perfil --</option>
+                {p_opts}
+            </select>
+
+            <div id='area_permisos' style='display:none'>
+                <div class='grid-permisos' style='background: #1e293b; padding: 20px; border-radius: 8px;'>
+                    {mod_checks}
+                </div>
+                <br>
+                <button class='btn-emerald' onclick='guardarPermisos()'>ACTUALIZAR PERMISOS</button>
+            </div>
+        </div>
+
+        <script>
+            // Función para cargar los permisos actuales de la BD
+            async function cargarPermisos(idp) {{
+                if(!idp) {{
+                    document.getElementById('area_permisos').style.display = 'none';
+                    return;
+                }}
+                
+                // Limpiar checks
+                document.querySelectorAll('.mod-check').forEach(c => c.checked = false);
+                
+                // Consultamos a la API qué módulos tiene este perfil
+                const res = await fetch('/api/get_permisos?idp=' + idp);
+                const data = await res.json();
+                
+                if(data.ok) {{
+                    data.mods.forEach(idMod => {{
+                        const chk = document.getElementById('m_' + idMod);
+                        if(chk) chk.checked = true;
+                    }});
+                    document.getElementById('area_permisos').style.display = 'block';
+                }}
+            }}
+
+            function guardarPermisos() {{
+                const idp = document.getElementById('sel_perfil').value;
+                const mods = Array.from(document.querySelectorAll('.mod-check:checked')).map(c => parseInt(c.value));
+                
+                if(mods.length === 0) {{
+                    if(!confirm("¿Quitar todos los permisos?")) return;
+                }}
+
+                runCrud('save', 'permisos', 0, {{ idp, mods }});
+            }}
+        </script>
+        """
     # --- CIERRE FINAL SEGURO ---
     if cur: cur.close()
     if conn: conn.close()
