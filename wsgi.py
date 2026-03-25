@@ -235,109 +235,211 @@ def application(environ, start_response):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
  # --- PANTALLA USUARIOS ---
-    elif path == "/usuarios":
-        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u JOIN perfiles p ON u.idPerfil = p.id")
+    if path == "/usuarios":
+        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         usuarios = cur.fetchall()
         
-        rows = "".join([f"""
-            <tr class='u-row' data-visible='true'>
-                <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
-                <td>{u['strNombrePerfil']}</td>
-                <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
-                <td>
-                    <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEditU\")'>Editar</button>
-                    <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>
-                </td>
-            </tr>""" for u in usuarios])
+        rows = "".join([f"""<tr>
+            <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
+            <td><b>{u['strNombreUsuario']}</b></td>
+            <td>{u['strNombrePerfil']}</td>
+            <td><span class='status-pill {'active' if u['strEstado']=='Activo' else 'inactive'}'>{u['strEstado']}</span></td>
+            <td>
+                <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}})'>Editar</button>
+                <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>
+            </td>
+        </tr>""" for u in usuarios])
+
+        cur.execute("SELECT * FROM perfiles")
+        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
 
         content = f"""
         <div class='card'>
             <h2>👥 Gestión de Usuarios</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
-                <button class='btn-emerald' style='width:auto' onclick="openM('mNewU')">+ NUEVO USUARIO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar();" placeholder="🔍 Buscar usuario..." style="width:200px; margin:0;">
-            </div>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
             <table>
-                <thead><tr><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
-                <tbody id="tbody">{rows}</tbody>
+                <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
             </table>
-            <div class="paginador">
-                <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt">❮</button>
-                <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig">❯</button>
-            </div>
         </div>
-        {self.get_script_paginado('.u-row', '.u-name')}
+
+        <div id='mNew' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mNew')">&times;</span>
+            <h3>Nuevo Usuario</h3>
+            <div class='grid-2'>
+                <div>
+                    <label>Nombre (Letras, máx 15)</label>
+                    <input id='un' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')">
+                </div>
+                <div>
+                    <label>Pass (5-8 carac.)</label>
+                    <input id='up' type='password' minlength="5" maxlength="8">
+                </div>
+                <div>
+                    <label>Correo (@gmail.com)</label>
+                    <input id='uc' type='email' maxlength="30" placeholder="ejemplo@gmail.com">
+                </div>
+                <div>
+                    <label>Teléfono (10 dígitos)</label>
+                    <input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                </div>
+                <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
+            <button class='btn-emerald' onclick="validateAndSave()">GUARDAR USUARIO</button>
+        </div></div>
+
+        <div id='mEdit' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mEdit')">&times;</span>
+            <h3>Editar Usuario</h3>
+            <input type='hidden' id='ed_id'>
+            <div class='grid-2'>
+                <div><label>Usuario</label><input id='ed_u' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')"></div>
+                <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
+            <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
+        </div></div>
+
+        <script>
+            function validateAndSave() {{
+                const u = document.getElementById('un').value.trim();
+                const p = document.getElementById('up').value;
+                const c = document.getElementById('uc').value.trim();
+                const t = document.getElementById('ut').value.trim();
+                const idp = document.getElementById('un_idp').value;
+                const st = document.getElementById('un_st').value;
+
+                // Validaciones de JS
+                if(u.length < 3) return alert("Nombre demasiado corto");
+                if(p.length < 5 || p.length > 8) return alert("La contraseña debe tener entre 5 y 8 caracteres");
+                if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+                if(t.length !== 10) return alert("El teléfono debe tener exactamente 10 dígitos");
+
+                const data = {{ u, p, idp, st }}; // Tu API solo procesa estos 4 según el código que enviaste
+                runCrud('save', 'usuarios', 0, data);
+            }}
+
+            function updateUser() {{
+                const id = document.getElementById('ed_id').value;
+                const u = document.getElementById('ed_u').value.trim();
+                const idp = document.getElementById('ed_idp').value;
+                const st = document.getElementById('ed_st').value;
+
+                if(!u) return alert("El nombre es obligatorio");
+                runCrud('update', 'usuarios', id, {{ u, idp, st }});
+            }}
+        </script>
         """
             
     # --- PANTALLA PERFILES ---
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
-        
-        rows = "".join([f"""
-            <tr class='p-row' data-visible='true'>
-                <td>{p['id']}</td>
-                <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
+        rows = ""
+        for index, p in enumerate(perfiles, start=1):
+            rows += f"""<tr>
+                <td>{index}</td>
+                <td><b>{p['strNombrePerfil']}</b></td>
                 <td>
                     <button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>
                     <button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>
                 </td>
-            </tr>""" for p in perfiles])
-
-        content = f"""
-        <div class='card'>
-            <h2>👥 Gestión de Perfiles</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
-                <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar();" placeholder="🔍 Buscar perfil..." style="width:200px; margin:0;">
-            </div>
-            <table>
-                <thead><tr><th>ID</th><th>NOMBRE PERFIL</th><th>ACCIONES</th></tr></thead>
-                <tbody id="tbody">{rows}</tbody>
-            </table>
-            <div class="paginador">
-                <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt">❮</button>
-                <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig">❯</button>
-            </div>
-        </div>
-        {self.get_script_paginado('.p-row', '.p-name')}
-        """
+            </tr>"""
+            
+        content = f"""<div class='card'><h2>👤 Gestión de Perfiles</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
+            <table><thead><tr><th>#</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNewP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3>
+            <label>Nombre del Perfil (Máx. 15 letras)</label>
+            <input id='pn' placeholder='Ej: Ventas' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+            <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button></div></div>
+        <div id='mEditP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3><input type='hidden' id='ed_id'>
+            <label>Nombre del Perfil</label>
+            <input id='ed_n' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+            <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button></div></div>
+        <script>
+            async function savePerfil() {{
+                const nom = document.getElementById('pn').value.trim();
+                if(!nom) return alert("Escribe un nombre válido");
+                runCrud('save', 'perfiles', 0, {{n: nom}});
+            }}
+            async function updatePerfil() {{
+                const id = document.getElementById('ed_id').value;
+                const nom = document.getElementById('ed_n').value.trim();
+                if(!nom) return alert("El nombre no puede estar vacío");
+                runCrud('update', 'perfiles', id, {{n: nom}});
+            }}
+        </script>"""
 
 # --- PANTALLA MODULOS ---
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
         modulos = cur.fetchall()
     
-        rows = "".join([f"""
-            <tr class='m-row' data-visible='true'>
-                <td><b class='m-name'>{m['strNombreModulo']}</b></td>
-                <td>{m['strMenuPadre']}</td>
-                <td>
-                    <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
-                    <button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>
-                </td>
-            </tr>""" for m in modulos])
+        rows = "".join([f"""<tr>
+            <td><b>{m['strNombreModulo']}</b></td>
+            <td>{m['strMenuPadre']}</td>
+            <td>
+                <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
+                <button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>
+            </td>
+        </tr>""" for m in modulos])
         
         content = f"""
         <div class='card'>
             <h2>📦 Gestión de Módulos</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
-                <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar();" placeholder="🔍 Buscar módulo..." style="width:200px; margin:0;">
-            </div>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
             <table>
                 <thead><tr><th>NOMBRE</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
-                <tbody id="tbody">{rows}</tbody>
+                <tbody>{rows}</tbody>
             </table>
-            <div class="paginador">
-                <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt">❮</button>
-                <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig">❯</button>
+        </div>
+
+        <div id='mNewM' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mNewM')">&times;</span>
+                <h3>Nuevo Módulo</h3>
+                <label>Nombre del Módulo (Máx. 20)</label>
+                <input id='mn' placeholder='Ej: Facturación' maxlength="20" 
+                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
+                <label>Menú Padre</label>
+                <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
+                <button class='btn-emerald' onclick="saveMod()">GUARDAR MÓDULO</button>
             </div>
         </div>
-        {self.get_script_paginado('.m-row', '.m-name')}
+
+        <div id='mEditM' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mEditM')">&times;</span>
+                <h3>Editar Módulo</h3>
+                <input type='hidden' id='ed_id'>
+                <label>Nombre del Módulo</label>
+                <input id='ed_n' maxlength="20" 
+                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
+                <label>Menú Padre</label>
+                <select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
+                <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR CAMBIOS</button>
+            </div>
+        </div>
+
+        <script>
+            async function saveMod() {{
+                const n = document.getElementById('mn').value.trim();
+                const p = document.getElementById('mp').value;
+                if(!n) return alert("El nombre es obligatorio");
+                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
+                runCrud('save', 'modulos', 0, {{n, r: autoRuta, p}});
+            }}
+
+            async function updateMod() {{
+                const id = document.getElementById('ed_id').value;
+                const n = document.getElementById('ed_n').value.trim();
+                const p = document.getElementById('ed_p').value;
+                if(!n) return alert("El nombre no puede estar vacío");
+                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
+                runCrud('update', 'modulos', id, {{n, r: autoRuta, p}});
+            }}
+        </script>
         """
 
     # --- PANTALLA PERMISOS ---
