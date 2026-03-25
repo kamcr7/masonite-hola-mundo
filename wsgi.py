@@ -670,24 +670,36 @@ def application(environ, start_response):
     </script>
     """
 
-    # ==========================================
     # --- RENDERIZADO FINAL ---
-    # ==========================================
     try:
-        # Si por alguna razón content quedó vacío, mostrar dashboard por defecto
+        # Si la ruta no coincide con nada de lo anterior, mostramos Inicio
         if not content:
-            content = "<div class='card'><h2>Bienvenido</h2><p>Seleccione una opción del menú para comenzar.</p></div>"
+            content = """
+            <div class='card'>
+                <h2>Bienvenido al Sistema</h2>
+                <p>Usa el menú superior para navegar por los módulos disponibles.</p>
+            </div>"""
             
-        res_html = render_layout("Panel Clinica", content, u_data).encode("utf-8")
-        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        res_html = render_layout("Clinica 2026", content, u_data).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Cache-Control", "no-cache")
+        ])
         return [res_html]
-    except Exception as e:
-        start_response("500 Error", [("Content-Type", "text/plain")])
-        return [f"Error al renderizar: {e}".encode()]
-    finally:
-        if cur: cur.close()
-        if conn: conn.close()
 
+    except Exception as e:
+        # Si algo falla aquí, imprimimos el error real en la pantalla
+        start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+        return [f"Error de Ejecución: {str(e)}".encode()]
+    
+    finally:
+        # Cerramos con seguridad: solo si existen y no son None
+        if 'cur' in locals() and cur: 
+            try: cur.close()
+            except: pass
+        if 'conn' in locals() and conn: 
+            try: conn.close()
+            except: pass
     # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
     if 'cur' in locals() and cur: cur.close()
     if 'conn' in locals() and conn: conn.close()
