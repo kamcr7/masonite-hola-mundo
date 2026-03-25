@@ -394,41 +394,46 @@ def application(environ, start_response):
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
+        # Módulos fijos de seguridad + módulos de la base de datos
         mods_fijos = [{'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'}, {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
+        
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        rows = "".join([f"""<tr class='perm-row'>
+        # IMPORTANTE: data-visible='true' y el ID correcto en los checks
+        rows = "".join([f"""<tr class='perm-row' data-visible='true' style='display:none;'>
                 <td><b class='perm-name'>{m['nm']}</b><br><small>{m['p']}</small></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='v_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='a_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='e_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='d_{m['id']}'></td>
+                <td align='center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='v_{m['id']}'></td>
+                <td align='center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='a_{m['id']}'></td>
+                <td align='center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='e_{m['id']}'></td>
+                <td align='center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='d_{m['id']}'></td>
             </tr>""" for m in todos_mods])
 
         content = f"""
         <div class='card'>
             <h2>🛡️ Matriz de Permisos</h2>
-            <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
+            <p>Selecciona un perfil para editar sus accesos:</p>
+            <select id='sel_perfil' onchange='cargarPermisos(this.value)' style='border: 2px solid var(--emerald);'>
                 <option value=''>-- Seleccione Perfil --</option>{p_opts}
             </select>
+
             <div id='area_permisos' style='display:none; margin-top:20px;'>
-                <div style='display:flex; gap:10px; margin-bottom:15px;'>
-                    <button class='btn-blue' onclick='bulk(true)' style="width:auto">☑ Todo</button>
-                    <button class='btn-red' onclick='bulk(false)' style="width:auto">☐ Nada</button>
-                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="margin-left:auto; width:200px;">
+                <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
+                    <button class='btn-blue' onclick='bulk(true)' style='width:auto'>☑ Todo</button>
+                    <button class='btn-red' onclick='bulk(false)' style='width:auto'>☐ Nada</button>
+                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="margin-left:auto; width:200px; margin-bottom:0;">
                 </div>
                 <table>
                     <thead><tr><th>MÓDULO</th><th>VER</th><th>ADD</th><th>EDT</th><th>DEL</th></tr></thead>
                     <tbody>{rows}</tbody>
                 </table>
                 <div class="paginador-ui">
-                    <button class="btn-blue" onclick="cambiarPagina(-1, '.perm-row')">❮</button>
-                    <span id="infoPagina"></span>
-                    <button class="btn-blue" onclick="cambiarPagina(1, '.perm-row')">❯</button>
+                    <button class='btn-blue' onclick="cambiarPagina(-1, '.perm-row')">❮ Ant.</button>
+                    <span id="infoPagina" style='font-weight:bold;'></span>
+                    <button class='btn-blue' onclick="cambiarPagina(1, '.perm-row')">Sig. ❯</button>
                 </div>
-                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
+                <button class='btn-emerald' style='margin-top:25px; font-size:1.1rem;' onclick='guardarPermisos()'>💾 GUARDAR CAMBIOS</button>
             </div>
         </div>
         """
