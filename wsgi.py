@@ -435,77 +435,95 @@ def application(environ, start_response):
         </script>
         """
        # --- PANTALLA PERMISOS (ALINEADO Y FUNCIONAL) ---
+   # --- PANTALLA PERMISOS (CORREGIDA) ---
     elif path == "/permisos":
-        # Traemos Perfiles y Módulos
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
         
-        cur.execute("SELECT id, strNombreModulo FROM modulos")
-        modulos = cur.fetchall()
+        # Módulos fijos + dinámicos
+        modulos_fijos = [
+            {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'},
+            {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
+            {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'},
+            {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
+        ]
+        
+        cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
+        modulos_db = cur.fetchall()
+        todos_mods = modulos_fijos + modulos_db
 
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        # Generamos la lista de módulos para los checkboxes
-        mod_checks = "".join([f"""
-            <div class='check-item'>
-                <input type='checkbox' class='mod-check' value='{m['id']}' id='m_{m['id']}'>
-                <label for='m_{m['id']}'>{m['strNombreModulo']}</label>
-            </div>""" for m in modulos])
+        rows = "".join([f"""
+            <tr class='mod-row'>
+                <td style='text-align:center'><input type='checkbox' class='mod-check' value='{m['id']}' id='m_{m['id']}'></td>
+                <td><b class='mod-name'>{m['nm']}</b></td>
+                <td><span class='status-pill active'>{m['p']}</span></td>
+            </tr>""" for m in todos_mods])
 
         content = f"""
         <div class='card'>
-            <h2>🔐 Gestión de Permisos</h2>
-            <p>Seleccione un perfil para ver y editar sus accesos:</p>
-            <select id='sel_perfil' onchange='cargarPermisos(this.value)' style='width: 100%; margin-bottom: 20px;'>
-                <option value=''>-- Seleccionar Perfil --</option>
-                {p_opts}
-            </select>
+            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
+                <h2>🔐 Gestión de Permisos</h2>
+                <div style='width:300px'>
+                    <label>Perfil:</label>
+                    <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
+                        <option value=''>-- Seleccionar Perfil --</option>
+                        {p_opts}
+                    </select>
+                </div>
+            </div>
 
             <div id='area_permisos' style='display:none'>
-                <div class='grid-permisos' style='background: #1e293b; padding: 20px; border-radius: 8px;'>
-                    {mod_checks}
+                <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
+                    <button class='btn-blue' onclick='checkAll(true)' style='width:auto; padding:8px 15px;'>☑ Todo</button>
+                    <button class='btn-red' onclick='checkAll(false)' style='width:auto; padding:8px 15px;'>☐ Nada</button>
+                    <input type="text" id="txtBusca" onkeyup="filtrar()" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
                 </div>
-                <br>
-                <button class='btn-emerald' onclick='guardarPermisos()'>ACTUALIZAR PERMISOS</button>
+
+                <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+                    <table id="tblP">
+                        <thead><tr><th style='width:50px'>Acceso</th><th>Módulo</th><th>Categoría</th></tr></thead>
+                        <tbody>{rows}</tbody>
+                    </table>
+                </div>
+                <button class='btn-emerald' style='margin-top:20px' onclick='guardarPermisos()'>GUARDAR PERMISOS</button>
             </div>
         </div>
-
         <script>
-            // Función para cargar los permisos actuales de la BD
+            function filtrar() {{
+                let val = document.getElementById('txtBusca').value.toUpperCase();
+                document.querySelectorAll('.mod-row').forEach(row => {{
+                    let text = row.querySelector('.mod-name').innerText.toUpperCase();
+                    row.style.display = text.includes(val) ? "" : "none";
+                }});
+            }}
+            function checkAll(v) {{
+                document.querySelectorAll('.mod-check').forEach(c => {{
+                    if(c.closest('tr').style.display !== 'none') c.checked = v;
+                }});
+            }}
             async function cargarPermisos(idp) {{
-                if(!idp) {{
-                    document.getElementById('area_permisos').style.display = 'none';
-                    return;
-                }}
-                
-                // Limpiar checks
+                if(!idp) return document.getElementById('area_permisos').style.display='none';
                 document.querySelectorAll('.mod-check').forEach(c => c.checked = false);
-                
-                // Consultamos a la API qué módulos tiene este perfil
                 const res = await fetch('/api/get_permisos?idp=' + idp);
                 const data = await res.json();
-                
                 if(data.ok) {{
-                    data.mods.forEach(idMod => {{
-                        const chk = document.getElementById('m_' + idMod);
-                        if(chk) chk.checked = true;
+                    data.mods.forEach(id => {{
+                        let c = document.getElementById('m_' + id);
+                        if(c) c.checked = true;
                     }});
                     document.getElementById('area_permisos').style.display = 'block';
                 }}
             }}
-
             function guardarPermisos() {{
                 const idp = document.getElementById('sel_perfil').value;
                 const mods = Array.from(document.querySelectorAll('.mod-check:checked')).map(c => parseInt(c.value));
-                
-                if(mods.length === 0) {{
-                    if(!confirm("¿Quitar todos los permisos?")) return;
-                }}
-
                 runCrud('save', 'permisos', 0, {{ idp, mods }});
             }}
         </script>
         """
+        
     # --- CIERRE FINAL SEGURO ---
     if cur: cur.close()
     if conn: conn.close()
