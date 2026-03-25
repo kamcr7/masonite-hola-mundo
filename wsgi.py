@@ -109,39 +109,57 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ); content = ""
 
-    # --- API CRUD ---
+   # --- API CRUD CORREGIDO (VALIDACIÓN DE PERFILES) ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
         try:
-            if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            if p['action'] == 'delete': 
+                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)", 
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                
                 elif p['table'] == 'perfiles':
-                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
+                    # Validación de duplicados Case-Insensitive
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
+                    if cur.fetchone():
+                        start_response("200 OK", [("Content-Type", "application/json")])
+                        return [b'{"ok":false, "error":"El perfil ya existe (mayus/minus)"}']
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
+                
                 elif p['table'] == 'modulos':
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", 
                                (p['data']['n'], p['data']['r'], p['data']['p']))
+            
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s", 
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
+                
                 elif p['table'] == 'perfiles':
-                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
+                    # Validación de duplicados al editar (que no sea el mismo ID)
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
+                    if cur.fetchone():
+                        start_response("200 OK", [("Content-Type", "application/json")])
+                        return [b'{"ok":false, "error":"Ya existe otro perfil con ese nombre"}']
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
+                
                 elif p['table'] == 'modulos':
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", 
                                (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
+            
             conn.commit(); res = b'{"ok":true}'
-        except Exception as e: conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
-        finally: cur.close(); conn.close()
+        except Exception as e: 
+            conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
+        finally: 
+            cur.close(); conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
-
-    if not u_data and path != "/login":
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     
     # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
@@ -164,13 +182,11 @@ def application(environ, start_response):
             <label>Usuario</label><input id='ed_u'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
             <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button></div></div>"""
 
-# --- PANTALLA PERFILES ---
+# --- PANTALLA PERFILES CORREGIDA ---
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
         rows = ""
-        # Usamos enumerate para mostrar un número correlativo (1, 2, 3...) 
-        # sin importar el ID real de la base de datos
         for index, p in enumerate(perfiles, start=1):
             rows += f"""<tr>
                 <td>{index}</td>
@@ -195,11 +211,10 @@ def application(environ, start_response):
             <div class='modal-content'>
                 <span class='close-x' onclick="closeM('mNewP')">&times;</span>
                 <h3>Nuevo Perfil</h3>
-                <label>Nombre del Perfil (Solo letras)</label>
-                <input id='pn' placeholder='Ej: Administrador' 
-                       pattern="[A-Za-z\\s]+" 
+                <label>Nombre del Perfil (Solo letras, máx. 20)</label>
+                <input id='pn' placeholder='Ej: Ventas' maxlength="20"
                        oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-                <button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">CREAR PERFIL</button>
+                <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button>
             </div>
         </div>
 
@@ -209,11 +224,26 @@ def application(environ, start_response):
                 <h3>Editar Perfil</h3>
                 <input type='hidden' id='ed_id'>
                 <label>Nombre del Perfil</label>
-                <input id='ed_n' 
+                <input id='ed_n' maxlength="20"
                        oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-                <button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value}})\">ACTUALIZAR</button>
+                <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
             </div>
         </div>
+
+        <script>
+            // Funciones específicas para validar duplicados antes de enviar al server
+            async function savePerfil() {{
+                const nom = document.getElementById('pn').value.trim();
+                if(!nom) return alert("Escribe un nombre");
+                runCrud('save', 'perfiles', 0, {{n: nom}});
+            }}
+
+            async function updatePerfil() {{
+                const id = document.getElementById('ed_id').value;
+                const nom = document.getElementById('ed_n').value.trim();
+                runCrud('update', 'perfiles', id, {{n: nom}});
+            }}
+        </script>
         """
 
     # --- PANTALLA MODULOS ---
