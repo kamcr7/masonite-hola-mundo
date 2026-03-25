@@ -30,7 +30,7 @@ def verify_jwt(env):
 
 def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
-    return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4', consume_results=True)
+    return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
 # MAQUETACIÓN
@@ -39,18 +39,14 @@ def render_layout(title, content, user=None):
     nav = ""
     if user:
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        # Obtener Perfil del Usuario
         cur.execute("SELECT idPerfil FROM usuarios WHERE strNombreUsuario=%s", (user['u'],))
         u_p = cur.fetchone()
         u_pid = u_p['idPerfil'] if u_p else 0
         
-        # --- LÓGICA DE ACCESO TOTAL PARA ADMIN (ID 1) ---
         if u_pid == 1:
-            # Si es admin, tiene permiso en todos los módulos del sistema y de la DB
             cur.execute("SELECT strNombreModulo as n FROM modulos")
             p_ok = ["Perfiles", "Usuarios", "Modulos", "Permisos"] + [r['n'] for r in cur.fetchall()]
         else:
-            # Si no es admin, filtrar por la tabla de permisos
             cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (u_pid,))
             p_ok = [r['nombreModulo'] for r in cur.fetchall()]
         
@@ -61,7 +57,6 @@ def render_layout(title, content, user=None):
             return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' 
                            for m in mods_db if m['strMenuPadre'] == padre and m['strNombreModulo'] in p_ok])
         
-        # Filtro de enlaces de seguridad
         seg_links = ""
         if "Perfiles" in p_ok: seg_links += '<a href="/perfiles">👤 Perfiles</a>'
         if "Modulos" in p_ok: seg_links += '<a href="/modulos">📦 Modulos</a>'
@@ -112,34 +107,11 @@ def render_layout(title, content, user=None):
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
         
-        function toggleAll() {{ 
-            const checks = document.querySelectorAll('tbody input[type="checkbox"]');
-            const anyChecked = Array.from(checks).some(c => c.checked);
-            checks.forEach(i => i.checked = !anyChecked);
-            const btn = document.getElementById('btnToggleAll');
-            if(btn) btn.innerText = anyChecked ? "SELECCIONAR TODO" : "DESELECCIONAR TODO";
-        }}
-
-        async function guardarPermisos(pid) {{
-            const data = [];
-            document.querySelectorAll("tbody tr").forEach(tr => {{
-                const chks = tr.querySelectorAll("input");
-                data.push({{
-                    m: tr.cells[0].innerText,
-                    v: chks[0].checked ? 1 : 0,
-                    c: chks[1].checked ? 1 : 0,
-                    e: chks[2].checked ? 1 : 0,
-                    d: chks[3].checked ? 1 : 0
-                }});
-            }});
-            const res = await fetch('/api/permisos', {{method:'POST', body:JSON.stringify({{pid, perms:data}})}});
-            if(res.ok) alert("Permisos Guardados");
-        }}
-        
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
-            if(res.ok) location.reload(); else alert("Error en el servidor");
-        }}
+            const d = await res.json();
+            if(d.ok) location.reload(); else alert("Error: " + (d.error || "Desconocido"));
+        }
 
         function editM(modalId, data) {{
             for (let key in data) {{
@@ -209,88 +181,61 @@ def application(environ, start_response):
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # --- API GUARDAR PERMISOS ---
-    if path == "/api/permisos" and method == "POST":
-        p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
-        conn = conectar_bd(); cur = conn.cursor()
-        cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (p['pid'],))
-        for x in p['perms']:
-            cur.execute("INSERT INTO permisos (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) VALUES (%s,%s,%s,%s,%s,%s)", (p['pid'], x['m'], x['v'], x['c'], x['e'], x['d']))
-        conn.commit(); cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
-
-    # --- API CRUD ---
+    # --- API CRUD CORREGIDO ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
-        conn = conectar_bd(); cur = conn.cursor()
+        conn = conectar_bd()
+        cur = conn.cursor(buffered=True) # IMPORTANTE: buffered=True soluciona el error out of sync
         
-        if p['action'] == 'delete': 
-            cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-        elif p['action'] == 'save_modulo': 
-            cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
-        elif p['action'] == 'update_modulo':
-            cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-        elif p['action'] == 'save_perfil': 
-            cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-        elif p['action'] == 'update_perfil':
-            cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-        elif p['action'] == 'save_usuario':
-            cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado, strCorreo, strCelular, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img']))
-        elif p['action'] == 'update_usuario':
-            if p['data'].get('p'):
-                cur.execute("UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
-            else:
-                cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", (p['data']['u'], p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
+        try:
+            if p['action'] == 'delete': 
+                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            
+            elif p['action'] == 'save_modulo': 
+                cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
+            
+            elif p['action'] == 'update_modulo':
+                cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
+            
+            elif p['action'] == 'save_perfil': 
+                cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
+            
+            elif p['action'] == 'update_perfil':
+                cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
+            
+            elif p['action'] == 'save_usuario':
+                cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado, strCorreo, strCelular, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
+                           (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img']))
+            
+            elif p['action'] == 'update_usuario':
+                if p['data'].get('p'):
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", 
+                               (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
+                else:
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", 
+                               (p['data']['u'], p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
 
-        if p['table'] == 'perfiles' and p['action'] in ['delete', 'save_perfil']:
-            cur.execute("SET @count = 0; UPDATE perfiles SET id = (@count := @count + 1);")
+            # Reajuste de IDs para perfiles (opcional)
+            if p['table'] == 'perfiles' and p['action'] in ['delete', 'save_perfil']:
+                cur.execute("SET @count = 0;")
+                cur.execute("UPDATE perfiles SET id = (@count := @count + 1);")
 
-        conn.commit(); cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":true}']
+            conn.commit()
+            res_body = b'{"ok":true}'
+        except Exception as e:
+            conn.rollback()
+            res_body = json.dumps({"ok":false, "error": str(e)}).encode("utf-8")
+        finally:
+            cur.close()
+            conn.close()
+
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [res_body]
 
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
-    if path == "/modulos":
-        mods_fijos = [{'id':'S','n':'Perfiles','p':'Seguridad'}, {'id':'S','n':'Usuarios','p':'Seguridad'}, {'id':'S','n':'Permisos','p':'Seguridad'}]
-        cur.execute("SELECT id, strNombreModulo as n, strRuta as r, strMenuPadre as p FROM modulos"); mods_db = cur.fetchall()
-        rows = ""
-        for m in (mods_fijos + mods_db):
-            btns = f"<button class='btn-blue' onclick='editM(\"mEditM\", {json.dumps(m)})'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if m['id'] != 'S' else "<em>Sistema</em>"
-            rows += f"<tr><td>{m['n']}</td><td>{m.get('r','-')}</td><td>{m['p']}</td><td>{btns}</td></tr>"
-        
-        content = f"""<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' onclick="openM('mM')">+ NUEVO MODULO</button>
-            <table><thead><tr><th>Nombre</th><th>Ruta</th><th>Menú Padre</th><th>Acción</th></tr></thead><tbody>{rows}</tbody></table></div>
-            <div id="mM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mM')">&times;</span><h3>Nuevo Modulo</h3>
-            <input id="mn" placeholder="Nombre"><input id="mr" placeholder="/ruta"><select id="mp"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('save_modulo','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})">GUARDAR</button></div></div>
-            <div id="mEditM" class="modal"><div class="modal-content"><span class="close-x" onclick="closeM('mEditM')">&times;</span><h3>Editar Modulo</h3>
-            <input type="hidden" id="edit_id"><input id="edit_n" placeholder="Nombre"><input id="edit_r" placeholder="/ruta"><select id="edit_p"><option>Principal 1</option><option>Principal 2</option><option>Seguridad</option></select>
-            <button class="btn-emerald" style="width:100%" onclick="runCrud('update_modulo','modulos',document.getElementById('edit_id').value,{{n:document.getElementById('edit_n').value, r:document.getElementById('edit_r').value, p:document.getElementById('edit_p').value}})">ACTUALIZAR</button></div></div>"""
-
-    elif path == "/permisos":
-        pid = int(urllib.parse.parse_qs(environ.get('QUERY_STRING','')).get('p',['0'])[0])
-        cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
-        table_html = "<p style='text-align:center; color:#94a3b8; padding:20px;'>⚠️ Seleccione un perfil para gestionar permisos.</p>"
-        if pid > 0:
-            cur.execute("SELECT * FROM permisos WHERE idPerfil=%s", (pid,))
-            cache = {r['nombreModulo']: r for r in cur.fetchall()}
-            cur.execute("SELECT strNombreModulo as n FROM modulos")
-            all_m = [{'n':'Perfiles'},{'n':'Usuarios'},{'n':'Modulos'},{'n':'Permisos'}] + cur.fetchall()
-            m_rows = ""
-            for m in all_m:
-                c = cache.get(m['n'], {'permisoVer':0,'permisoCrear':0,'permisoEditar':0,'permisoEliminar':0})
-                def check(val): return "checked" if val else ""
-                m_rows += f"<tr><td>{m['n']}</td><td><input type='checkbox' {check(c['permisoVer'])}></td><td><input type='checkbox' {check(c['permisoCrear'])}></td><td><input type='checkbox' {check(c['permisoEditar'])}></td><td><input type='checkbox' {check(c['permisoEliminar'])}></td></tr>"
-            
-            table_html = f"""<div style="text-align:right; margin:10px 0;"><button id="btnToggleAll" class="btn-emerald" style="background:#334155" onclick="toggleAll()">SELECCIONAR TODO</button></div>
-            <table><thead><tr><th>Modulo</th><th>Ver</th><th>Crear</th><th>Editar</th><th>Eliminar</th></tr></thead><tbody>{m_rows}</tbody></table>
-            <button class="btn-emerald" style="width:100%; margin-top:30px" onclick="guardarPermisos({pid})">GUARDAR PERMISOS</button>"""
-        
-        opts = "".join([f"<option value='{p['id']}' {'selected' if p['id']==pid else ''}>{p['strNombrePerfil']}</option>" for p in perfs])
-        content = f"<div class='card'><h2>🔐 Permisos</h2><label>Perfil a configurar:</label><select onchange=\"location.href='?p='+this.value\"><option value='0'>-- Elegir Perfil --</option>{opts}</select>{table_html}</div>"
-
-    elif path == "/usuarios":
+    if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         users = cur.fetchall()
         rows = ""
