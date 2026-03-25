@@ -113,7 +113,7 @@ def application(environ, start_response):
     conn = None
     cur = None
 
-   # --- API CRUD ACTUALIZADO (USUARIOS CON CORREO Y TELÉFONO) ---
+   # --- API CRUD CORREGIDO ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
@@ -123,16 +123,13 @@ def application(environ, start_response):
             
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
-                    u_nom = p['data']['u'].strip()
                     # Validación duplicados Usuarios
+                    u_nom = p['data']['u'].strip()
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s)", (u_nom,))
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
                     
-                    # Insert con nuevos campos: Correo y Teléfono (strNumero)
-                    cur.execute("""INSERT INTO usuarios 
-                        (strNombreUsuario, strPwd, strCorreo, strNumero, idPerfil, strEstado) 
-                        VALUES (%s, %s, %s, %s, %s, %s)""",
-                        (u_nom, hash_password(p['data']['p']), p['data']['c'], p['data']['t'], p['data']['idp'], p['data']['st']))
+                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
+                               (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
                 
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
@@ -141,10 +138,11 @@ def application(environ, start_response):
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
                 
                 elif p['table'] == 'modulos':
+                    # Validación duplicados Módulos
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s)", (m_nom,))
                     if cur.fetchone(): raise Exception("El módulo ya existe")
-                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s, %s, %s)",
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                (m_nom, p['data']['r'], p['data']['p']))
 
             elif p['action'] == 'update':
@@ -153,11 +151,8 @@ def application(environ, start_response):
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s) AND id != %s", (u_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
                     
-                    # Update con nuevos campos
-                    cur.execute("""UPDATE usuarios SET 
-                        strNombreUsuario=%s, strCorreo=%s, strNumero=%s, idPerfil=%s, strEstado=%s 
-                        WHERE id=%s""",
-                        (u_nom, p['data']['c'], p['data']['t'], p['data']['idp'], p['data']['st'], p['id']))
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
+                               (u_nom, p['data']['idp'], p['data']['st'], p['id']))
                 
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
@@ -166,6 +161,7 @@ def application(environ, start_response):
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
                 
                 elif p['table'] == 'modulos':
+                    # Validación duplicados Módulos Update
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s) AND id != %s", (m_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
@@ -183,101 +179,34 @@ def application(environ, start_response):
         
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
 
+    # --- PROTECCIÓN DE SESIÓN ---
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
     # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
-   # --- PANTALLA USUARIOS CORREGIDA ---
+    # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-        rows = "".join([f"""<tr>
-            <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
-            <td><b>{u['strNombreUsuario']}</b><br><small>{u['strCorreo']}</small></td>
-            <td>{u['strNombrePerfil']}</td>
-            <td><span class='status-pill {'active' if u['strEstado']=='Activo' else 'inactive'}'>{u['strEstado']}</span></td>
-            <td>
-                <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", c:\"{u['strCorreo']}\", t:\"{u['strNumero']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}})'>Editar</button>
-                <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Eliminar</button>
-            </td>
-        </tr>""" for u in cur.fetchall()])
+        rows = "".join([f"<tr><td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td><td><b>{u['strNombreUsuario']}</b></td><td>{u['strNombrePerfil']}</td><td><span class='status-pill {'active' if u['strEstado']=='Activo' else 'inactive'}'>{u['strEstado']}</span></td><td><button class='btn-blue' onclick='preEdit({u['id']},{{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}})'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Eliminar</button></td></tr>" for u in cur.fetchall()])
+        cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
         
-        cur.execute("SELECT * FROM perfiles"); 
-        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-        
-        content = f"""
-        <div class='card'>
-            <div style='display:flex;justify-content:space-between'>
-                <h2>👥 Gestión de Usuarios</h2>
-                <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+        content = f"""<div class='card'><div style='display:flex;justify-content:space-between'><h2>👥 Gestión de Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button></div>
+        <table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNew' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNew')">&times;</span><h3>Nuevo Usuario</h3>
+            <div class='grid-2'>
+                <div><label>Usuario</label><input id='un' maxlength='15'></div>
+                <div><label>Pass</label><input id='up' type='password'></div>
+                <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
-            <table>
-                <thead><tr><th>IMG</th><th>USUARIO / CORREO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
-                <tbody>{rows}</tbody>
-            </table>
-        </div>
+            <label>Foto</label><input type='file' onchange="handleImg(event,'pv1')"><img id='pv1' style='width:50px;display:block;margin:10px 0'>
+            <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value}})\">GUARDAR</button></div></div>
+        <div id='mEdit' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEdit')">&times;</span><h3>Editar Usuario</h3><input type='hidden' id='ed_id'>
+            <label>Usuario</label><input id='ed_u' maxlength='15'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
+            <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button></div></div>"""
 
-        <div id='mNew' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mNew')">&times;</span>
-                <h3>Crear Usuario</h3>
-                <div class='grid-2'>
-                    <div><label>Usuario</label><input id='un' maxlength="15"></div>
-                    <div><label>Password</label><input id='up' type='password'></div>
-                    <div><label>Correo</label><input id='uc' type='email'></div>
-                    <div><label>Teléfono</label><input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
-                    <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
-                    <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
-                </div>
-                <label>Foto de Perfil</label>
-                <input type='file' onchange="handleImg(event,'pv1')">
-                <img id='pv1' style='width:60px; border-radius:50%; margin:10px 0; display:none'>
-                <button class='btn-emerald' onclick="saveUser()">GUARDAR USUARIO</button>
-            </div>
-        </div>
-
-        <div id='mEdit' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mEdit')">&times;</span>
-                <h3>Editar Usuario</h3>
-                <input type='hidden' id='ed_id'>
-                <div class='grid-2'>
-                    <div><label>Usuario</label><input id='ed_u' maxlength="15"></div>
-                    <div><label>Correo</label><input id='ed_c' type='email'></div>
-                    <div><label>Teléfono</label><input id='ed_t' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
-                    <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
-                    <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
-                </div>
-                <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR DATOS</button>
-            </div>
-        </div>
-
-        <script>
-            function saveUser() {{
-                const data = {{
-                    u: document.getElementById('un').value.trim(),
-                    p: document.getElementById('up').value,
-                    c: document.getElementById('uc').value.trim(),
-                    t: document.getElementById('ut').value.trim(),
-                    idp: document.getElementById('un_idp').value,
-                    st: document.getElementById('un_st').value
-                }};
-                if(!data.u || !data.p || !data.c) return alert("Usuario, Pass y Correo son obligatorios");
-                runCrud('save', 'usuarios', 0, data);
-            }}
-
-            function updateUser() {{
-                const id = document.getElementById('ed_id').value;
-                const data = {{
-                    u: document.getElementById('ed_u').value.trim(),
-                    c: document.getElementById('ed_c').value.trim(),
-                    t: document.getElementById('ed_t').value.trim(),
-                    idp: document.getElementById('ed_idp').value,
-                    st: document.getElementById('ed_st').value
-                }};
-                if(!data.u || !data.c) return alert("Usuario y Correo son obligatorios");
-                runCrud('update', 'usuarios', id, data);
-            }}
-        </script>
-        """
     # --- PANTALLA PERFILES ---
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
