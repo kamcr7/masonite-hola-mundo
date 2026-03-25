@@ -692,16 +692,19 @@ def application(environ, start_response):
         return [res_html.encode("utf-8")]
 
     except Exception as e:
-        # Captura errores de renderizado para que Railway no se ponga en negro
+        # Si algo falla aquí, imprimimos el error real en la pantalla para saber qué es
         start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
         return [f"Error de Ejecución: {str(e)}".encode("utf-8")]
     
     finally:
-        # Cierre ultra seguro de base de datos
+        # CIERRE ÚNICO Y SEGURO: Solo se hace aquí dentro
         if 'cur' in locals() and cur is not None: 
             try: cur.close()
             except: pass
         if 'conn' in locals() and conn is not None: 
             try: conn.close()
             except: pass
+
+# --- EL ARCHIVO DEBE TERMINAR AQUÍ ---
+# No debe haber ninguna línea más de 'return' o 'start_response' debajo.
   
