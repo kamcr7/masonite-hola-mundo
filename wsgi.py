@@ -443,6 +443,58 @@ def application(environ, start_response):
             </div>
         </div>
         """
+        
+        # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
+    elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
+        # Título dinámico basado en la ruta
+        titulos = {
+            "/principal1_1": "Gestión de Pacientes (Demo)",
+            "/principal1_2": "Control de Citas (Demo)",
+            "/principal2_1": "Inventario Farmacia (Demo)",
+            "/principal2_2": "Reportes Financieros (Demo)"
+        }
+        titulo = titulos.get(path, "Módulo Demo")
+        
+        # Datos por default según el módulo
+        datos_demo = ""
+        if "1_1" in path:
+            datos_demo = "<tr><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td></tr>"
+        elif "1_2" in path:
+            datos_demo = "<tr><td>101</td><td>2026-03-25</td><td>10:00 AM</td><td><span class='status-pill active'>Confirmada</span></td></tr>"
+        else:
+            datos_demo = "<tr><td>001</td><td>Producto ABC</td><td>50 unidades</td><td><span class='status-pill inactive'>Stock Bajo</span></td></tr>"
+
+        content = f"""
+        <div class='card'>
+            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                <h2>{titulo}</h2>
+                <button class='btn-emerald' style='width:auto;' onclick='alert("Función deshabilitada en Demo")'>+ Agregar Nuevo</button>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Descripción / Nombre</th><th>Detalle</th><th>Estado</th><th>Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {datos_demo}
+                    <tr>
+                        <td>2</td>
+                        <td>Registro de Ejemplo</td>
+                        <td>Información estática</td>
+                        <td><span class='status-pill active'>OK</span></td>
+                        <td>
+                            <button class='btn-blue' onclick='alert("Editar deshabilitado")'>✏️</button>
+                            <button class='btn-red' onclick='alert("Borrar deshabilitado")'>🗑️</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <p style='margin-top:20px; color:#94a3b8; font-style:italic;'>
+                * Nota: Los botones de esta pantalla son ilustrativos y no afectan la base de datos.
+            </p>
+        </div>
+        """
 
     # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
