@@ -447,6 +447,7 @@ def application(environ, start_response):
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
         
+        # Módulos base + Módulos de la BD
         mods_fijos = [
             {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
             {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
@@ -479,15 +480,15 @@ def application(environ, start_response):
             </div>
 
             <div id='area_permisos' style='display:none;'>
-                <div style='display:flex; gap:10px; margin-bottom:15px;'>
-                    <button class='btn-blue' onclick='bulk(true)' style='width:auto;'>☑ Todo</button>
-                    <button class='btn-red' onclick='bulk(false)' style='width:auto;'>☐ Nada</button>
-                    <input type="text" id="txtBusca" onkeyup="filtrar()" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
+                <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
+                    <button class='btn-blue' onclick='bulk(true)' style='width:auto; padding:8px 12px;'>☑ Todo</button>
+                    <button class='btn-red' onclick='bulk(false)' style='width:auto; padding:8px 12px;'>☐ Nada</button>
+                    <input type="text" id="txtBusca" onkeyup="resetPaginacion(); filtrar();" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
                 </div>
 
-                <div style="max-height:500px; overflow-y:auto; border:1px solid var(--border); border-radius:12px;">
-                    <table style='margin:0;'>
-                        <thead style='position:sticky; top:0; background:var(--card);'>
+                <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+                    <table id="tablaPermisos" style='margin:0;'>
+                        <thead>
                             <tr>
                                 <th>MÓDULO</th>
                                 <th style='text-align:center'>CONSULTAR</th>
@@ -499,48 +500,101 @@ def application(environ, start_response):
                         <tbody>{rows}</tbody>
                     </table>
                 </div>
-                <button class='btn-emerald' style='margin-top:20px;' onclick='guardarPermisos()'>GUARDAR CAMBIOS</button>
+
+                <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px;">
+                    <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt" style="width:auto; padding:5px 15px;">❮ Anterior</button>
+                    <span id="infoPagina" style="font-weight:bold; color:var(--text);">Página 1 de X</span>
+                    <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig" style="width:auto; padding:5px 15px;">Siguiente ❯</button>
+                </div>
+
+                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
             </div>
         </div>
 
         <script>
+            let paginaActual = 1;
+            const filasPorPagina = 5;
+
             function filtrar() {{
-                let val = document.getElementById('txtBusca').value.toUpperCase();
-                document.querySelectorAll('.mod-row').forEach(row => {{
-                    let text = row.querySelector('.mod-name').innerText.toUpperCase();
-                    row.style.display = text.includes(val) ? "" : "none";
+                const busqueda = document.getElementById('txtBusca').value.toUpperCase();
+                const filas = document.querySelectorAll('.mod-row');
+                
+                // Primero filtramos por texto
+                filas.forEach(row => {{
+                    const nombre = row.querySelector('.mod-name').innerText.toUpperCase();
+                    row.dataset.visible = nombre.includes(busqueda) ? "true" : "false";
                 }});
+
+                renderTable();
+            }}
+
+            function renderTable() {{
+                const filasVisibles = Array.from(document.querySelectorAll('.mod-row')).filter(r => r.dataset.visible !== "false");
+                const totalPaginas = Math.ceil(filasVisibles.length / filasPorPagina) || 1;
+
+                if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+                if (paginaActual < 1) paginaActual = 1;
+
+                const inicio = (paginaActual - 1) * filasPorPagina;
+                const fin = inicio + filasPorPagina;
+
+                // Ocultar todas primero
+                document.querySelectorAll('.mod-row').forEach(r => r.style.display = 'none');
+
+                // Mostrar solo las de la página actual
+                filasVisibles.slice(inicio, fin).forEach(r => r.style.display = '');
+
+                // Actualizar interfaz
+                document.getElementById('infoPagina').innerText = `Página ${{paginaActual}} de ${{totalPaginas}}`;
+                document.getElementById('btnAnt').disabled = paginaActual === 1;
+                document.getElementById('btnSig').disabled = paginaActual === totalPaginas;
+            }}
+
+            function cambiarPagina(delta) {{
+                paginaActual += delta;
+                renderTable();
+            }}
+
+            function resetPaginacion() {{
+                paginaActual = 1;
             }}
 
             function bulk(v) {{
+                // Afecta solo a los módulos visibles por el filtro de búsqueda
                 document.querySelectorAll('.mod-row').forEach(row => {{
-                    if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+                    if(row.dataset.visible !== "false") {{
+                        row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+                    }}
                 }});
             }}
 
             async function cargarPermisos(idp) {{
                 const area = document.getElementById('area_permisos');
                 if(!idp) {{ area.style.display='none'; return; }}
+                
                 document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+                
                 try {{
                     const res = await fetch('/api/get_permisos?idp=' + idp);
                     const data = await res.json();
                     if(data.ok) {{
                         data.perms.forEach(p => {{
-                            if(p.v) document.getElementById('v_'+p.idm).checked = true;
-                            if(p.a) document.getElementById('a_'+p.idm).checked = true;
-                            if(p.e) document.getElementById('e_'+p.idm).checked = true;
-                            if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                            if(p.v) {{ let e=document.getElementById('v_'+p.idm); if(e) e.checked=true; }}
+                            if(p.a) {{ let e=document.getElementById('a_'+p.idm); if(e) e.checked=true; }}
+                            if(p.e) {{ let e=document.getElementById('e_'+p.idm); if(e) e.checked=true; }}
+                            if(p.d) {{ let e=document.getElementById('d_'+p.idm); if(e) e.checked=true; }}
                         }});
                         area.style.display = 'block';
+                        filtrar(); // Inicializa la tabla con paginación
                     }}
-                }} catch(e) {{ console.error(e); area.style.display = 'block'; }}
+                }} catch(e) {{ console.error(e); area.style.display = 'block'; filtrar(); }}
             }}
 
             function guardarPermisos() {{
                 const idp = document.getElementById('sel_perfil').value;
                 const matrix = [];
                 const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+                
                 modIds.forEach(idm => {{
                     matrix.push({{
                         idm: parseInt(idm),
