@@ -39,20 +39,29 @@ def render_layout(title, content, user=None):
     nav = ""
     if user:
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        # --- CAMBIO 1: FILTRADO DE MENÚ POR PERMISOS ---
+        # Obtener Perfil del Usuario
         cur.execute("SELECT idPerfil FROM usuarios WHERE strNombreUsuario=%s", (user['u'],))
         u_p = cur.fetchone()
         u_pid = u_p['idPerfil'] if u_p else 0
         
-        cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (u_pid,))
-        p_ok = [r['nombreModulo'] for r in cur.fetchall()]
+        # --- LÓGICA DE ACCESO TOTAL PARA ADMIN (ID 1) ---
+        if u_pid == 1:
+            # Si es admin, tiene permiso en todos los módulos del sistema y de la DB
+            cur.execute("SELECT strNombreModulo as n FROM modulos")
+            p_ok = ["Perfiles", "Usuarios", "Modulos", "Permisos"] + [r['n'] for r in cur.fetchall()]
+        else:
+            # Si no es admin, filtrar por la tabla de permisos
+            cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (u_pid,))
+            p_ok = [r['nombreModulo'] for r in cur.fetchall()]
         
         cur.execute("SELECT * FROM modulos"); mods_db = cur.fetchall()
         cur.close(); conn.close()
         
         def get_links(padre):
-            return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in mods_db if m['strMenuPadre'] == padre and m['strNombreModulo'] in p_ok])
+            return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' 
+                           for m in mods_db if m['strMenuPadre'] == padre and m['strNombreModulo'] in p_ok])
         
+        # Filtro de enlaces de seguridad
         seg_links = ""
         if "Perfiles" in p_ok: seg_links += '<a href="/perfiles">👤 Perfiles</a>'
         if "Modulos" in p_ok: seg_links += '<a href="/modulos">📦 Modulos</a>'
@@ -61,7 +70,7 @@ def render_layout(title, content, user=None):
         
         nav = f"""<div class="top-nav"><div class="nav-container"><div class="nav-left"><span class="logo">🏥 Clinica</span>
         <a href="/dashboard" class="nav-link">Inicio</a>
-        <div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">{seg_links}</div></div>
+        <div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">{seg_links or '<a>(Sin Acceso)</a>'}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{get_links("Principal 1") or '<a>(Vacio)</a>'}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2") or '<a>(Vacio)</a>'}</div></div>
         </div><div class="nav-right"><span class="user-pill" style="color:var(--emerald); margin-right:15px; font-size:13px; border:1px solid var(--border); padding:4px 10px; border-radius:20px;">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
@@ -200,7 +209,7 @@ def application(environ, start_response):
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # --- CAMBIO 2: API GUARDAR PERMISOS ---
+    # --- API GUARDAR PERMISOS ---
     if path == "/api/permisos" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
@@ -264,13 +273,10 @@ def application(environ, start_response):
         cur.execute("SELECT * FROM perfiles"); perfs = cur.fetchall()
         table_html = "<p style='text-align:center; color:#94a3b8; padding:20px;'>⚠️ Seleccione un perfil para gestionar permisos.</p>"
         if pid > 0:
-            # --- CAMBIO 3: CARGAR ESTADO ACTUAL DE PERMISOS ---
             cur.execute("SELECT * FROM permisos WHERE idPerfil=%s", (pid,))
             cache = {r['nombreModulo']: r for r in cur.fetchall()}
-            
             cur.execute("SELECT strNombreModulo as n FROM modulos")
             all_m = [{'n':'Perfiles'},{'n':'Usuarios'},{'n':'Modulos'},{'n':'Permisos'}] + cur.fetchall()
-            
             m_rows = ""
             for m in all_m:
                 c = cache.get(m['n'], {'permisoVer':0,'permisoCrear':0,'permisoEditar':0,'permisoEliminar':0})
