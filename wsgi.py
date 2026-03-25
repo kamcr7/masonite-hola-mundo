@@ -109,7 +109,11 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ); content = ""
 
-# --- API CRUD ---
+    # 1. Inicializamos en None para evitar errores de "local variable referenced before assignment"
+    conn = None
+    cur = None
+
+    # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
@@ -121,11 +125,11 @@ def application(environ, start_response):
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
                 elif p['table'] == 'perfiles':
-                    # VALIDACIÓN DE DUPLICADOS (Ignora mayúsculas/minúsculas)
+                    # --- VALIDACIÓN DE DUPLICADOS ---
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
                     if cur.fetchone():
-                        raise Exception("Ese nombre de perfil ya existe")
+                        raise Exception("Ese perfil ya existe")
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
                 elif p['table'] == 'modulos':
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
@@ -135,23 +139,31 @@ def application(environ, start_response):
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
                 elif p['table'] == 'perfiles':
-                    # VALIDACIÓN DE DUPLICADOS AL EDITAR (Que no sea el mismo ID)
+                    # --- VALIDACIÓN DE DUPLICADOS EDITAR ---
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
                     if cur.fetchone():
                         raise Exception("Ya existe otro perfil con ese nombre")
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
-                elif p['table'] == 'modulos':
-                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
-                               (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
             
             conn.commit(); res = b'{"ok":true}'
         except Exception as e: 
-            conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
-        finally: 
-            cur.close(); conn.close()
+            if conn: conn.rollback()
+            res = json.dumps({"ok":False, "error":str(e)}).encode()
+        finally:
+            if cur: cur.close()
+            if conn: conn.close()
+            # Importante: resetear a None para que el bloque final no intente cerrar otra vez
+            cur = None; conn = None
         
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+
+    # --- PROTECCIÓN DE SESIÓN ---
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+
+    # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
     # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
@@ -163,7 +175,7 @@ def application(environ, start_response):
         <table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
         <div id='mNew' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNew')">&times;</span><h3>Nuevo Usuario</h3>
             <div class='grid-2'>
-                <div><label>Usuario</label><input id='un'></div>
+                <div><label>Usuario</label><input id='un' maxlength='15'></div>
                 <div><label>Pass</label><input id='up' type='password'></div>
                 <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
@@ -171,15 +183,14 @@ def application(environ, start_response):
             <label>Foto</label><input type='file' onchange="handleImg(event,'pv1')"><img id='pv1' style='width:50px;display:block;margin:10px 0'>
             <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value}})\">GUARDAR</button></div></div>
         <div id='mEdit' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEdit')">&times;</span><h3>Editar Usuario</h3><input type='hidden' id='ed_id'>
-            <label>Usuario</label><input id='ed_u'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
+            <label>Usuario</label><input id='ed_u' maxlength='15'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
             <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button></div></div>"""
 
-# --- PANTALLA PERFILES CORREGIDA ---
+    # --- PANTALLA PERFILES CORREGIDA ---
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
         rows = ""
-        # Usamos enumerate para que la numeración visual sea siempre correlativa
         for index, p in enumerate(perfiles, start=1):
             rows += f"""<tr>
                 <td>{index}</td>
@@ -190,55 +201,29 @@ def application(environ, start_response):
                 </td>
             </tr>"""
             
-        content = f"""
-        <div class='card'>
-            <h2>👤 Gestión de Perfiles</h2>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-            <table>
-                <thead><tr><th>#</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead>
-                <tbody>{rows}</tbody>
-            </table>
-        </div>
-
-        <div id='mNewP' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mNewP')">&times;</span>
-                <h3>Nuevo Perfil</h3>
-                <label>Nombre del Perfil (Máx. 15 letras)</label>
-                <input id='pn' placeholder='Ej: Ventas' maxlength="15"
-                       oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-                <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button>
-            </div>
-        </div>
-
-        <div id='mEditP' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mEditP')">&times;</span>
-                <h3>Editar Perfil</h3>
-                <input type='hidden' id='ed_id'>
-                <label>Nombre del Perfil</label>
-                <input id='ed_n' maxlength="15"
-                       oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-                <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
-            </div>
-        </div>
-
+        content = f"""<div class='card'><h2>👤 Gestión de Perfiles</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
+            <table><thead><tr><th>#</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNewP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3>
+            <label>Nombre del Perfil (Máx. 15 letras)</label>
+            <input id='pn' placeholder='Ej: Ventas' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+            <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button></div></div>
+        <div id='mEditP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3><input type='hidden' id='ed_id'>
+            <label>Nombre del Perfil</label>
+            <input id='ed_n' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+            <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button></div></div>
         <script>
-            // Funciones para limpiar espacios y enviar datos
             async function savePerfil() {{
                 const nom = document.getElementById('pn').value.trim();
                 if(!nom) return alert("Escribe un nombre válido");
                 runCrud('save', 'perfiles', 0, {{n: nom}});
             }}
-
             async function updatePerfil() {{
                 const id = document.getElementById('ed_id').value;
                 const nom = document.getElementById('ed_n').value.trim();
                 if(!nom) return alert("El nombre no puede estar vacío");
                 runCrud('update', 'perfiles', id, {{n: nom}});
             }}
-        </script>
-        """
+        </script>"""
 
     # --- PANTALLA MODULOS ---
     elif path == "/modulos":
@@ -248,12 +233,9 @@ def application(environ, start_response):
         <div id='mNewM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewM')">&times;</span><h3>Nuevo Módulo</h3><input id='mn' placeholder='Nombre'><input id='mr' placeholder='Ruta'><select id='mp'><option>Principal 1</option><option>Principal 2</option></select><button class='btn-emerald' onclick=\"runCrud('save','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})\">GUARDAR</button></div></div>
         <div id='mEditM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditM')">&times;</span><h3>Editar Módulo</h3><input type='hidden' id='ed_id'><input id='ed_n'><input id='ed_r'><select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select><button class='btn-emerald' onclick=\"runCrud('update','modulos',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value, r:document.getElementById('ed_r').value, p:document.getElementById('ed_p').value}})\">ACTUALIZAR</button></div></div>"""
 
-    elif path == "/login":
-        content = "<div class='card' style='width:350px;margin:100px auto'><h2>Login</h2><form id='f'><input name='u' placeholder='Usuario'><input name='p' type='password' placeholder='Pass'><button type='button' class='btn-emerald' onclick='doL()'>ENTRAR</button></form></div><script>async function doL(){{const r=await fetch('/api/login',{{method:'POST',body:new FormData(document.getElementById('f'))}});if((await r.json()).ok)location.href='/dashboard';else alert('Error')}}</script>"
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode()]
-    elif path == "/logout":
-        start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-    else: content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido <b>{u_data['u'] if u_data else ''}</b></p></div>"
-
-    cur.close(); conn.close()
-    start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode()]
+    # --- CIERRE FINAL SEGURO ---
+    if cur: cur.close()
+    if conn: conn.close()
+    
+    start_response("200 OK", [("Content-Type", "text/html")])
+    return [render_layout("Clinica", content, u_data).encode()]
