@@ -143,8 +143,50 @@ def render_layout(title, content, user=None):
 
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
-    u_data = verify_jwt(environ); content = ""
+    
+    # 1. Intentar conectar a la base de datos
+    try:
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True)
 
+        # =========================================================
+        # --- BLOQUE DE AUTO-REPARACIÓN DE PERMISOS ---
+        # =========================================================
+        try:
+            # Creamos la tabla si Railway la borró o no existe
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS perfil_modulo (
+                    idPerfil INT, idModulo INT,
+                    can_view TINYINT(1) DEFAULT 0, can_add TINYINT(1) DEFAULT 0,
+                    can_edit TINYINT(1) DEFAULT 0, can_delete TINYINT(1) DEFAULT 0,
+                    PRIMARY KEY (idPerfil, idModulo)
+                )
+            """)
+            
+            # Verificamos si el Admin (Perfil 1) ya tiene permisos
+            cur.execute("SELECT COUNT(*) as total FROM perfil_modulo WHERE idPerfil = 1")
+            if cur.fetchone()['total'] == 0:
+                # Insertar permisos de seguridad base (-1 al -4)
+                for m_id in [-1, -2, -3, -4]:
+                    cur.execute("INSERT IGNORE INTO perfil_modulo VALUES (1, %s, 1, 1, 1, 1)", (m_id,))
+                
+                # Darle permiso al admin en todos los módulos dinámicos existentes
+                cur.execute("""
+                    INSERT IGNORE INTO perfil_modulo (idPerfil, idModulo, can_view, can_add, can_edit, can_delete) 
+                    SELECT 1, id, 1, 1, 1, 1 FROM modulos
+                """)
+                conn.commit()
+        except Exception as e_repair:
+            print(f"Aviso: Fallo en auto-reparación: {e_repair}")
+        # =========================================================
+
+    except Exception as e_conn:
+        start_response("500 Error", [("Content-Type", "text/plain")])
+        return [f"Error crítico de conexión: {e_conn}".encode()]
+
+    # 2. Verificar usuario (JWT)
+    u_data = verify_jwt(environ)
+    content = ""
     # 1. Inicializamos en None para evitar errores de "local variable referenced before assignment"
     conn = None
     cur = None
@@ -521,15 +563,16 @@ def application(environ, start_response):
             
             filas.forEach(r => r.style.display = 'none');
             visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
-            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
+            const info = document.getElementById('infoPagina');
+            if(info) info.innerText = `Página ${paginaActual} de ${total}`;
         }
 
         function cambiarPagina(delta, rowClass) {
             paginaActual += delta;
+            if(paginaActual < 1) paginaActual = 1;
             renderTable(rowClass);
         }
 
-        // VALIDACIÓN USUARIOS
         function validateAndSave() {
             const u = document.getElementById('un').value.trim();
             const p = document.getElementById('up').value;
@@ -550,7 +593,6 @@ def application(environ, start_response):
             });
         }
 
-        // MODULOS
         function saveMod() {
             const n = document.getElementById('mn').value.trim();
             if(!n) return alert("Nombre obligatorio");
@@ -567,7 +609,6 @@ def application(environ, start_response):
             runCrud('update', 'modulos', id, { n, r, p });
         }
 
-        // PERFILES
         function savePerfil() {
             const n = document.getElementById('pn').value.trim();
             if(!n) return alert("Nombre obligatorio");
@@ -577,7 +618,6 @@ def application(environ, start_response):
             runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
         }
 
-        // PERMISOS
         async function cargarPermisos(idp) {
             if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
@@ -585,19 +625,21 @@ def application(environ, start_response):
             const data = await res.json();
             if(data.ok) {
                 data.perms.forEach(p => {
-                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
-                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
-                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
-                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                    const v = document.getElementById('v_'+p.idm), a = document.getElementById('a_'+p.idm),
+                          e = document.getElementById('e_'+p.idm), d = document.getElementById('d_'+p.idm);
+                    if(v && p.v) v.checked = true;
+                    if(a && p.a) a.checked = true;
+                    if(e && p.e) e.checked = true;
+                    if(d && p.d) d.checked = true;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
                 paginaActual = 1;
-                filtrar('.perm-row', '.perm-name');
+                filtrar('.mod-row', '.mod-name');
             }
         }
 
         function bulk(v) {
-            document.querySelectorAll('.perm-row').forEach(row => {
+            document.querySelectorAll('.mod-row').forEach(row => {
                 if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
             });
         }
@@ -618,7 +660,6 @@ def application(environ, start_response):
             runCrud('save', 'permisos', 0, { idp, perms: matrix });
         }
 
-        // Al entrar, limpiar buscador y renderizar
         window.onload = () => {
             const b = document.getElementById('txtBusca');
             if(b) b.value = "";
@@ -628,6 +669,24 @@ def application(environ, start_response):
         };
     </script>
     """
+
+    # ==========================================
+    # --- RENDERIZADO FINAL ---
+    # ==========================================
+    try:
+        # Si por alguna razón content quedó vacío, mostrar dashboard por defecto
+        if not content:
+            content = "<div class='card'><h2>Bienvenido</h2><p>Seleccione una opción del menú para comenzar.</p></div>"
+            
+        res_html = render_layout("Panel Clinica", content, u_data).encode("utf-8")
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [res_html]
+    except Exception as e:
+        start_response("500 Error", [("Content-Type", "text/plain")])
+        return [f"Error al renderizar: {e}".encode()]
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
 
     # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
     if 'cur' in locals() and cur: cur.close()
