@@ -235,7 +235,7 @@ def application(environ, start_response):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
  # ==========================================
-    # --- PANTALLA USUARIOS ---
+    # --- PANTALLA USUARIOS (CON VALIDACIÓN ESTRICTA) ---
     # ==========================================
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
@@ -260,16 +260,16 @@ def application(environ, start_response):
             <h2>👥 Gestión de Usuarios</h2>
             <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
                 <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar usuario..." style="width:200px; margin:0;">
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar..." style="width:200px; margin:0;">
             </div>
             <table>
                 <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
             </table>
             <div class="paginador-ui">
-                <button class="btn-blue" onclick="cambiarPagina(-1, '.u-row')">❮ Anterior</button>
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.u-row')">❮</button>
                 <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1, '.u-row')">Siguiente ❯</button>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.u-row')">❯</button>
             </div>
         </div>
 
@@ -277,10 +277,10 @@ def application(environ, start_response):
             <span class='close-x' onclick="closeM('mNew')">&times;</span>
             <h3>Nuevo Usuario</h3>
             <div class='grid-2'>
-                <div><label>Nombre</label><input id='un' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')"></div>
+                <div><label>Nombre</label><input id='un' maxlength="15"></div>
                 <div><label>Pass (5-8 carac.)</label><input id='up' type='password' maxlength="8"></div>
-                <div><label>Correo</label><input id='uc' type='email' placeholder="ejemplo@gmail.com"></div>
-                <div><label>Teléfono</label><input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
+                <div><label>Correo (@gmail.com)</label><input id='uc' type='email'></div>
+                <div><label>Teléfono (10 dig)</label><input id='ut' maxlength="10"></div>
                 <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
@@ -292,7 +292,7 @@ def application(environ, start_response):
             <h3>Editar Usuario</h3>
             <input type='hidden' id='ed_id'>
             <div class='grid-2'>
-                <div><label>Usuario</label><input id='ed_u' maxlength="15"></div>
+                <div><label>Usuario</label><input id='ed_u'></div>
                 <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
@@ -301,55 +301,48 @@ def application(environ, start_response):
         """
 
     # ==========================================
-    # --- PANTALLA PERFILES ---
+    # --- PANTALLA PERFILES (ID ORDENADO 1, 2, 3...) ---
     # ==========================================
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
-        rows = "".join([f"""<tr class='p-row'>
-                <td>{p['id']}</td>
+        rows = ""
+        for i, p in enumerate(perfiles, 1):
+            rows += f"""<tr class='p-row'>
+                <td>{i}</td>
                 <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
                 <td>
                     <button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>
                     <button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>
                 </td>
-            </tr>""" for p in perfiles])
+            </tr>"""
             
         content = f"""
         <div class='card'>
             <h2>👤 Gestión de Perfiles</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
+            <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
                 <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.p-row', '.p-name');" placeholder="🔍 Buscar perfil..." style="width:200px; margin:0;">
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.p-row', '.p-name');" placeholder="🔍 Buscar...">
             </div>
-            <table><thead><tr><th>ID</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
+            <table><thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
             <div class="paginador-ui">
-                <button class="btn-blue" onclick="cambiarPagina(-1, '.p-row')">❮ Anterior</button>
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.p-row')">❮</button>
                 <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1, '.p-row')">Siguiente ❯</button>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.p-row')">❯</button>
             </div>
         </div>
-
         <div id='mNewP' class='modal'><div class='modal-content'>
-            <span class='close-x' onclick="closeM('mNewP')">&times;</span>
-            <h3>Nuevo Perfil</h3>
-            <label>Nombre del Perfil</label>
-            <input id='pn' maxlength="15"><br>
-            <button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">CREAR PERFIL</button>
+            <span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3>
+            <input id='pn' placeholder="Nombre perfil..."><button class='btn-emerald' onclick=\"savePerfil()\">GUARDAR</button>
         </div></div>
-
         <div id='mEditP' class='modal'><div class='modal-content'>
-            <span class='close-x' onclick="closeM('mEditP')">&times;</span>
-            <h3>Editar Perfil</h3>
-            <input type='hidden' id='ed_id'>
-            <label>Nombre</label>
-            <input id='ed_n' maxlength="15"><br>
-            <button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value}})\">ACTUALIZAR</button>
+            <span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3>
+            <input type='hidden' id='ed_id'><input id='ed_n'><button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
         </div></div>
         """
 
     # ==========================================
-    # --- PANTALLA MODULOS ---
+    # --- PANTALLA MODULOS (CORREGIDO UPDATE) ---
     # ==========================================
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
@@ -365,22 +358,22 @@ def application(environ, start_response):
         content = f"""
         <div class='card'>
             <h2>📦 Gestión de Módulos</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
+            <div style='display:flex; justify-content:space-between; margin-bottom:15px;'>
                 <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.m-row', '.m-name');" placeholder="🔍 Buscar módulo..." style="width:200px; margin:0;">
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.m-row', '.m-name');" placeholder="🔍 Buscar...">
             </div>
-            <table><thead><tr><th>NOMBRE</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
+            <table><thead><tr><th>NOMBRE</th><th>PADRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
             <div class="paginador-ui">
-                <button class="btn-blue" onclick="cambiarPagina(-1, '.m-row')">❮ Anterior</button>
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.m-row')">❮</button>
                 <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1, '.m-row')">Siguiente ❯</button>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.m-row')">❯</button>
             </div>
         </div>
 
         <div id='mNewM' class='modal'><div class='modal-content'>
             <span class='close-x' onclick="closeM('mNewM')">&times;</span>
             <h3>Nuevo Módulo</h3>
-            <label>Nombre</label><input id='mn' maxlength="20">
+            <label>Nombre</label><input id='mn'>
             <label>Padre</label><select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
             <button class='btn-emerald' onclick="saveMod()">GUARDAR</button>
         </div></div>
@@ -389,32 +382,29 @@ def application(environ, start_response):
             <span class='close-x' onclick="closeM('mEditM')">&times;</span>
             <h3>Editar Módulo</h3>
             <input type='hidden' id='ed_id'>
-            <label>Nombre</label><input id='ed_n' maxlength="20">
-            <label>Padre</label><select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
+            <label>Nombre</label><input id='ed_n_mod'>
+            <label>Padre</label><select id='ed_p_mod'><option>Principal 1</option><option>Principal 2</option></select>
             <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR</button>
         </div></div>
         """
 
     # ==========================================
-    # --- PANTALLA PERMISOS ---
+    # --- PANTALLA PERMISOS (TABLA QUE CARGA AL SELECCIONAR) ---
     # ==========================================
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
-        mods_fijos = [
-            {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
-            {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
-        ]
+        mods_fijos = [{'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'}, {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
         rows = "".join([f"""<tr class='perm-row'>
                 <td><b class='perm-name'>{m['nm']}</b><br><small>{m['p']}</small></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='v' id='v_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='a' id='a_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='e' id='e_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='d' id='d_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='v_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='a_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='e_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='d_{m['id']}'></td>
             </tr>""" for m in todos_mods])
 
         content = f"""
@@ -424,27 +414,27 @@ def application(environ, start_response):
                 <option value=''>-- Seleccione Perfil --</option>{p_opts}
             </select>
             <div id='area_permisos' style='display:none; margin-top:20px;'>
-                <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
+                <div style='display:flex; gap:10px; margin-bottom:15px;'>
                     <button class='btn-blue' onclick='bulk(true)' style="width:auto">☑ Todo</button>
                     <button class='btn-red' onclick='bulk(false)' style="width:auto">☐ Nada</button>
-                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="width:200px; margin:0; margin-left:auto;">
+                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="margin-left:auto; width:200px;">
                 </div>
                 <table>
                     <thead><tr><th>MÓDULO</th><th>VER</th><th>ADD</th><th>EDT</th><th>DEL</th></tr></thead>
                     <tbody>{rows}</tbody>
                 </table>
                 <div class="paginador-ui">
-                    <button class="btn-blue" onclick="cambiarPagina(-1, '.perm-row')">❮ Anterior</button>
+                    <button class="btn-blue" onclick="cambiarPagina(-1, '.perm-row')">❮</button>
                     <span id="infoPagina"></span>
-                    <button class="btn-blue" onclick="cambiarPagina(1, '.perm-row')">Siguiente ❯</button>
+                    <button class="btn-blue" onclick="cambiarPagina(1, '.perm-row')">❯</button>
                 </div>
-                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR PERMISOS</button>
+                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
             </div>
         </div>
         """
 
     # ==========================================
-    # --- JAVASCRIPT GLOBAL (PAGINACIÓN Y LOGICA) ---
+    # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
     content += """
     <style>
@@ -455,34 +445,25 @@ def application(environ, start_response):
         let paginaActual = 1;
         const filasPorPagina = 5;
 
-        // Función de Filtrado y Búsqueda
         function filtrar(rowClass, nameClass) {
             const val = document.getElementById('txtBusca').value.toUpperCase();
             document.querySelectorAll(rowClass).forEach(row => {
-                const text = row.querySelector(nameClass).innerText.toUpperCase();
+                const b = row.querySelector(nameClass);
+                const text = b ? b.innerText.toUpperCase() : "";
                 row.dataset.visible = text.includes(val) ? "true" : "false";
             });
             renderTable(rowClass);
         }
 
-        // Función de Renderizado de Tabla (Paginación)
         function renderTable(rowClass) {
             const filas = Array.from(document.querySelectorAll(rowClass));
             const visibles = filas.filter(r => r.dataset.visible !== "false");
             const total = Math.ceil(visibles.length / filasPorPagina) || 1;
-
             if (paginaActual > total) paginaActual = total;
-            if (paginaActual < 1) paginaActual = 1;
-
+            
             filas.forEach(r => r.style.display = 'none');
-            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina).forEach(r => r.style.display = '');
-
+            visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
             document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
-            const btns = document.querySelectorAll('.paginador-ui button');
-            if(btns.length >= 2) {
-                btns[0].disabled = paginaActual === 1;
-                btns[1].disabled = paginaActual === total;
-            }
         }
 
         function cambiarPagina(delta, rowClass) {
@@ -490,17 +471,18 @@ def application(environ, start_response):
             renderTable(rowClass);
         }
 
-        // Inicialización automática
-        document.addEventListener('DOMContentLoaded', () => {
-            if(document.querySelector('.u-row')) renderTable('.u-row');
-            if(document.querySelector('.p-row')) renderTable('.p-row');
-            if(document.querySelector('.m-row')) renderTable('.m-row');
-        });
-
-        // --- FUNCIONES ESPECIFICAS ---
+        // VALIDACIÓN USUARIOS
         function validateAndSave() {
-            const u = document.getElementById('un').value.trim(), p = document.getElementById('up').value;
-            if(u.length < 3 || p.length < 5) return alert("Datos inválidos");
+            const u = document.getElementById('un').value.trim();
+            const p = document.getElementById('up').value;
+            const c = document.getElementById('uc').value.trim();
+            const t = document.getElementById('ut').value.trim();
+            
+            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
+            if(p.length < 5) return alert("La contraseña debe ser mayor a 5 caracteres");
+            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+            if(t.length !== 10) return alert("El teléfono debe tener 10 dígitos");
+
             runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
         }
 
@@ -510,12 +492,34 @@ def application(environ, start_response):
             });
         }
 
-        async function saveMod() {
+        // MODULOS
+        function saveMod() {
             const n = document.getElementById('mn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
             const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
             runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
         }
 
+        function updateMod() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n_mod').value.trim();
+            const p = document.getElementById('ed_p_mod').value;
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('update', 'modulos', id, { n, r, p });
+        }
+
+        // PERFILES
+        function savePerfil() {
+            const n = document.getElementById('pn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
+            runCrud('save', 'perfiles', 0, {n});
+        }
+        function updatePerfil() {
+            runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
+        }
+
+        // PERMISOS
         async function cargarPermisos(idp) {
             if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
@@ -523,7 +527,10 @@ def application(environ, start_response):
             const data = await res.json();
             if(data.ok) {
                 data.perms.forEach(p => {
-                    ['v','a','e','d'].forEach(t => { if(p[t]) document.getElementById(t+'_'+p.idm).checked = true; });
+                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
                 paginaActual = 1;
@@ -536,7 +543,7 @@ def application(environ, start_response):
                 if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
             });
         }
-        
+
         function guardarPermisos() {
             const idp = document.getElementById('sel_perfil').value;
             const matrix = [];
@@ -552,6 +559,15 @@ def application(environ, start_response):
             });
             runCrud('save', 'permisos', 0, { idp, perms: matrix });
         }
+
+        // Al entrar, limpiar buscador y renderizar
+        window.onload = () => {
+            const b = document.getElementById('txtBusca');
+            if(b) b.value = "";
+            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+        };
     </script>
     """
 
