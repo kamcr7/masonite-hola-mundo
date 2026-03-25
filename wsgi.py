@@ -113,38 +113,60 @@ def application(environ, start_response):
     conn = None
     cur = None
 
-    # --- API CRUD ---
+   # --- API CRUD CORREGIDO ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
         try:
             if p['action'] == 'delete': 
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
+                    # Validación duplicados Usuarios
+                    u_nom = p['data']['u'].strip()
+                    cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s)", (u_nom,))
+                    if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
+                    
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
-                               (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                               (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                
                 elif p['table'] == 'perfiles':
-                    # --- VALIDACIÓN DE DUPLICADOS ---
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
-                    if cur.fetchone():
-                        raise Exception("Ese perfil ya existe")
+                    if cur.fetchone(): raise Exception("Ese perfil ya existe")
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
+                
                 elif p['table'] == 'modulos':
+                    # Validación duplicados Módulos
+                    m_nom = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s)", (m_nom,))
+                    if cur.fetchone(): raise Exception("El módulo ya existe")
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
-                               (p['data']['n'], p['data']['r'], p['data']['p']))
+                               (m_nom, p['data']['r'], p['data']['p']))
+
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
+                    u_nom = p['data']['u'].strip()
+                    cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s) AND id != %s", (u_nom, p['id']))
+                    if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
+                    
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
-                               (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
+                               (u_nom, p['data']['idp'], p['data']['st'], p['id']))
+                
                 elif p['table'] == 'perfiles':
-                    # --- VALIDACIÓN DE DUPLICADOS EDITAR ---
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
-                    if cur.fetchone():
-                        raise Exception("Ya existe otro perfil con ese nombre")
+                    if cur.fetchone(): raise Exception("Ya existe otro perfil con ese nombre")
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
+                
+                elif p['table'] == 'modulos':
+                    # Validación duplicados Módulos Update
+                    m_nom = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s) AND id != %s", (m_nom, p['id']))
+                    if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
+                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
+                               (m_nom, p['data']['r'], p['data']['p'], p['id']))
             
             conn.commit(); res = b'{"ok":true}'
         except Exception as e: 
@@ -153,7 +175,6 @@ def application(environ, start_response):
         finally:
             if cur: cur.close()
             if conn: conn.close()
-            # Importante: resetear a None para que el bloque final no intente cerrar otra vez
             cur = None; conn = None
         
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
@@ -225,13 +246,80 @@ def application(environ, start_response):
             }}
         </script>"""
 
-    # --- PANTALLA MODULOS ---
+   # --- PANTALLA MODULOS CORREGIDA ---
     elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos")
-        rows = "".join([f"<tr><td><b>{m['strNombreModulo']}</b></td><td>{m['strRuta']}</td><td>{m['strMenuPadre']}</td><td><button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", r:\"{m['strRuta']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button></td></tr>" for m in cur.fetchall()])
-        content = f"""<div class='card'><h2>📦 Módulos</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button><table><thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
-        <div id='mNewM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewM')">&times;</span><h3>Nuevo Módulo</h3><input id='mn' placeholder='Nombre'><input id='mr' placeholder='Ruta'><select id='mp'><option>Principal 1</option><option>Principal 2</option></select><button class='btn-emerald' onclick=\"runCrud('save','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})\">GUARDAR</button></div></div>
-        <div id='mEditM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditM')">&times;</span><h3>Editar Módulo</h3><input type='hidden' id='ed_id'><input id='ed_n'><input id='ed_r'><select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select><button class='btn-emerald' onclick=\"runCrud('update','modulos',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value, r:document.getElementById('ed_r').value, p:document.getElementById('ed_p').value}})\">ACTUALIZAR</button></div></div>"""
+        cur.execute("SELECT * FROM modulos ORDER BY id ASC")
+        modulos = cur.fetchall()
+        rows = "".join([f"""<tr>
+            <td><b>{m['strNombreModulo']}</b></td>
+            <td><code>{m['strRuta']}</code></td>
+            <td>{m['strMenuPadre']}</td>
+            <td>
+                <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", r:\"{m['strRuta']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
+                <button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>
+            </td>
+        </tr>""" for m in modulos])
+        
+        content = f"""
+        <div class='card'>
+            <h2>📦 Gestión de Módulos</h2>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
+            <table>
+                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+
+        <div id='mNewM' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mNewM')">&times;</span>
+                <h3>Nuevo Módulo</h3>
+                <label>Nombre del Módulo (Máx. 20)</label>
+                <input id='mn' placeholder='Ej: Facturación' maxlength="20" 
+                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
+                <label>Ruta</label>
+                <input id='mr' placeholder='/ruta'>
+                <label>Menú Padre</label>
+                <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
+                <button class='btn-emerald' onclick="saveMod()">GUARDAR MÓDULO</button>
+            </div>
+        </div>
+
+        <div id='mEditM' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mEditM')">&times;</span>
+                <h3>Editar Módulo</h3>
+                <input type='hidden' id='ed_id'>
+                <label>Nombre del Módulo</label>
+                <input id='ed_n' maxlength="20" 
+                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
+                <label>Ruta</label>
+                <input id='ed_r'>
+                <label>Menú Padre</label>
+                <select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
+                <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR CAMBIOS</button>
+            </div>
+        </div>
+
+        <script>
+            async function saveMod() {{
+                const n = document.getElementById('mn').value.trim();
+                const r = document.getElementById('mr').value.trim();
+                const p = document.getElementById('mp').value;
+                if(!n || !r) return alert("Nombre y Ruta son obligatorios");
+                runCrud('save', 'modulos', 0, {{n, r, p}});
+            }}
+
+            async function updateMod() {{
+                const id = document.getElementById('ed_id').value;
+                const n = document.getElementById('ed_n').value.trim();
+                const r = document.getElementById('ed_r').value.trim();
+                const p = document.getElementById('ed_p').value;
+                if(!n || !r) return alert("Los campos no pueden estar vacíos");
+                runCrud('update', 'modulos', id, {{n, r, p}});
+            }}
+        </script>
+        """
 
     # --- CIERRE FINAL SEGURO ---
     if cur: cur.close()
