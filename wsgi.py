@@ -31,7 +31,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# DISEÑO ORIGINAL RESTAURADO
+# DISEÑO MODIFICADO: INCLUYE PERMISOS Y MEJORAS VISUALES
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -42,11 +42,17 @@ def render_layout(title, content, user=None):
         def get_links(padre):
             return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in all_mods if m['strMenuPadre'] == padre])
         
-        nav = f"""<div class="top-nav"><div class="nav-container"><div class="nav-left"><span class="logo" style="color:#10b981; font-weight:bold; font-size:1.2rem; margin-right:20px;">🏥 Clinica</span>
+        nav = f"""<div class="top-nav"><div class="nav-container"><div class="nav-left">
+        <span class="logo" style="color:#10b981; font-weight:bold; font-size:1.2rem; margin-right:20px;">🏥 Clinica</span>
         <a href="/dashboard" class="nav-link">Inicio</a>
-        <div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">
-            <a href="/perfiles">👤 Perfiles</a><a href="/modulos">📦 Modulos</a><a href="/usuarios">👥 Usuarios</a>
-        </div></div>
+        <div class="dropdown">
+            <button class="dropbtn">Seguridad ▾</button>
+            <div class="dropdown-content">
+                <a href="/perfiles">👤 Perfiles</a>
+                <a href="/modulos">📦 Modulos</a>
+                <a href="/usuarios">👥 Usuarios</a>
+                <a href="/permisos">🔐 Permisos</a>  </div>
+        </div>
         <div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{get_links("Principal 1")}</div></div>
         <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2")}</div></div>
         </div><div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
@@ -59,10 +65,11 @@ def render_layout(title, content, user=None):
         .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; }}
         .nav-link {{ color:#94a3b8; text-decoration:none; padding:10px; font-size:14px; }}
         .dropdown {{ position:relative; display:inline-block; }}
-        .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:100; }}
-        .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; border-bottom: 1px solid #334155; }}
+        .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:100; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }}
+        .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; border-bottom: 1px solid #334155; font-size:14px; }}
+        .dropdown-content a:hover {{ background: #2d3748; }}
         .dropdown:hover .dropdown-content {{ display:block; }}
-        .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; }}
+        .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; font-size:14px; }}
         .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
         .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); }}
         table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:12px; overflow:hidden; }}
@@ -73,14 +80,21 @@ def render_layout(title, content, user=None):
         .active {{ background:#065f46; color:#34d399; }}
         .inactive {{ background:#7f1d1d; color:#f87171; }}
         input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; }}
-        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; }}
-        .btn-blue {{ color:#3b82f6; background:none; border:none; cursor:pointer; }}
-        .btn-red {{ color:#ef4444; background:none; border:none; cursor:pointer; }}
+        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; transition: 0.3s; }}
+        .btn-emerald:hover {{ background: #059669; }}
+        .btn-blue {{ color:#3b82f6; background:none; border:none; cursor:pointer; font-weight:bold; }}
+        .btn-red {{ color:#ef4444; background:none; border:none; cursor:pointer; font-weight:bold; }}
         .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
         .modal-content {{ background:var(--card); width:500px; margin:5% auto; padding:35px; border-radius:20px; border: 1px solid var(--border); position:relative; }}
         .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
+        
+        /* Estilos específicos para Permisos */
+        .grid-permisos {{ display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:15px; margin-top:15px; }}
+        .check-item {{ background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--border); display:flex; align-items:center; gap:10px; cursor:pointer; }}
+        .check-item input {{ width:auto; margin:0; cursor:pointer; }}
+        
         .close-x {{ position:absolute; top:20px; right:25px; color:#94a3b8; cursor:pointer; font-size:24px; }}
-        .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; }}
+        .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
     </style>
     <script>
@@ -99,7 +113,11 @@ def render_layout(title, content, user=None):
         }}
         function handleImg(e, prevId) {{
             const reader = new FileReader();
-            reader.onload = () => {{ document.getElementById(prevId).src = reader.result; }};
+            reader.onload = () => {{ 
+                const prev = document.getElementById(prevId);
+                prev.src = reader.result;
+                prev.style.display = 'block';
+            }};
             reader.readAsDataURL(e.target.files[0]);
         }}
     </script>
