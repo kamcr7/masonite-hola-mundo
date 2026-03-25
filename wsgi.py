@@ -700,9 +700,4 @@ def application(environ, start_response):
         if 'conn' in locals() and conn: 
             try: conn.close()
             except: pass
-    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
-    if 'cur' in locals() and cur: cur.close()
-    if 'conn' in locals() and conn: conn.close()
-    
-    start_response("200 OK", [("Content-Type", "text/html")])
-    return [render_layout("Clinica", content, u_data).encode()]
+  
