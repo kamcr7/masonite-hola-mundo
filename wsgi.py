@@ -88,7 +88,9 @@ def render_layout(title, content, user=None):
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
-            if((await res.json()).ok) location.reload(); else alert("Error en DB: Columna no encontrada o conexión perdida");
+            const j = await res.json();
+            if(j.ok) location.reload(); 
+            else alert("Error: " + (j.error || "Desconocido"));
         }}
         function preEdit(id, fields, mId='mEdit') {{
             for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
@@ -150,9 +152,14 @@ def application(environ, start_response):
         content = f"""<div class='card'><div style='display:flex;justify-content:space-between'><h2>👥 Gestión de Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button></div>
         <table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
         <div id='mNew' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNew')">&times;</span><h3>Nuevo Usuario</h3>
-            <div class='grid-2'><div><label>Usuario</label><input id='un'></div><div><label>Pass</label><input id='up' type='password'></div><div><label>Perfil</label><select id='uip'>{p_opts}</select></div><div><label>Estado</label><select id='ust'><option>Activo</option><option>Inactivo</option></select></div></div>
+            <div class='grid-2'>
+                <div><label>Usuario</label><input id='un'></div>
+                <div><label>Pass</label><input id='up' type='password'></div>
+                <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
             <label>Foto</label><input type='file' onchange="handleImg(event,'pv1')"><img id='pv1' style='width:50px;display:block;margin:10px 0'>
-            <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value}})\">GUARDAR</button></div></div>
+            <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value}})\">GUARDAR</button></div></div>
         <div id='mEdit' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEdit')">&times;</span><h3>Editar Usuario</h3><input type='hidden' id='ed_id'>
             <label>Usuario</label><input id='ed_u'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
             <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button></div></div>"""
@@ -178,7 +185,7 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode()]
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-    else: content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido <b>{u_data['u']}</b></p></div>"
+    else: content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido <b>{u_data['u'] if u_data else ''}</b></p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode()]
