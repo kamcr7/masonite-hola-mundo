@@ -33,7 +33,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN
+# MAQUETACIÓN CORREGIDA (LLAVES ESCAPADAS)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -70,6 +70,7 @@ def render_layout(title, content, user=None):
         <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2") or '<a>(Vacio)</a>'}</div></div>
         </div><div class="nav-right"><span class="user-pill" style="color:var(--emerald); margin-right:15px; font-size:13px; border:1px solid var(--border); padding:4px 10px; border-radius:20px;">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
    
+    # Nota las llaves dobles {{ }} en el CSS, esto evita el SyntaxError
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
@@ -111,7 +112,7 @@ def render_layout(title, content, user=None):
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
             const d = await res.json();
             if(d.ok) location.reload(); else alert("Error: " + (d.error || "Desconocido"));
-        }
+        }}
 
         function editM(modalId, data) {{
             for (let key in data) {{
