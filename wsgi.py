@@ -113,7 +113,24 @@ def application(environ, start_response):
     conn = None
     cur = None
 
-   # --- API CRUD CORREGIDO CON PERMISOS ---
+  # --- API GET PERMISOS (PARA CARGAR CHECKS) ---
+    if path == "/api/get_permisos" and method == "GET":
+        import cgi
+        params = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ)
+        idp = params.getvalue('idp')
+        res = b'{"ok":false}'
+        conn = conectar_bd(); cur = conn.cursor()
+        try:
+            cur.execute("SELECT idModulo FROM perfil_modulo WHERE idPerfil = %s", (idp,))
+            mods = [r['idModulo'] for r in cur.fetchall()]
+            res = json.dumps({"ok": True, "mods": mods}).encode()
+        except Exception as e:
+            res = json.dumps({"ok": False, "error": str(e)}).encode()
+        finally:
+            cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+
+    # --- API CRUD PRINCIPAL (CORREGIDO) ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
@@ -142,12 +159,9 @@ def application(environ, start_response):
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                (m_nom, p['data']['r'], p['data']['p']))
                 
-                # --- NUEVA LÓGICA DE PERMISOS ---
                 elif p['table'] == 'permisos':
                     id_p = p['data']['idp']
-                    # Borramos permisos actuales para sobreescribir
                     cur.execute("DELETE FROM perfil_modulo WHERE idPerfil = %s", (id_p,))
-                    # Insertamos cada módulo marcado
                     for id_m in p['data']['mods']:
                         cur.execute("INSERT INTO perfil_modulo (idPerfil, idModulo) VALUES (%s, %s)", (id_p, id_m))
 
@@ -179,9 +193,9 @@ def application(environ, start_response):
         finally:
             if cur: cur.close()
             if conn: conn.close()
-            cur = None; conn = None
         
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+        
     # --- PROTECCIÓN DE SESIÓN ---
     if not u_data and path != "/login":
         start_response("303 See Other", [("Location", "/login")]); return [b""]
