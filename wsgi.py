@@ -30,112 +30,93 @@ def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
-# =========================================================
-# DISEÑO MODIFICADO: CON MENÚ DINÁMICO SEGÚN PERMISOS
-# =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
-        # Conectamos para obtener permisos del perfil actual
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        idp = user.get('idPerfil') # El idPerfil debe venir en el JWT
+        try:
+            # Usamos nombres de variables distintos para no chocar con la función principal
+            c_nav = conectar_bd()
+            cur_n = c_nav.cursor(dictionary=True)
+            idp = user.get('idPerfil')
 
-        # 1. Obtener módulos de la BD que el perfil tiene permitido VER
-        cur.execute("""
-            SELECT m.* FROM modulos m 
-            INNER JOIN perfil_modulo pm ON m.id = pm.idModulo 
-            WHERE pm.idPerfil = %s AND pm.can_view = 1
-        """, (idp,))
-        all_mods = cur.fetchall()
+            # 1. Obtener módulos dinámicos (Permisos positivos)
+            # NOTA: Verifica si tu tabla es 'permisos' o 'perfil_modulo'
+            cur_n.execute("""
+                SELECT m.* FROM modulos m 
+                INNER JOIN permisos p ON m.id = p.idModulo 
+                WHERE p.idPerfil = %s AND p.can_view = 1
+            """, (idp,))
+            all_mods = cur_n.fetchall()
 
-        # 2. Obtener permisos para módulos fijos (IDs negativos)
-        cur.execute("SELECT idModulo FROM perfil_modulo WHERE idPerfil = %s AND can_view = 1 AND idModulo < 0", (idp,))
-        fijos = [r['idModulo'] for r in cur.fetchall()]
-        
-        cur.close(); conn.close()
+            # 2. Obtener permisos para módulos fijos (IDs negativos)
+            cur_n.execute("SELECT idModulo FROM permisos WHERE idPerfil = %s AND can_view = 1 AND idModulo < 0", (idp,))
+            fijos = [r['idModulo'] for r in cur_n.fetchall()]
+            
+            cur_n.close()
+            c_nav.close()
 
-        # Función auxiliar para links de módulos dinámicos
-        def get_links(padre):
-            links = [f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in all_mods if m['strMenuPadre'] == padre]
-            return "".join(links)
+            # Función auxiliar para links
+            def get_links(padre):
+                return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in all_mods if m.get('strMenuPadre') == padre])
 
-        # Construcción dinámica del menú de Seguridad
-        seg_links = ""
-        if -1 in fijos: seg_links += '<a href="/perfiles">👤 Perfiles</a>'
-        if -2 in fijos: seg_links += '<a href="/modulos">📦 Modulos</a>'
-        if -3 in fijos: seg_links += '<a href="/usuarios">👥 Usuarios</a>'
-        if -4 in fijos: seg_links += '<a href="/permisos">🔐 Permisos</a>'
-        
-        # Solo mostrar el dropdown de Seguridad si tiene al menos un acceso
-        menu_seguridad = f"""<div class="dropdown">
-            <button class="dropbtn">Seguridad ▾</button>
-            <div class="dropdown-content">{seg_links}</div>
-        </div>""" if seg_links else ""
+            # Construcción de secciones
+            seg_links = ""
+            if -1 in fijos: seg_links += '<a href="/perfiles">👤 Perfiles</a>'
+            if -2 in fijos: seg_links += '<a href="/modulos">📦 Modulos</a>'
+            if -3 in fijos: seg_links += '<a href="/usuarios">👥 Usuarios</a>'
+            if -4 in fijos: seg_links += '<a href="/permisos">🔐 Permisos</a>'
+            
+            menu_seguridad = f'<div class="dropdown"><button class="dropbtn">Seguridad ▾</button><div class="dropdown-content">{seg_links}</div></div>' if seg_links else ""
+            
+            links_p1 = get_links("Principal 1")
+            links_p2 = get_links("Principal 2")
+            menu_p1 = f'<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{links_p1}</div></div>' if links_p1 else ""
+            menu_p2 = f'<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{links_p2}</div></div>' if links_p2 else ""
 
-        # Solo mostrar Principal 1 y 2 si tienen links hijos
-        links_p1 = get_links("Principal 1")
-        links_p2 = get_links("Principal 2")
-        
-        menu_p1 = f'<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button><div class="dropdown-content">{links_p1}</div></div>' if links_p1 else ""
-        menu_p2 = f'<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{links_p2}</div></div>' if links_p2 else ""
+            nav = f"""<div class="top-nav"><div class="nav-container"><div class="nav-left">
+            <span class="logo" style="color:#10b981; font-weight:bold; font-size:1.2rem; margin-right:20px;">🏥 Clinica</span>
+            <a href="/dashboard" class="nav-link">Inicio</a>
+            {menu_seguridad} {menu_p1} {menu_p2}
+            </div><div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
+        except Exception as e:
+            nav = f"<div style='background:red; color:white; padding:10px;'>Error en Menú: {str(e)}</div>"
 
-        nav = f"""<div class="top-nav"><div class="nav-container"><div class="nav-left">
-        <span class="logo" style="color:#10b981; font-weight:bold; font-size:1.2rem; margin-right:20px;">🏥 Clinica</span>
-        <a href="/dashboard" class="nav-link">Inicio</a>
-        {menu_seguridad}
-        {menu_p1}
-        {menu_p2}
-        </div><div class="nav-right"><span class="user-pill">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
-    
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <style>
         :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
         body {{ font-family: sans-serif; background:var(--bg); color:var(--text); margin:0; }}
-        .top-nav {{ background:#070b14; height:60px; border-bottom:1px solid var(--border); display:flex; align-items:center; }}
-        .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; }}
+        .top-nav {{ background:#070b14; min-height:60px; border-bottom:1px solid var(--border); display:flex; align-items:center; }}
+        .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; align-items:center; }}
         .nav-link {{ color:#94a3b8; text-decoration:none; padding:10px; font-size:14px; }}
         .dropdown {{ position:relative; display:inline-block; }}
-        .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:100; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }}
+        .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:1000; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }}
         .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; border-bottom: 1px solid #334155; font-size:14px; }}
-        .dropdown-content a:hover {{ background: #2d3748; }}
         .dropdown:hover .dropdown-content {{ display:block; }}
         .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; font-size:14px; }}
         .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
         .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); }}
-        table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:12px; overflow:hidden; }}
-        th {{ background:#1e293b; color:#94a3b8; font-size:12px; text-transform:uppercase; padding:15px; text-align:left; }}
-        td {{ padding:15px; border-bottom:1px solid var(--border); font-size:14px; }}
-        .avatar-table {{ width:45px; height:45px; border-radius:50%; object-fit: cover; background:#334155; border: 1px solid var(--border); }}
-        .status-pill {{ padding:4px 12px; border-radius:20px; font-size:11px; font-weight:bold; }}
-        .active {{ background:#065f46; color:#34d399; }}
-        .inactive {{ background:#7f1d1d; color:#f87171; }}
-        input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; }}
-        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; transition: 0.3s; }}
-        .btn-emerald:hover {{ background: #059669; }}
-        .btn-blue {{ color:#3b82f6; background:none; border:none; cursor:pointer; font-weight:bold; }}
-        .btn-red {{ color:#ef4444; background:none; border:none; cursor:pointer; font-weight:bold; }}
-        .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
-        .modal-content {{ background:var(--card); width:500px; margin:5% auto; padding:35px; border-radius:20px; border: 1px solid var(--border); position:relative; }}
-        .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
-        .close-x {{ position:absolute; top:20px; right:25px; color:#94a3b8; cursor:pointer; font-size:24px; }}
+        input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; box-sizing: border-box; }}
+        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; }}
         .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
-        
-        /* Paginador */
+        /* Paginador UI global */
         .paginador-ui {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }}
     </style>
     <script>
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
         async function runCrud(action, table, id, data={{}}) {{
-            const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
-            const j = await res.json();
-            if(j.ok) location.reload(); 
-            else alert("Error: " + (j.error || "Desconocido"));
+            try {{
+                const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
+                const j = await res.json();
+                if(j.ok) location.reload(); 
+                else alert("Error: " + (j.error || "Desconocido"));
+            } catch(e) {{ alert("Error de red"); }}
         }}
         function preEdit(id, fields, mId='mEdit') {{
             for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
-            document.getElementById('ed_id').value = id;
+            const idInput = document.getElementById('ed_id');
+            if(idInput) idInput.value = id;
             openM(mId);
         }}
     </script>
@@ -688,16 +669,9 @@ def application(environ, start_response):
         return [res_html]
 
     except Exception as e:
-        # Si algo falla aquí, imprimimos el error real en la pantalla
-        start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
-        return [f"Error de Ejecución: {str(e)}".encode()]
-    
+        start_response("200 OK", [("Content-Type", "text/plain")])
+        return [f"ERROR GENERAL: {str(e)}".encode()]
     finally:
-        # Cerramos con seguridad: solo si existen y no son None
-        if 'cur' in locals() and cur: 
-            try: cur.close()
-            except: pass
-        if 'conn' in locals() and conn: 
-            try: conn.close()
-            except: pass
+        if 'cur' in locals() and cur: cur.close()
+        if 'conn' in locals() and conn: conn.close()
   
