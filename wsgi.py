@@ -65,7 +65,7 @@ def render_layout(title, content, user=None):
         .dropdown:hover .dropdown-content {{ display:block; }}
         .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; }}
         .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
-        .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); }}
+        .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); margin-bottom:20px; }}
         table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:12px; overflow:hidden; }}
         th {{ background:#1e293b; color:#94a3b8; font-size:12px; text-transform:uppercase; padding:15px; text-align:left; }}
         td {{ padding:15px; border-bottom:1px solid var(--border); font-size:14px; }}
@@ -91,12 +91,26 @@ def render_layout(title, content, user=None):
             if(j.ok) location.reload(); else alert("Error: " + j.error);
         }}
 
-        function preEdit(id, u, idp, st) {{
-            document.getElementById('ed_id').value = id;
-            document.getElementById('ed_u').value = u;
-            document.getElementById('ed_idp').value = idp;
-            document.getElementById('ed_st').value = st;
-            openM('mEdit');
+        function preEditU(id, u, idp, st) {{
+            document.getElementById('ed_u_id').value = id;
+            document.getElementById('ed_u_n').value = u;
+            document.getElementById('ed_u_idp').value = idp;
+            document.getElementById('ed_u_st').value = st;
+            openM('mEditU');
+        }}
+
+        function preEditP(id, n) {{
+            document.getElementById('ed_p_id').value = id;
+            document.getElementById('ed_p_n').value = n;
+            openM('mEditP');
+        }}
+
+        function preEditM(id, n, r, p) {{
+            document.getElementById('ed_m_id').value = id;
+            document.getElementById('ed_m_n').value = n;
+            document.getElementById('ed_m_r').value = r;
+            document.getElementById('ed_m_p').value = p;
+            openM('mEditM');
         }}
 
         function handleImg(e, prevId) {{
@@ -112,7 +126,7 @@ def application(environ, start_response):
     u_data = verify_jwt(environ)
     content = ""
 
-    # --- API LOGIN ---
+    # --- API LOGIN & CRUD ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ)
         u, p = fs.getvalue("u"), fs.getvalue("p")
@@ -125,18 +139,19 @@ def application(environ, start_response):
             return [b'{"ok":true}']
         start_response("200 OK", [("Content-Type", "application/json")]); return [b'{"ok":false}']
 
-    # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
         try:
             if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-            elif p['action'] == 'save' and p['table'] == 'usuarios':
-                cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)", 
-                           (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
-            elif p['action'] == 'update' and p['table'] == 'usuarios':
-                cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s", 
-                           (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
+            elif p['action'] == 'save':
+                if p['table'] == 'perfiles': cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
+                if p['table'] == 'modulos': cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
+                if p['table'] == 'usuarios': cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)", (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+            elif p['action'] == 'update':
+                if p['table'] == 'perfiles': cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
+                if p['table'] == 'modulos': cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
+                if p['table'] == 'usuarios': cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s", (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
             conn.commit(); res = b'{"ok":true}'
         except Exception as e: conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
         finally: cur.close(); conn.close()
@@ -147,49 +162,40 @@ def application(environ, start_response):
 
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
 
-    if path == "/usuarios":
+    # --- RUTA PERFILES ---
+    if path == "/perfiles":
+        cur.execute("SELECT * FROM perfiles")
+        rows = "".join([f"<tr><td>{p['id']}</td><td>{p['strNombrePerfil']}</td><td><button class='btn-blue' onclick='preEditP({p['id']}, \"{p['strNombrePerfil']}\")'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Eliminar</button></td></tr>" for p in cur.fetchall()])
+        content = f"""<div class='card'><h2>👤 Gestión de Perfiles</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button><table><thead><tr><th>ID</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNewP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3><input id='pn' placeholder='Nombre'><button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">GUARDAR</button></div></div>
+        <div id='mEditP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3><input type='hidden' id='ed_p_id'><input id='ed_p_n'><button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_p_id').value,{{n:document.getElementById('ed_p_n').value}})\">ACTUALIZAR</button></div></div>"""
+
+    # --- RUTA MODULOS ---
+    elif path == "/modulos":
+        cur.execute("SELECT * FROM modulos")
+        rows = "".join([f"<tr><td>{m['strNombreModulo']}</td><td>{m['strRuta']}</td><td>{m['strMenuPadre']}</td><td><button class='btn-blue' onclick='preEditM({m['id']}, \"{m['strNombreModulo']}\", \"{m['strRuta']}\", \"{m['strMenuPadre']}\")'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Eliminar</button></td></tr>" for m in cur.fetchall()])
+        content = f"""<div class='card'><h2>📦 Gestión de Módulos</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button><table><thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNewM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewM')">&times;</span><h3>Nuevo Módulo</h3><input id='mn' placeholder='Nombre'><input id='mr' placeholder='/ruta'><input id='mp' placeholder='Padre'><button class='btn-emerald' onclick=\"runCrud('save','modulos',0,{{n:document.getElementById('mn').value, r:document.getElementById('mr').value, p:document.getElementById('mp').value}})\">GUARDAR</button></div></div>
+        <div id='mEditM' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditM')">&times;</span><h3>Editar Módulo</h3><input type='hidden' id='ed_m_id'><input id='ed_m_n'><input id='ed_m_r'><input id='ed_m_p'><button class='btn-emerald' onclick=\"runCrud('update','modulos',document.getElementById('ed_m_id').value,{{n:document.getElementById('ed_m_n').value, r:document.getElementById('ed_m_r').value, p:document.getElementById('ed_m_p').value}})\">ACTUALIZAR</button></div></div>"""
+
+    # --- RUTA USUARIOS ---
+    elif path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         rows = ""
         for u in cur.fetchall():
             img = f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
-            rows += f"""<tr>
-                <td><img src='{img}' class='avatar-table'></td>
-                <td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td>
-                <td>
-                    <button class='btn-blue' onclick='preEdit({u['id']}, "{u['strNombreUsuario']}", {u['idPerfil']}, "{u['strEstado']}")'>Editar</button>
-                    <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Borrar</button>
-                </td>
-            </tr>"""
+            rows += f"<tr><td><img src='{img}' class='avatar-table'></td><td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td><td><button class='btn-blue' onclick='preEditU({u['id']}, \"{u['strNombreUsuario']}\", {u['idPerfil']}, \"{u['strEstado']}\")'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button></td></tr>"
         cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-        content = f"""<div class='card'>
-            <div style='display:flex;justify-content:space-between'><h2>👥 Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO</button></div>
-            <table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
-        </div>
-        <div id='mNew' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNew')">&times;</span>
-            <h3>Registrar Usuario</h3>
-            <div class='grid-2'>
-                <div><label>Usuario</label><input id='un'></div><div><label>Correo</label><input id='uc'></div>
-                <div><label>Clave</label><input id='up' type='password'></div><div><label>Celular</label><input id='ut'></div>
-                <div><label>Perfil</label><select id='uip'>{p_opts}</select></div><div><label>Estado</label><select id='ust'><option>Activo</option><option>Inactivo</option></select></div>
-            </div>
-            <label>Foto</label><input type='file' onchange="handleImg(event,'pv1')"><img id='pv1' style='width:50px;display:block;margin:10px 0'>
-            <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value}})\">GUARDAR</button>
-        </div></div>
-        <div id='mEdit' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEdit')">&times;</span>
-            <h3>Editar Usuario</h3><input type='hidden' id='ed_id'>
-            <label>Usuario</label><input id='ed_u'>
-            <label>Perfil</label><select id='ed_idp'>{p_opts}</select>
-            <label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
-            <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button>
-        </div></div>"""
-    
+        content = f"""<div class='card'><h2>👥 Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewU')">+ NUEVO</button><table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
+        <div id='mNewU' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewU')">&times;</span><h3>Nuevo Usuario</h3><div class='grid-2'><div><label>User</label><input id='un'></div><div><label>Pass</label><input id='up' type='password'></div><div><label>Perfil</label><select id='uip'>{p_opts}</select></div><div><label>Estado</label><select id='ust'><option>Activo</option><option>Inactivo</option></select></div></div><button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value}})\">GUARDAR</button></div></div>
+        <div id='mEditU' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditU')">&times;</span><h3>Editar Usuario</h3><input type='hidden' id='ed_u_id'><label>Usuario</label><input id='ed_u_n'><label>Perfil</label><select id='ed_u_idp'>{p_opts}</select><label>Estado</label><select id='ed_u_st'><option>Activo</option><option>Inactivo</option></select><button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_u_id').value,{{u:document.getElementById('ed_u_n').value, idp:document.getElementById('ed_u_idp').value, st:document.getElementById('ed_u_st').value}})\">ACTUALIZAR</button></div></div>"""
+
     elif path == "/login":
         content = """<div class='card' style='width:350px;margin:100px auto'><h2>Login</h2><form id='f'><input name='u' placeholder='Usuario'><input name='p' type='password' placeholder='Pass'><div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div><button type='button' class='btn-emerald' onclick='doL()'>ENTRAR</button></form></div>
         <script>async function doL(){{if(!grecaptcha.getResponse())return alert("Captcha!");const r=await fetch('/api/login',{{method:'POST',body:new FormData(document.getElementById('f'))}});if((await r.json()).ok)location.href='/usuarios';else alert("Error")}}</script>"""
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-    else:
-        content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido {u_data['u'] if u_data else ''}</p></div>"
+    else: content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido {u_data['u'] if u_data else ''}</p></div>"
 
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode()]
