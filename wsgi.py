@@ -30,17 +30,19 @@ def conectar_bd():
     res = urllib.parse.urlparse(DB_URL)
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
+# =========================================================
+# DISEÑO MODIFICADO: CON MENÚ DINÁMICO SEGÚN PERMISOS
+# =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
         try:
-            # Usamos nombres de variables distintos para no chocar con la función principal
+            # Usamos nombres de variables distintos para no chocar
             c_nav = conectar_bd()
             cur_n = c_nav.cursor(dictionary=True)
             idp = user.get('idPerfil')
 
-            # 1. Obtener módulos dinámicos (Permisos positivos)
-            # NOTA: Verifica si tu tabla es 'permisos' o 'perfil_modulo'
+            # 1. Obtener módulos dinámicos
             cur_n.execute("""
                 SELECT m.* FROM modulos m 
                 INNER JOIN permisos p ON m.id = p.idModulo 
@@ -48,18 +50,17 @@ def render_layout(title, content, user=None):
             """, (idp,))
             all_mods = cur_n.fetchall()
 
-            # 2. Obtener permisos para módulos fijos (IDs negativos)
+            # 2. Obtener módulos fijos
             cur_n.execute("SELECT idModulo FROM permisos WHERE idPerfil = %s AND can_view = 1 AND idModulo < 0", (idp,))
             fijos = [r['idModulo'] for r in cur_n.fetchall()]
             
             cur_n.close()
             c_nav.close()
 
-            # Función auxiliar para links
             def get_links(padre):
-                return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in all_mods if m.get('strMenuPadre') == padre])
+                links = [f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>' for m in all_mods if m.get('strMenuPadre') == padre]
+                return "".join(links)
 
-            # Construcción de secciones
             seg_links = ""
             if -1 in fijos: seg_links += '<a href="/perfiles">👤 Perfiles</a>'
             if -2 in fijos: seg_links += '<a href="/modulos">📦 Modulos</a>'
@@ -81,46 +82,64 @@ def render_layout(title, content, user=None):
         except Exception as e:
             nav = f"<div style='background:red; color:white; padding:10px;'>Error en Menú: {str(e)}</div>"
 
-    return f"""<html><head><meta charset='utf-8'><title>{title}</title>
-    <style>
-        :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
-        body {{ font-family: sans-serif; background:var(--bg); color:var(--text); margin:0; }}
-        .top-nav {{ background:#070b14; min-height:60px; border-bottom:1px solid var(--border); display:flex; align-items:center; }}
-        .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; align-items:center; }}
-        .nav-link {{ color:#94a3b8; text-decoration:none; padding:10px; font-size:14px; }}
-        .dropdown {{ position:relative; display:inline-block; }}
-        .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:1000; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }}
-        .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; border-bottom: 1px solid #334155; font-size:14px; }}
-        .dropdown:hover .dropdown-content {{ display:block; }}
-        .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; font-size:14px; }}
-        .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
-        .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); }}
-        input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; box-sizing: border-box; }}
-        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; }}
-        .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
-        .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
-        /* Paginador UI global */
-        .paginador-ui {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }}
-    </style>
-    <script>
-        function openM(id) {{ document.getElementById(id).style.display='block'; }}
-        function closeM(id) {{ document.getElementById(id).style.display='none'; }}
-        async function runCrud(action, table, id, data={{}}) {{
-            try {{
-                const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
-                const j = await res.json();
-                if(j.ok) location.reload(); 
-                else alert("Error: " + (j.error || "Desconocido"));
-            } catch(e) {{ alert("Error de red"); }}
-        }}
-        function preEdit(id, fields, mId='mEdit') {{
-            for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
-            const idInput = document.getElementById('ed_id');
-            if(idInput) idInput.value = id;
-            openM(mId);
-        }}
-    </script>
-    </head><body>{nav}<div class='container'>{content}</div></body></html>"""
+    # Cambiamos a string normal (sin f) para que CSS y JS no rompan Python
+    template = """
+    <html>
+    <head>
+        <meta charset='utf-8'>
+        <title>{title}</title>
+        <style>
+            :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
+            body {{ font-family: sans-serif; background:var(--bg); color:var(--text); margin:0; }}
+            .top-nav {{ background:#070b14; min-height:60px; border-bottom:1px solid var(--border); display:flex; align-items:center; }}
+            .nav-container {{ width:100%; max-width:1200px; margin:0 auto; display:flex; justify-content:space-between; padding:0 20px; align-items:center; }}
+            .nav-link {{ color:#94a3b8; text-decoration:none; padding:10px; font-size:14px; }}
+            .dropdown {{ position:relative; display:inline-block; }}
+            .dropdown-content {{ display:none; position:absolute; background:var(--card); min-width:180px; border:1px solid var(--border); border-radius:12px; z-index:1000; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }}
+            .dropdown-content a {{ color:white; padding:12px; text-decoration:none; display:block; border-bottom: 1px solid #334155; font-size:14px; }}
+            .dropdown:hover .dropdown-content {{ display:block; }}
+            .dropbtn {{ background:transparent; color:#94a3b8; border:none; padding:15px; cursor:pointer; font-size:14px; }}
+            .container {{ padding:40px; max-width:1200px; margin:0 auto; }}
+            .card {{ background:var(--card); padding:30px; border-radius:16px; border:1px solid var(--border); }}
+            input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; box-sizing: border-box; }}
+            .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; }}
+            .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
+            .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
+            .paginador-ui {{ display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }}
+        </style>
+        <script>
+            function openM(id) {{ document.getElementById(id).style.display='block'; }}
+            function closeM(id) {{ document.getElementById(id).style.display='none'; }}
+            async function runCrud(action, table, id, data={{}}) {{
+                try {{
+                    const res = await fetch('/api/crud', {{ 
+                        method:'POST', 
+                        body:JSON.stringify({{action, table, id, data}}) 
+                    }});
+                    const j = await res.json();
+                    if(j.ok) location.reload(); 
+                    else alert("Error: " + (j.error || "Desconocido"));
+                } catch(e) {{ alert("Error de red"); }}
+            }}
+            function preEdit(id, fields, mId='mEdit') {{
+                for(let k in fields) {{ 
+                    let el = document.getElementById('ed_'+k); 
+                    if(el) el.value = fields[k]; 
+                }}
+                const idInput = document.getElementById('ed_id');
+                if(idInput) idInput.value = id;
+                openM(mId);
+            }}
+        </script>
+    </head>
+    <body>
+        {nav}
+        <div class='container'>{content}</div>
+    </body>
+    </html>
+    """
+    
+    return template.format(title=title, nav=nav, content=content)
 
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
@@ -651,9 +670,11 @@ def application(environ, start_response):
     </script>
     """
 
-    # --- RENDERIZADO FINAL ---
+   # ==========================================
+    # --- RENDERIZADO FINAL (DENTRO DE APPLICATION) ---
+    # ==========================================
     try:
-        # Si la ruta no coincide con nada de lo anterior, mostramos Inicio
+        # Si no hay contenido definido, mostrar el Dashboard por defecto
         if not content:
             content = """
             <div class='card'>
@@ -661,17 +682,26 @@ def application(environ, start_response):
                 <p>Usa el menú superior para navegar por los módulos disponibles.</p>
             </div>"""
             
-        res_html = render_layout("Clinica 2026", content, u_data).encode("utf-8")
+        # Llamamos a render_layout (asegúrate de que sea la versión que usa .format())
+        res_html = render_layout("Clinica 2026", content, u_data)
+        
         start_response("200 OK", [
             ("Content-Type", "text/html; charset=utf-8"),
             ("Cache-Control", "no-cache")
         ])
-        return [res_html]
+        return [res_html.encode("utf-8")]
 
     except Exception as e:
-        start_response("200 OK", [("Content-Type", "text/plain")])
-        return [f"ERROR GENERAL: {str(e)}".encode()]
+        # Captura errores de renderizado para que Railway no se ponga en negro
+        start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+        return [f"Error de Ejecución: {str(e)}".encode("utf-8")]
+    
     finally:
-        if 'cur' in locals() and cur: cur.close()
-        if 'conn' in locals() and conn: conn.close()
+        # Cierre ultra seguro de base de datos
+        if 'cur' in locals() and cur is not None: 
+            try: cur.close()
+            except: pass
+        if 'conn' in locals() and conn is not None: 
+            try: conn.close()
+            except: pass
   
