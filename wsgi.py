@@ -109,62 +109,37 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ); content = ""
 
-   # --- API CRUD CORREGIDO (SIN ERROR DE CONEXIÓN) ---
+   # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
-        res = b'{"ok":false, "error":"Accion no procesada"}'
         try:
-            if p['action'] == 'delete': 
-                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-                conn.commit(); res = b'{"ok":true}'
-            
+            if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
-                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)", 
+                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
-                    conn.commit(); res = b'{"ok":true}'
-                
                 elif p['table'] == 'perfiles':
-                    nombre = p['data']['n'].strip()
-                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
-                    if cur.fetchone():
-                        res = b'{"ok":false, "error":"El perfil ya existe"}'
-                    else:
-                        cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
-                        conn.commit(); res = b'{"ok":true}'
-                
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
                 elif p['table'] == 'modulos':
-                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", 
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                (p['data']['n'], p['data']['r'], p['data']['p']))
-                    conn.commit(); res = b'{"ok":true}'
-            
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
-                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s", 
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
-                    conn.commit(); res = b'{"ok":true}'
-                
                 elif p['table'] == 'perfiles':
-                    nombre = p['data']['n'].strip()
-                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
-                    if cur.fetchone():
-                        res = b'{"ok":false, "error":"Ya existe otro perfil con ese nombre"}'
-                    else:
-                        cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
-                        conn.commit(); res = b'{"ok":true}'
-                
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
                 elif p['table'] == 'modulos':
-                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", 
+                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
                                (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-                    conn.commit(); res = b'{"ok":true}'
-                    
-        except Exception as e: 
-            conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
-        finally: 
-            cur.close(); conn.close() # <-- Esto SIEMPRE se ejecutará ahora
-        
+            conn.commit(); res = b'{"ok":true}'
+        except Exception as e: conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
+        finally: cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     
     # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
