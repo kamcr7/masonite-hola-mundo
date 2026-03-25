@@ -131,15 +131,16 @@ def application(environ, start_response):
     conn = None
     cur = None
 
- # --- API GET PERMISOS (MATRIZ COMPLETA) ---
-    if path == "/api/get_permisos" and method == "GET":
+# --- API GET PERMISOS (MATRIZ) ---
+    if path == "/api/get_permisos":
         import cgi
-        params = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ)
-        idp = params.getvalue('idp')
+        qs = environ.get('QUERY_STRING', '')
+        params = cgi.parse_qs(qs)
+        idp = params.get('idp', [''])[0]
+        
         res = b'{"ok":false}'
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary para leer nombres de columna
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         try:
-            # Consultamos los 4 tipos de permisos por módulo
             cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a, 
                            can_edit as e, can_delete as d FROM perfil_modulo 
                            WHERE idPerfil = %s""", (idp,))
@@ -149,6 +150,7 @@ def application(environ, start_response):
             res = json.dumps({"ok": False, "error": str(e)}).encode()
         finally:
             cur.close(); conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
 
     # --- API CRUD PRINCIPAL (ACTUALIZADO PARA MATRIZ) ---
@@ -369,7 +371,7 @@ def application(environ, start_response):
             }}
         </script>"""
 
-# --- PANTALLA MODULOS
+# --- PANTALLA MODULOS ---
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
         modulos = cur.fetchall()
@@ -421,15 +423,11 @@ def application(environ, start_response):
         </div>
 
         <script>
-            // Las funciones JS siguen generando la ruta automática para enviarla al API
             async function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
                 const p = document.getElementById('mp').value;
                 if(!n) return alert("El nombre es obligatorio");
-                
-                // Generamos una ruta automática basada en el nombre (ej: "Mi Modulo" -> "/mi-modulo")
                 const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
-                
                 runCrud('save', 'modulos', 0, {{n, r: autoRuta, p}});
             }}
 
@@ -438,20 +436,17 @@ def application(environ, start_response):
                 const n = document.getElementById('ed_n').value.trim();
                 const p = document.getElementById('ed_p').value;
                 if(!n) return alert("El nombre no puede estar vacío");
-
                 const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
-
                 runCrud('update', 'modulos', id, {{n, r: autoRuta, p}});
             }}
         </script>
         """
-       # --- PANTALLA PERMISOS (ALINEADO Y FUNCIONAL) ---
-   # --- PANTALLA PERMISOS (CORREGIDA) ---
+
+    # --- PANTALLA PERMISOS (ALINEADO) ---
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
         
-        # Lista extendida de módulos (Fijos + DB)
         mods_fijos = [
             {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
             {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
@@ -461,12 +456,11 @@ def application(environ, start_response):
 
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        # Generar filas con la matriz de checkboxes
         rows = ""
         for m in todos_mods:
             rows += f"""
             <tr class='mod-row'>
-                <td><b class='mod-name'>{m['nm']}</b> <br><small style='color:#94a3b8'>{m['p']}</small></td>
+                <td><b class='mod-name'>{m['nm']}</b><br><small style='color:#94a3b8'>{m['p']}</small></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='v' id='v_{m['id']}'></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='a' id='a_{m['id']}'></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='e' id='e_{m['id']}'></td>
@@ -475,24 +469,25 @@ def application(environ, start_response):
 
         content = f"""
         <div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
-                <h2>🛡️ Matriz de Permisos</h2>
-                <select id='sel_perfil' onchange='cargarPermisos(this.value)' style='width:250px; margin:0;'>
-                    <option value=''>-- Seleccionar Perfil --</option>
+            <h2>🛡️ Matriz de Permisos</h2>
+            <div style='margin-bottom:20px;'>
+                <label>Seleccione Perfil:</label>
+                <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
+                    <option value=''>-- Elegir --</option>
                     {p_opts}
                 </select>
             </div>
 
-            <div id='area_permisos' style='display:none'>
+            <div id='area_permisos' style='display:none;'>
                 <div style='display:flex; gap:10px; margin-bottom:15px;'>
-                    <button class='btn-blue' onclick='bulk(true)' style='width:auto; padding:8px 15px;'>☑ Marcar Todo</button>
-                    <button class='btn-red' onclick='bulk(false)' style='width:auto; padding:8px 15px;'>☐ Desmarcar Todo</button>
+                    <button class='btn-blue' onclick='bulk(true)' style='width:auto;'>☑ Todo</button>
+                    <button class='btn-red' onclick='bulk(false)' style='width:auto;'>☐ Nada</button>
                     <input type="text" id="txtBusca" onkeyup="filtrar()" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
                 </div>
 
-                <div style="max-height:500px; overflow-y:auto; border-radius:12px; border:1px solid var(--border);">
-                    <table style='margin-top:0;'>
-                        <thead style='position:sticky; top:0; z-index:10;'>
+                <div style="max-height:500px; overflow-y:auto; border:1px solid var(--border); border-radius:12px;">
+                    <table style='margin:0;'>
+                        <thead style='position:sticky; top:0; background:var(--card);'>
                             <tr>
                                 <th>MÓDULO</th>
                                 <th style='text-align:center'>CONSULTAR</th>
@@ -504,7 +499,7 @@ def application(environ, start_response):
                         <tbody>{rows}</tbody>
                     </table>
                 </div>
-                <button class='btn-emerald' style='margin-top:20px;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
+                <button class='btn-emerald' style='margin-top:20px;' onclick='guardarPermisos()'>GUARDAR CAMBIOS</button>
             </div>
         </div>
 
@@ -519,47 +514,50 @@ def application(environ, start_response):
 
             function bulk(v) {{
                 document.querySelectorAll('.mod-row').forEach(row => {{
-                    if(row.style.display !== 'none') {{
-                        row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
-                    }}
+                    if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
                 }});
             }}
 
             async function cargarPermisos(idp) {{
-                if(!idp) return document.getElementById('area_permisos').style.display='none';
+                const area = document.getElementById('area_permisos');
+                if(!idp) {{ area.style.display='none'; return; }}
                 document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
-                
-                const res = await fetch('/api/get_permisos?idp=' + idp);
-                const data = await res.json();
-                if(data.ok) {{
-                    data.perms.forEach(p => {{
-                        if(p.v) document.getElementById('v_'+p.idm).checked = true;
-                        if(p.a) document.getElementById('a_'+p.idm).checked = true;
-                        if(p.e) document.getElementById('e_'+p.idm).checked = true;
-                        if(p.d) document.getElementById('d_'+p.idm).checked = true;
-                    }});
-                    document.getElementById('area_permisos').style.display = 'block';
-                }}
+                try {{
+                    const res = await fetch('/api/get_permisos?idp=' + idp);
+                    const data = await res.json();
+                    if(data.ok) {{
+                        data.perms.forEach(p => {{
+                            if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                            if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                            if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                            if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                        }});
+                        area.style.display = 'block';
+                    }}
+                }} catch(e) {{ console.error(e); area.style.display = 'block'; }}
             }}
 
             function guardarPermisos() {{
                 const idp = document.getElementById('sel_perfil').value;
-                const matrix = {{}};
-                
-                document.querySelectorAll('.perm-check').forEach(c => {{
-                    const idm = c.dataset.mod;
-                    if(!matrix[idm]) matrix[idm] = {{idm, v:0, a:0, e:0, d:0}};
-                    if(c.checked) matrix[idm][c.dataset.type] = 1;
+                const matrix = [];
+                const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+                modIds.forEach(idm => {{
+                    matrix.push({{
+                        idm: parseInt(idm),
+                        v: document.getElementById('v_'+idm).checked ? 1 : 0,
+                        a: document.getElementById('a_'+idm).checked ? 1 : 0,
+                        e: document.getElementById('e_'+idm).checked ? 1 : 0,
+                        d: document.getElementById('d_'+idm).checked ? 1 : 0
+                    }});
                 }});
-
-                runCrud('save', 'permisos', 0, {{ idp, perms: Object.values(matrix) }});
+                runCrud('save', 'permisos', 0, {{ idp, perms: matrix }});
             }}
         </script>
         """
-        
-    # --- CIERRE FINAL SEGURO ---
-    if cur: cur.close()
-    if conn: conn.close()
+
+    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
+    if 'cur' in locals() and cur: cur.close()
+    if 'conn' in locals() and conn: conn.close()
     
     start_response("200 OK", [("Content-Type", "text/html")])
     return [render_layout("Clinica", content, u_data).encode()]
