@@ -246,15 +246,14 @@ def application(environ, start_response):
             }}
         </script>"""
 
-# --- PANTALLA MODULOS (SIN CAMPO RUTA) ---
+# --- PANTALLA MODULOS (SIN COLUMNA RUTA EN TABLA) ---
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
         modulos = cur.fetchall()
-        # Nota: En la tabla seguimos mostrando la ruta para referencia, 
-        # pero en el formulario ya no aparecerá.
+        
+        # Generamos las filas eliminando la celda de la ruta
         rows = "".join([f"""<tr>
             <td><b>{m['strNombreModulo']}</b></td>
-            <td><code>{m['strRuta']}</code></td>
             <td>{m['strMenuPadre']}</td>
             <td>
                 <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
@@ -267,7 +266,7 @@ def application(environ, start_response):
             <h2>📦 Gestión de Módulos</h2>
             <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
             <table>
-                <thead><tr><th>NOMBRE</th><th>RUTA (Auto)</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
+                <thead><tr><th>NOMBRE</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
             </table>
         </div>
@@ -300,6 +299,7 @@ def application(environ, start_response):
         </div>
 
         <script>
+            // Las funciones JS siguen generando la ruta automática para enviarla al API
             async function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
                 const p = document.getElementById('mp').value;
@@ -317,8 +317,6 @@ def application(environ, start_response):
                 const p = document.getElementById('ed_p').value;
                 if(!n) return alert("El nombre no puede estar vacío");
 
-                // En el update, si no queremos cambiar la ruta, podemos enviar el nombre 
-                // y que el servidor decida, o regenerarla también:
                 const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
 
                 runCrud('update', 'modulos', id, {{n, r: autoRuta, p}});
