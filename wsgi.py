@@ -234,18 +234,20 @@ def application(environ, start_response):
     # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
- # --- PANTALLA USUARIOS ---
+ # ==========================================
+    # --- PANTALLA USUARIOS ---
+    # ==========================================
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         usuarios = cur.fetchall()
         
-        rows = "".join([f"""<tr>
+        rows = "".join([f"""<tr class='u-row'>
             <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
-            <td><b>{u['strNombreUsuario']}</b></td>
+            <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
             <td>{u['strNombrePerfil']}</td>
             <td><span class='status-pill {'active' if u['strEstado']=='Activo' else 'inactive'}'>{u['strEstado']}</span></td>
             <td>
-                <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}})'>Editar</button>
+                <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>
                 <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>
             </td>
         </tr>""" for u in usuarios])
@@ -256,33 +258,29 @@ def application(environ, start_response):
         content = f"""
         <div class='card'>
             <h2>👥 Gestión de Usuarios</h2>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
+                <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar usuario..." style="width:200px; margin:0;">
+            </div>
             <table>
                 <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
             </table>
+            <div class="paginador-ui">
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.u-row')">❮ Anterior</button>
+                <span id="infoPagina"></span>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.u-row')">Siguiente ❯</button>
+            </div>
         </div>
 
         <div id='mNew' class='modal'><div class='modal-content'>
             <span class='close-x' onclick="closeM('mNew')">&times;</span>
             <h3>Nuevo Usuario</h3>
             <div class='grid-2'>
-                <div>
-                    <label>Nombre (Letras, máx 15)</label>
-                    <input id='un' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')">
-                </div>
-                <div>
-                    <label>Pass (5-8 carac.)</label>
-                    <input id='up' type='password' minlength="5" maxlength="8">
-                </div>
-                <div>
-                    <label>Correo (@gmail.com)</label>
-                    <input id='uc' type='email' maxlength="30" placeholder="ejemplo@gmail.com">
-                </div>
-                <div>
-                    <label>Teléfono (10 dígitos)</label>
-                    <input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-                </div>
+                <div><label>Nombre</label><input id='un' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')"></div>
+                <div><label>Pass (5-8 carac.)</label><input id='up' type='password' maxlength="8"></div>
+                <div><label>Correo</label><input id='uc' type='email' placeholder="ejemplo@gmail.com"></div>
+                <div><label>Teléfono</label><input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
                 <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
@@ -294,320 +292,268 @@ def application(environ, start_response):
             <h3>Editar Usuario</h3>
             <input type='hidden' id='ed_id'>
             <div class='grid-2'>
-                <div><label>Usuario</label><input id='ed_u' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')"></div>
+                <div><label>Usuario</label><input id='ed_u' maxlength="15"></div>
                 <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
             <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
         </div></div>
-
-        <script>
-            function validateAndSave() {{
-                const u = document.getElementById('un').value.trim();
-                const p = document.getElementById('up').value;
-                const c = document.getElementById('uc').value.trim();
-                const t = document.getElementById('ut').value.trim();
-                const idp = document.getElementById('un_idp').value;
-                const st = document.getElementById('un_st').value;
-
-                // Validaciones de JS
-                if(u.length < 3) return alert("Nombre demasiado corto");
-                if(p.length < 5 || p.length > 8) return alert("La contraseña debe tener entre 5 y 8 caracteres");
-                if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
-                if(t.length !== 10) return alert("El teléfono debe tener exactamente 10 dígitos");
-
-                const data = {{ u, p, idp, st }}; // Tu API solo procesa estos 4 según el código que enviaste
-                runCrud('save', 'usuarios', 0, data);
-            }}
-
-            function updateUser() {{
-                const id = document.getElementById('ed_id').value;
-                const u = document.getElementById('ed_u').value.trim();
-                const idp = document.getElementById('ed_idp').value;
-                const st = document.getElementById('ed_st').value;
-
-                if(!u) return alert("El nombre es obligatorio");
-                runCrud('update', 'usuarios', id, {{ u, idp, st }});
-            }}
-        </script>
         """
-            
+
+    # ==========================================
     # --- PANTALLA PERFILES ---
+    # ==========================================
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
-        rows = ""
-        for index, p in enumerate(perfiles, start=1):
-            rows += f"""<tr>
-                <td>{index}</td>
-                <td><b>{p['strNombrePerfil']}</b></td>
+        rows = "".join([f"""<tr class='p-row'>
+                <td>{p['id']}</td>
+                <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
                 <td>
                     <button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>
                     <button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>
                 </td>
-            </tr>"""
+            </tr>""" for p in perfiles])
             
-        content = f"""<div class='card'><h2>👤 Gestión de Perfiles</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-            <table><thead><tr><th>#</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
-        <div id='mNewP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3>
-            <label>Nombre del Perfil (Máx. 15 letras)</label>
-            <input id='pn' placeholder='Ej: Ventas' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-            <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button></div></div>
-        <div id='mEditP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3><input type='hidden' id='ed_id'>
-            <label>Nombre del Perfil</label>
-            <input id='ed_n' maxlength="15" oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
-            <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button></div></div>
-        <script>
-            async function savePerfil() {{
-                const nom = document.getElementById('pn').value.trim();
-                if(!nom) return alert("Escribe un nombre válido");
-                runCrud('save', 'perfiles', 0, {{n: nom}});
-            }}
-            async function updatePerfil() {{
-                const id = document.getElementById('ed_id').value;
-                const nom = document.getElementById('ed_n').value.trim();
-                if(!nom) return alert("El nombre no puede estar vacío");
-                runCrud('update', 'perfiles', id, {{n: nom}});
-            }}
-        </script>"""
+        content = f"""
+        <div class='card'>
+            <h2>👤 Gestión de Perfiles</h2>
+            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
+                <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.p-row', '.p-name');" placeholder="🔍 Buscar perfil..." style="width:200px; margin:0;">
+            </div>
+            <table><thead><tr><th>ID</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
+            <div class="paginador-ui">
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.p-row')">❮ Anterior</button>
+                <span id="infoPagina"></span>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.p-row')">Siguiente ❯</button>
+            </div>
+        </div>
 
-# --- PANTALLA MODULOS ---
+        <div id='mNewP' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mNewP')">&times;</span>
+            <h3>Nuevo Perfil</h3>
+            <label>Nombre del Perfil</label>
+            <input id='pn' maxlength="15"><br>
+            <button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">CREAR PERFIL</button>
+        </div></div>
+
+        <div id='mEditP' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mEditP')">&times;</span>
+            <h3>Editar Perfil</h3>
+            <input type='hidden' id='ed_id'>
+            <label>Nombre</label>
+            <input id='ed_n' maxlength="15"><br>
+            <button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value}})\">ACTUALIZAR</button>
+        </div></div>
+        """
+
+    # ==========================================
+    # --- PANTALLA MODULOS ---
+    # ==========================================
     elif path == "/modulos":
         cur.execute("SELECT * FROM modulos ORDER BY id ASC")
-        modulos = cur.fetchall()
-    
-        rows = "".join([f"""<tr>
-            <td><b>{m['strNombreModulo']}</b></td>
+        rows = "".join([f"""<tr class='m-row'>
+            <td><b class='m-name'>{m['strNombreModulo']}</b></td>
             <td>{m['strMenuPadre']}</td>
             <td>
                 <button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>
                 <button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>
             </td>
-        </tr>""" for m in modulos])
+        </tr>""" for m in cur.fetchall()])
         
         content = f"""
         <div class='card'>
             <h2>📦 Gestión de Módulos</h2>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
-            <table>
-                <thead><tr><th>NOMBRE</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
-                <tbody>{rows}</tbody>
-            </table>
-        </div>
-
-        <div id='mNewM' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mNewM')">&times;</span>
-                <h3>Nuevo Módulo</h3>
-                <label>Nombre del Módulo (Máx. 20)</label>
-                <input id='mn' placeholder='Ej: Facturación' maxlength="20" 
-                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
-                <label>Menú Padre</label>
-                <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
-                <button class='btn-emerald' onclick="saveMod()">GUARDAR MÓDULO</button>
+            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
+                <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.m-row', '.m-name');" placeholder="🔍 Buscar módulo..." style="width:200px; margin:0;">
+            </div>
+            <table><thead><tr><th>NOMBRE</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
+            <div class="paginador-ui">
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.m-row')">❮ Anterior</button>
+                <span id="infoPagina"></span>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.m-row')">Siguiente ❯</button>
             </div>
         </div>
 
-        <div id='mEditM' class='modal'>
-            <div class='modal-content'>
-                <span class='close-x' onclick="closeM('mEditM')">&times;</span>
-                <h3>Editar Módulo</h3>
-                <input type='hidden' id='ed_id'>
-                <label>Nombre del Módulo</label>
-                <input id='ed_n' maxlength="20" 
-                       oninput="this.value = this.value.replace(/[^A-Za-z0-9\\s]/g, '')">
-                <label>Menú Padre</label>
-                <select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
-                <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR CAMBIOS</button>
-            </div>
-        </div>
+        <div id='mNewM' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mNewM')">&times;</span>
+            <h3>Nuevo Módulo</h3>
+            <label>Nombre</label><input id='mn' maxlength="20">
+            <label>Padre</label><select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
+            <button class='btn-emerald' onclick="saveMod()">GUARDAR</button>
+        </div></div>
 
-        <script>
-            async function saveMod() {{
-                const n = document.getElementById('mn').value.trim();
-                const p = document.getElementById('mp').value;
-                if(!n) return alert("El nombre es obligatorio");
-                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
-                runCrud('save', 'modulos', 0, {{n, r: autoRuta, p}});
-            }}
-
-            async function updateMod() {{
-                const id = document.getElementById('ed_id').value;
-                const n = document.getElementById('ed_n').value.trim();
-                const p = document.getElementById('ed_p').value;
-                if(!n) return alert("El nombre no puede estar vacío");
-                const autoRuta = "/" + n.toLowerCase().replace(/\\s+/g, '-');
-                runCrud('update', 'modulos', id, {{n, r: autoRuta, p}});
-            }}
-        </script>
+        <div id='mEditM' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mEditM')">&times;</span>
+            <h3>Editar Módulo</h3>
+            <input type='hidden' id='ed_id'>
+            <label>Nombre</label><input id='ed_n' maxlength="20">
+            <label>Padre</label><select id='ed_p'><option>Principal 1</option><option>Principal 2</option></select>
+            <button class='btn-emerald' onclick="updateMod()">ACTUALIZAR</button>
+        </div></div>
         """
 
+    # ==========================================
     # --- PANTALLA PERMISOS ---
+    # ==========================================
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
-        
-        # Módulos base + Módulos de la BD
         mods_fijos = [
             {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
             {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
         ]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
-
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        rows = ""
-        for m in todos_mods:
-            rows += f"""
-            <tr class='mod-row'>
-                <td><b class='mod-name'>{m['nm']}</b><br><small style='color:#94a3b8'>{m['p']}</small></td>
+        rows = "".join([f"""<tr class='perm-row'>
+                <td><b class='perm-name'>{m['nm']}</b><br><small>{m['p']}</small></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='v' id='v_{m['id']}'></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='a' id='a_{m['id']}'></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='e' id='e_{m['id']}'></td>
                 <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='d' id='d_{m['id']}'></td>
-            </tr>"""
+            </tr>""" for m in todos_mods])
 
         content = f"""
         <div class='card'>
             <h2>🛡️ Matriz de Permisos</h2>
-            <div style='margin-bottom:20px;'>
-                <label>Seleccione Perfil:</label>
-                <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
-                    <option value=''>-- Elegir --</option>
-                    {p_opts}
-                </select>
-            </div>
-
-            <div id='area_permisos' style='display:none;'>
+            <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
+                <option value=''>-- Seleccione Perfil --</option>{p_opts}
+            </select>
+            <div id='area_permisos' style='display:none; margin-top:20px;'>
                 <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
-                    <button class='btn-blue' onclick='bulk(true)' style='width:auto; padding:8px 12px;'>☑ Todo</button>
-                    <button class='btn-red' onclick='bulk(false)' style='width:auto; padding:8px 12px;'>☐ Nada</button>
-                    <input type="text" id="txtBusca" onkeyup="resetPaginacion(); filtrar();" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
+                    <button class='btn-blue' onclick='bulk(true)' style="width:auto">☑ Todo</button>
+                    <button class='btn-red' onclick='bulk(false)' style="width:auto">☐ Nada</button>
+                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="width:200px; margin:0; margin-left:auto;">
                 </div>
-
-                <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden;">
-                    <table id="tablaPermisos" style='margin:0;'>
-                        <thead>
-                            <tr>
-                                <th>MÓDULO</th>
-                                <th style='text-align:center'>CONSULTAR</th>
-                                <th style='text-align:center'>AGREGAR</th>
-                                <th style='text-align:center'>EDITAR</th>
-                                <th style='text-align:center'>ELIMINAR</th>
-                            </tr>
-                        </thead>
-                        <tbody>{rows}</tbody>
-                    </table>
+                <table>
+                    <thead><tr><th>MÓDULO</th><th>VER</th><th>ADD</th><th>EDT</th><th>DEL</th></tr></thead>
+                    <tbody>{rows}</tbody>
+                </table>
+                <div class="paginador-ui">
+                    <button class="btn-blue" onclick="cambiarPagina(-1, '.perm-row')">❮ Anterior</button>
+                    <span id="infoPagina"></span>
+                    <button class="btn-blue" onclick="cambiarPagina(1, '.perm-row')">Siguiente ❯</button>
                 </div>
-
-                <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px;">
-                    <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt" style="width:auto; padding:5px 15px;">❮ Anterior</button>
-                    <span id="infoPagina" style="font-weight:bold; color:var(--text);">Página 1 de X</span>
-                    <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig" style="width:auto; padding:5px 15px;">Siguiente ❯</button>
-                </div>
-
-                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
+                <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR PERMISOS</button>
             </div>
         </div>
-
-        <script>
-            let paginaActual = 1;
-            const filasPorPagina = 5;
-
-            function filtrar() {{
-                const busqueda = document.getElementById('txtBusca').value.toUpperCase();
-                const filas = document.querySelectorAll('.mod-row');
-                
-                // Primero filtramos por texto
-                filas.forEach(row => {{
-                    const nombre = row.querySelector('.mod-name').innerText.toUpperCase();
-                    row.dataset.visible = nombre.includes(busqueda) ? "true" : "false";
-                }});
-
-                renderTable();
-            }}
-
-            function renderTable() {{
-                const filasVisibles = Array.from(document.querySelectorAll('.mod-row')).filter(r => r.dataset.visible !== "false");
-                const totalPaginas = Math.ceil(filasVisibles.length / filasPorPagina) || 1;
-
-                if (paginaActual > totalPaginas) paginaActual = totalPaginas;
-                if (paginaActual < 1) paginaActual = 1;
-
-                const inicio = (paginaActual - 1) * filasPorPagina;
-                const fin = inicio + filasPorPagina;
-
-                // Ocultar todas primero
-                document.querySelectorAll('.mod-row').forEach(r => r.style.display = 'none');
-
-                // Mostrar solo las de la página actual
-                filasVisibles.slice(inicio, fin).forEach(r => r.style.display = '');
-
-                // Actualizar interfaz
-                document.getElementById('infoPagina').innerText = `Página ${{paginaActual}} de ${{totalPaginas}}`;
-                document.getElementById('btnAnt').disabled = paginaActual === 1;
-                document.getElementById('btnSig').disabled = paginaActual === totalPaginas;
-            }}
-
-            function cambiarPagina(delta) {{
-                paginaActual += delta;
-                renderTable();
-            }}
-
-            function resetPaginacion() {{
-                paginaActual = 1;
-            }}
-
-            function bulk(v) {{
-                // Afecta solo a los módulos visibles por el filtro de búsqueda
-                document.querySelectorAll('.mod-row').forEach(row => {{
-                    if(row.dataset.visible !== "false") {{
-                        row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
-                    }}
-                }});
-            }}
-
-            async function cargarPermisos(idp) {{
-                const area = document.getElementById('area_permisos');
-                if(!idp) {{ area.style.display='none'; return; }}
-                
-                document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
-                
-                try {{
-                    const res = await fetch('/api/get_permisos?idp=' + idp);
-                    const data = await res.json();
-                    if(data.ok) {{
-                        data.perms.forEach(p => {{
-                            if(p.v) {{ let e=document.getElementById('v_'+p.idm); if(e) e.checked=true; }}
-                            if(p.a) {{ let e=document.getElementById('a_'+p.idm); if(e) e.checked=true; }}
-                            if(p.e) {{ let e=document.getElementById('e_'+p.idm); if(e) e.checked=true; }}
-                            if(p.d) {{ let e=document.getElementById('d_'+p.idm); if(e) e.checked=true; }}
-                        }});
-                        area.style.display = 'block';
-                        filtrar(); // Inicializa la tabla con paginación
-                    }}
-                }} catch(e) {{ console.error(e); area.style.display = 'block'; filtrar(); }}
-            }}
-
-            function guardarPermisos() {{
-                const idp = document.getElementById('sel_perfil').value;
-                const matrix = [];
-                const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
-                
-                modIds.forEach(idm => {{
-                    matrix.push({{
-                        idm: parseInt(idm),
-                        v: document.getElementById('v_'+idm).checked ? 1 : 0,
-                        a: document.getElementById('a_'+idm).checked ? 1 : 0,
-                        e: document.getElementById('e_'+idm).checked ? 1 : 0,
-                        d: document.getElementById('d_'+idm).checked ? 1 : 0
-                    }});
-                }});
-                runCrud('save', 'permisos', 0, {{ idp, perms: matrix }});
-            }}
-        </script>
         """
+
+    # ==========================================
+    # --- JAVASCRIPT GLOBAL (PAGINACIÓN Y LOGICA) ---
+    # ==========================================
+    content += """
+    <style>
+        .paginador-ui { display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }
+        .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+    <script>
+        let paginaActual = 1;
+        const filasPorPagina = 5;
+
+        // Función de Filtrado y Búsqueda
+        function filtrar(rowClass, nameClass) {
+            const val = document.getElementById('txtBusca').value.toUpperCase();
+            document.querySelectorAll(rowClass).forEach(row => {
+                const text = row.querySelector(nameClass).innerText.toUpperCase();
+                row.dataset.visible = text.includes(val) ? "true" : "false";
+            });
+            renderTable(rowClass);
+        }
+
+        // Función de Renderizado de Tabla (Paginación)
+        function renderTable(rowClass) {
+            const filas = Array.from(document.querySelectorAll(rowClass));
+            const visibles = filas.filter(r => r.dataset.visible !== "false");
+            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+
+            if (paginaActual > total) paginaActual = total;
+            if (paginaActual < 1) paginaActual = 1;
+
+            filas.forEach(r => r.style.display = 'none');
+            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina).forEach(r => r.style.display = '');
+
+            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
+            const btns = document.querySelectorAll('.paginador-ui button');
+            if(btns.length >= 2) {
+                btns[0].disabled = paginaActual === 1;
+                btns[1].disabled = paginaActual === total;
+            }
+        }
+
+        function cambiarPagina(delta, rowClass) {
+            paginaActual += delta;
+            renderTable(rowClass);
+        }
+
+        // Inicialización automática
+        document.addEventListener('DOMContentLoaded', () => {
+            if(document.querySelector('.u-row')) renderTable('.u-row');
+            if(document.querySelector('.p-row')) renderTable('.p-row');
+            if(document.querySelector('.m-row')) renderTable('.m-row');
+        });
+
+        // --- FUNCIONES ESPECIFICAS ---
+        function validateAndSave() {
+            const u = document.getElementById('un').value.trim(), p = document.getElementById('up').value;
+            if(u.length < 3 || p.length < 5) return alert("Datos inválidos");
+            runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+        }
+
+        function updateUser() {
+            runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
+                u: document.getElementById('ed_u').value, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
+            });
+        }
+
+        async function saveMod() {
+            const n = document.getElementById('mn').value.trim();
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
+        }
+
+        async function cargarPermisos(idp) {
+            if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if(data.ok) {
+                data.perms.forEach(p => {
+                    ['v','a','e','d'].forEach(t => { if(p[t]) document.getElementById(t+'_'+p.idm).checked = true; });
+                });
+                document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1;
+                filtrar('.perm-row', '.perm-name');
+            }
+        }
+
+        function bulk(v) {
+            document.querySelectorAll('.perm-row').forEach(row => {
+                if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+            });
+        }
+        
+        function guardarPermisos() {
+            const idp = document.getElementById('sel_perfil').value;
+            const matrix = [];
+            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+            ids.forEach(id => {
+                matrix.push({
+                    idm: parseInt(id),
+                    v: document.getElementById('v_'+id).checked ? 1 : 0,
+                    a: document.getElementById('a_'+id).checked ? 1 : 0,
+                    e: document.getElementById('e_'+id).checked ? 1 : 0,
+                    d: document.getElementById('d_'+id).checked ? 1 : 0
+                });
+            });
+            runCrud('save', 'permisos', 0, { idp, perms: matrix });
+        }
+    </script>
+    """
 
     # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
     if 'cur' in locals() and cur: cur.close()
