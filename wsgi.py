@@ -110,70 +110,48 @@ def application(environ, start_response):
     u_data = verify_jwt(environ); content = ""
 
 # --- API CRUD ---
-
     if path == "/api/crud" and method == "POST":
-
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
-
         conn = conectar_bd(); cur = conn.cursor()
-
         try:
-
-            if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-
+            if p['action'] == 'delete': 
+                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
             elif p['action'] == 'save':
-
                 if p['table'] == 'usuarios':
-
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
-
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
-
                 elif p['table'] == 'perfiles':
-
-                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-
+                    # VALIDACIÓN DE DUPLICADOS (Ignora mayúsculas/minúsculas)
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
+                    if cur.fetchone():
+                        raise Exception("Ese nombre de perfil ya existe")
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
                 elif p['table'] == 'modulos':
-
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
-
                                (p['data']['n'], p['data']['r'], p['data']['p']))
-
             elif p['action'] == 'update':
-
                 if p['table'] == 'usuarios':
-
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
-
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
-
                 elif p['table'] == 'perfiles':
-
-                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-
+                    # VALIDACIÓN DE DUPLICADOS AL EDITAR (Que no sea el mismo ID)
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
+                    if cur.fetchone():
+                        raise Exception("Ya existe otro perfil con ese nombre")
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
                 elif p['table'] == 'modulos':
-
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
-
                                (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-
+            
             conn.commit(); res = b'{"ok":true}'
-
-        except Exception as e: conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
-
-        finally: cur.close(); conn.close()
-
+        except Exception as e: 
+            conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
+        finally: 
+            cur.close(); conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
-
-
-
-    if not u_data and path != "/login":
-
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-
-
-
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
     # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
