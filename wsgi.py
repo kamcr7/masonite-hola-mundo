@@ -133,25 +133,32 @@ def application(environ, start_response):
 
 # --- API GET PERMISOS (MATRIZ) ---
     if path == "/api/get_permisos":
-        import cgi
+        from urllib.parse import parse_qs # Es más moderno que cgi
         qs = environ.get('QUERY_STRING', '')
-        params = cgi.parse_qs(qs)
-        idp = params.get('idp', [''])[0]
+        params = parse_qs(qs)
         
-        res = b'{"ok":false}'
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        try:
-            cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a, 
-                           can_edit as e, can_delete as d FROM perfil_modulo 
-                           WHERE idPerfil = %s""", (idp,))
-            perms = cur.fetchall()
-            res = json.dumps({"ok": True, "perms": perms}).encode()
-        except Exception as e:
-            res = json.dumps({"ok": False, "error": str(e)}).encode()
-        finally:
-            cur.close(); conn.close()
+        # Obtenemos el ID y nos aseguramos de que sea un número
+        idp_raw = params.get('idp', [None])[0]
         
-        start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+        res = b'{"ok":false, "perms":[]}'
+        if idp_raw:
+            conn = conectar_bd()
+            cur = conn.cursor(dictionary=True)
+            try:
+                # Usamos CAST o simplemente nos aseguramos que idp_raw sea usable
+                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a, 
+                               can_edit as e, can_delete as d FROM perfil_modulo 
+                               WHERE idPerfil = %s""", (idp_raw,))
+                perms = cur.fetchall()
+                # Importante: Convertir a JSON estándar
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+            except Exception as e:
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+            finally:
+                cur.close(); conn.close()
+        
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [res]
 
     # --- API CRUD PRINCIPAL (ACTUALIZADO PARA MATRIZ) ---
     if path == "/api/crud" and method == "POST":
