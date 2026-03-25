@@ -33,7 +33,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN CORREGIDA (LLAVES ESCAPADAS)
+# MAQUETACIÓN CORREGIDA
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -43,9 +43,11 @@ def render_layout(title, content, user=None):
         u_p = cur.fetchone()
         u_pid = u_p['idPerfil'] if u_p else 0
         
+        # FUERZA la aparición de módulos de seguridad si es ADMIN (Perfil 1)
         if u_pid == 1:
+            p_ok = ["Perfiles", "Usuarios", "Modulos", "Permisos"]
             cur.execute("SELECT strNombreModulo as n FROM modulos")
-            p_ok = ["Perfiles", "Usuarios", "Modulos", "Permisos"] + [r['n'] for r in cur.fetchall()]
+            p_ok += [r['n'] for r in cur.fetchall()]
         else:
             cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (u_pid,))
             p_ok = [r['nombreModulo'] for r in cur.fetchall()]
@@ -70,7 +72,6 @@ def render_layout(title, content, user=None):
         <div class="dropdown"><button class="dropbtn">Principal 2 ▾</button><div class="dropdown-content">{get_links("Principal 2") or '<a>(Vacio)</a>'}</div></div>
         </div><div class="nav-right"><span class="user-pill" style="color:var(--emerald); margin-right:15px; font-size:13px; border:1px solid var(--border); padding:4px 10px; border-radius:20px;">{user['u']}</span><a href="/logout" class="btn-salir">Salir</a></div></div></div>"""
    
-    # Nota las llaves dobles {{ }} en el CSS, esto evita el SyntaxError
     return f"""<html><head><meta charset='utf-8'><title>{title}</title>
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <style>
@@ -120,6 +121,8 @@ def render_layout(title, content, user=None):
                 if(el) el.value = data[key];
             }}
             document.getElementById('edit_id').value = data.id;
+            // Limpiar campo de password por seguridad al editar
+            if(document.getElementById('edit_p')) document.getElementById('edit_p').value = "";
             if(data.img && document.getElementById('preview_edit')) document.getElementById('preview_edit').src = data.img;
             openM(modalId);
         }}
@@ -141,7 +144,6 @@ def application(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
 
-    # --- API LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
         u, p = fs.getvalue("u"), hash_password(fs.getvalue("p"))
@@ -182,56 +184,34 @@ def application(environ, start_response):
     if path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
 
-    # --- API CRUD CORREGIDO ---
+    # --- API CRUD ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
-        conn = conectar_bd()
-        cur = conn.cursor(buffered=True) # IMPORTANTE: buffered=True soluciona el error out of sync
-        
+        conn = conectar_bd(); cur = conn.cursor(buffered=True)
         try:
             if p['action'] == 'delete': 
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-            
-            elif p['action'] == 'save_modulo': 
-                cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", (p['data']['n'], p['data']['r'], p['data']['p']))
-            
-            elif p['action'] == 'update_modulo':
-                cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s", (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
-            
             elif p['action'] == 'save_perfil': 
                 cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
-            
             elif p['action'] == 'update_perfil':
                 cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-            
             elif p['action'] == 'save_usuario':
                 cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado, strCorreo, strCelular, strImagen) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
                            (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img']))
-            
             elif p['action'] == 'update_usuario':
-                if p['data'].get('p'):
+                if p['data'].get('p'): # Con contraseña nueva
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, strPwd=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", 
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
-                else:
+                else: # Sin cambiar contraseña
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s, strCorreo=%s, strCelular=%s, strImagen=%s WHERE id=%s", 
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['data']['em'], p['data']['ph'], p['data']['img'], p['id']))
-
-            # Reajuste de IDs para perfiles (opcional)
-            if p['table'] == 'perfiles' and p['action'] in ['delete', 'save_perfil']:
-                cur.execute("SET @count = 0;")
-                cur.execute("UPDATE perfiles SET id = (@count := @count + 1);")
-
             conn.commit()
             res_body = b'{"ok":true}'
         except Exception as e:
-            conn.rollback()
-            res_body = json.dumps({"ok":false, "error": str(e)}).encode("utf-8")
+            conn.rollback(); res_body = json.dumps({"ok":false, "error": str(e)}).encode("utf-8")
         finally:
-            cur.close()
-            conn.close()
-
-        start_response("200 OK", [("Content-Type", "application/json")])
-        return [res_body]
+            cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")]); return [res_body]
 
     # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
@@ -243,6 +223,7 @@ def application(environ, start_response):
         for u in users:
             img = u.get('strImagen') or "https://ui-avatars.com/api/?name="+u['strNombreUsuario']
             st_cls = "active" if u['strEstado'] == "Activo" else "inactive"
+            # Importante: ph: u['strCelular'] para que el editor lo cargue
             rows += f"<tr><td><img src='{img}' class='avatar'></td><td><b>{u['strNombreUsuario']}</b></td><td>{u.get('strCorreo','-')}</td><td>{u['strNombrePerfil']}</td><td><span class='status-pill {st_cls}'>{u['strEstado']}</span></td><td><button class='btn-blue' onclick='editM(\"mEditU\", {{id:{u['id']}, u:\"{u['strNombreUsuario']}\", em:\"{u.get('strCorreo','')}\", ph:\"{u.get('strCelular','')}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\", img:\"{img}\"}})'>Editar</button> <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Eliminar</button></td></tr>"
         
         cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
@@ -269,7 +250,7 @@ def application(environ, start_response):
                 <div class="grid-2">
                     <div><label>Usuario</label><input id="edit_u"></div>
                     <div><label>Correo</label><input id="edit_em"></div>
-                    <div><label>Contraseña</label><input id="edit_p" type="password"></div>
+                    <div><label>Contraseña (Opcional)</label><input id="edit_p" type="password"></div>
                     <div><label>Celular</label><input id="edit_ph"></div>
                     <div><label>Perfil</label><select id="edit_idp">{p_opts}</select></div>
                     <div><label>Estado</label><select id="edit_st"><option>Activo</option><option>Inactivo</option></select></div>
