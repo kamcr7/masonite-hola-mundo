@@ -394,43 +394,167 @@ def application(environ, start_response):
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
-        mods_fijos = [{'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'}, {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}]
+        
+        # Módulos base + Módulos de la BD
+        mods_fijos = [
+            {'id': -1, 'nm': 'Perfiles', 'p': 'Seguridad'}, {'id': -2, 'nm': 'Modulos', 'p': 'Seguridad'},
+            {'id': -3, 'nm': 'Usuarios', 'p': 'Seguridad'}, {'id': -4, 'nm': 'Permisos', 'p': 'Seguridad'}
+        ]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
+
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        rows = "".join([f"""<tr class='perm-row'>
-                <td><b class='perm-name'>{m['nm']}</b><br><small>{m['p']}</small></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='v_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='a_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='e_{m['id']}'></td>
-                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' id='d_{m['id']}'></td>
-            </tr>""" for m in todos_mods])
+        rows = ""
+        for m in todos_mods:
+            rows += f"""
+            <tr class='mod-row'>
+                <td><b class='mod-name'>{m['nm']}</b><br><small style='color:#94a3b8'>{m['p']}</small></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='v' id='v_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='a' id='a_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='e' id='e_{m['id']}'></td>
+                <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m['id']}' data-type='d' id='d_{m['id']}'></td>
+            </tr>"""
 
         content = f"""
         <div class='card'>
             <h2>🛡️ Matriz de Permisos</h2>
-            <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
-                <option value=''>-- Seleccione Perfil --</option>{p_opts}
-            </select>
-            <div id='area_permisos' style='display:none; margin-top:20px;'>
-                <div style='display:flex; gap:10px; margin-bottom:15px;'>
-                    <button class='btn-blue' onclick='bulk(true)' style="width:auto">☑ Todo</button>
-                    <button class='btn-red' onclick='bulk(false)' style="width:auto">☐ Nada</button>
-                    <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.perm-row', '.perm-name');" placeholder="🔍 Buscar módulo..." style="margin-left:auto; width:200px;">
+            <div style='margin-bottom:20px;'>
+                <label>Seleccione Perfil:</label>
+                <select id='sel_perfil' onchange='cargarPermisos(this.value)'>
+                    <option value=''>-- Elegir --</option>
+                    {p_opts}
+                </select>
+            </div>
+
+            <div id='area_permisos' style='display:none;'>
+                <div style='display:flex; gap:10px; margin-bottom:15px; align-items:center;'>
+                    <button class='btn-blue' onclick='bulk(true)' style='width:auto; padding:8px 12px;'>☑ Todo</button>
+                    <button class='btn-red' onclick='bulk(false)' style='width:auto; padding:8px 12px;'>☐ Nada</button>
+                    <input type="text" id="txtBusca" onkeyup="resetPaginacion(); filtrar();" placeholder="🔍 Buscar módulo..." style="margin:0; width:200px; margin-left:auto;">
                 </div>
-                <table>
-                    <thead><tr><th>MÓDULO</th><th>VER</th><th>ADD</th><th>EDT</th><th>DEL</th></tr></thead>
-                    <tbody>{rows}</tbody>
-                </table>
-                <div class="paginador-ui">
-                    <button class="btn-blue" onclick="cambiarPagina(-1, '.perm-row')">❮</button>
-                    <span id="infoPagina"></span>
-                    <button class="btn-blue" onclick="cambiarPagina(1, '.perm-row')">❯</button>
+
+                <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden;">
+                    <table id="tablaPermisos" style='margin:0;'>
+                        <thead>
+                            <tr>
+                                <th>MÓDULO</th>
+                                <th style='text-align:center'>CONSULTAR</th>
+                                <th style='text-align:center'>AGREGAR</th>
+                                <th style='text-align:center'>EDITAR</th>
+                                <th style='text-align:center'>ELIMINAR</th>
+                            </tr>
+                        </thead>
+                        <tbody>{rows}</tbody>
+                    </table>
                 </div>
+
+                <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px;">
+                    <button class="btn-blue" onclick="cambiarPagina(-1)" id="btnAnt" style="width:auto; padding:5px 15px;">❮ Anterior</button>
+                    <span id="infoPagina" style="font-weight:bold; color:var(--text);">Página 1 de X</span>
+                    <button class="btn-blue" onclick="cambiarPagina(1)" id="btnSig" style="width:auto; padding:5px 15px;">Siguiente ❯</button>
+                </div>
+
                 <button class='btn-emerald' style='margin-top:20px; width:100%;' onclick='guardarPermisos()'>GUARDAR CONFIGURACIÓN</button>
             </div>
         </div>
+
+        <script>
+            let paginaActual = 1;
+            const filasPorPagina = 5;
+
+            function filtrar() {{
+                const busqueda = document.getElementById('txtBusca').value.toUpperCase();
+                const filas = document.querySelectorAll('.mod-row');
+                
+                // Primero filtramos por texto
+                filas.forEach(row => {{
+                    const nombre = row.querySelector('.mod-name').innerText.toUpperCase();
+                    row.dataset.visible = nombre.includes(busqueda) ? "true" : "false";
+                }});
+
+                renderTable();
+            }}
+
+            function renderTable() {{
+                const filasVisibles = Array.from(document.querySelectorAll('.mod-row')).filter(r => r.dataset.visible !== "false");
+                const totalPaginas = Math.ceil(filasVisibles.length / filasPorPagina) || 1;
+
+                if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+                if (paginaActual < 1) paginaActual = 1;
+
+                const inicio = (paginaActual - 1) * filasPorPagina;
+                const fin = inicio + filasPorPagina;
+
+                // Ocultar todas primero
+                document.querySelectorAll('.mod-row').forEach(r => r.style.display = 'none');
+
+                // Mostrar solo las de la página actual
+                filasVisibles.slice(inicio, fin).forEach(r => r.style.display = '');
+
+                // Actualizar interfaz
+                document.getElementById('infoPagina').innerText = `Página ${{paginaActual}} de ${{totalPaginas}}`;
+                document.getElementById('btnAnt').disabled = paginaActual === 1;
+                document.getElementById('btnSig').disabled = paginaActual === totalPaginas;
+            }}
+
+            function cambiarPagina(delta) {{
+                paginaActual += delta;
+                renderTable();
+            }}
+
+            function resetPaginacion() {{
+                paginaActual = 1;
+            }}
+
+            function bulk(v) {{
+                // Afecta solo a los módulos visibles por el filtro de búsqueda
+                document.querySelectorAll('.mod-row').forEach(row => {{
+                    if(row.dataset.visible !== "false") {{
+                        row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+                    }}
+                }});
+            }}
+
+            async function cargarPermisos(idp) {{
+                const area = document.getElementById('area_permisos');
+                if(!idp) {{ area.style.display='none'; return; }}
+                
+                document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+                
+                try {{
+                    const res = await fetch('/api/get_permisos?idp=' + idp);
+                    const data = await res.json();
+                    if(data.ok) {{
+                        data.perms.forEach(p => {{
+                            if(p.v) {{ let e=document.getElementById('v_'+p.idm); if(e) e.checked=true; }}
+                            if(p.a) {{ let e=document.getElementById('a_'+p.idm); if(e) e.checked=true; }}
+                            if(p.e) {{ let e=document.getElementById('e_'+p.idm); if(e) e.checked=true; }}
+                            if(p.d) {{ let e=document.getElementById('d_'+p.idm); if(e) e.checked=true; }}
+                        }});
+                        area.style.display = 'block';
+                        filtrar(); // Inicializa la tabla con paginación
+                    }}
+                }} catch(e) {{ console.error(e); area.style.display = 'block'; filtrar(); }}
+            }}
+
+            function guardarPermisos() {{
+                const idp = document.getElementById('sel_perfil').value;
+                const matrix = [];
+                const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+                
+                modIds.forEach(idm => {{
+                    matrix.push({{
+                        idm: parseInt(idm),
+                        v: document.getElementById('v_'+idm).checked ? 1 : 0,
+                        a: document.getElementById('a_'+idm).checked ? 1 : 0,
+                        e: document.getElementById('e_'+idm).checked ? 1 : 0,
+                        d: document.getElementById('d_'+idm).checked ? 1 : 0
+                    }});
+                }});
+                runCrud('save', 'permisos', 0, {{ idp, perms: matrix }});
+            }}
+        </script>
         """
 
     # ==========================================
