@@ -164,13 +164,57 @@ def application(environ, start_response):
             <label>Usuario</label><input id='ed_u'><label>Perfil</label><select id='ed_idp'>{p_opts}</select><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
             <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button></div></div>"""
 
-    # --- PANTALLA PERFILES ---
+# --- PANTALLA PERFILES ---
     elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles")
-        rows = "".join([f"<tr><td>{p['id']}</td><td><b>{p['strNombrePerfil']}</b></td><td><button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button><button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button></td></tr>" for p in cur.fetchall()])
-        content = f"""<div class='card'><h2>👤 Perfiles</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button><table><thead><tr><th>ID</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table></div>
-        <div id='mNewP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3><input id='pn' placeholder='Nombre'><button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">CREAR</button></div></div>
-        <div id='mEditP' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3><input type='hidden' id='ed_id'><input id='ed_n'><button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value}})\">ACTUALIZAR</button></div></div>"""
+        cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
+        perfiles = cur.fetchall()
+        rows = ""
+        # Usamos enumerate para mostrar un número correlativo (1, 2, 3...) 
+        # sin importar el ID real de la base de datos
+        for index, p in enumerate(perfiles, start=1):
+            rows += f"""<tr>
+                <td>{index}</td>
+                <td><b>{p['strNombrePerfil']}</b></td>
+                <td>
+                    <button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>
+                    <button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>
+                </td>
+            </tr>"""
+            
+        content = f"""
+        <div class='card'>
+            <h2>👤 Gestión de Perfiles</h2>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
+            <table>
+                <thead><tr><th>#</th><th>NOMBRE DEL PERFIL</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+
+        <div id='mNewP' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mNewP')">&times;</span>
+                <h3>Nuevo Perfil</h3>
+                <label>Nombre del Perfil (Solo letras)</label>
+                <input id='pn' placeholder='Ej: Administrador' 
+                       pattern="[A-Za-z\\s]+" 
+                       oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+                <button class='btn-emerald' onclick=\"runCrud('save','perfiles',0,{{n:document.getElementById('pn').value}})\">CREAR PERFIL</button>
+            </div>
+        </div>
+
+        <div id='mEditP' class='modal'>
+            <div class='modal-content'>
+                <span class='close-x' onclick="closeM('mEditP')">&times;</span>
+                <h3>Editar Perfil</h3>
+                <input type='hidden' id='ed_id'>
+                <label>Nombre del Perfil</label>
+                <input id='ed_n' 
+                       oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
+                <button class='btn-emerald' onclick=\"runCrud('update','perfiles',document.getElementById('ed_id').value,{{n:document.getElementById('ed_n').value}})\">ACTUALIZAR</button>
+            </div>
+        </div>
+        """
 
     # --- PANTALLA MODULOS ---
     elif path == "/modulos":
