@@ -31,7 +31,7 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# MAQUETACIÓN FINAL
+# MAQUETACIÓN
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -91,20 +91,17 @@ def render_layout(title, content, user=None):
             if(j.ok) location.reload(); else alert("Error: " + j.error);
         }}
 
-        function preEdit(id, fields) {{
+        function preEdit(id, u, idp, st) {{
             document.getElementById('ed_id').value = id;
-            document.getElementById('ed_u').value = fields.u;
-            document.getElementById('ed_idp').value = fields.idp;
-            document.getElementById('ed_st').value = fields.st;
+            document.getElementById('ed_u').value = u;
+            document.getElementById('ed_idp').value = idp;
+            document.getElementById('ed_st').value = st;
             openM('mEdit');
         }}
 
-        function handleImg(e, prevId, inputHiddenId) {{
+        function handleImg(e, prevId) {{
             const reader = new FileReader();
-            reader.onload = () => {{ 
-                document.getElementById(prevId).src = reader.result; 
-                if(inputHiddenId) document.getElementById(inputHiddenId).value = reader.result;
-            }};
+            reader.onload = () => {{ document.getElementById(prevId).src = reader.result; }};
             reader.readAsDataURL(e.target.files[0]);
         }}
     </script>
@@ -113,8 +110,9 @@ def render_layout(title, content, user=None):
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
+    content = ""  # Inicializamos content para evitar el UnboundLocalError
 
-    # --- API LOGIN (CORREGIDA) ---
+    # --- API LOGIN ---
     if path == "/api/login" and method == "POST":
         fs = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ)
         u, p = fs.getvalue("u"), fs.getvalue("p")
@@ -147,9 +145,8 @@ def application(environ, start_response):
     if not u_data and path != "/login":
         start_response("303 See Other", [("Location", "/login")]); return [b""]
 
+    # --- VISTAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    
-    # --- PANTALLA LOGIN ---
     if path == "/login":
         content = f"""<div class='card' style='width:350px;margin:100px auto'>
             <h2 style='text-align:center'>Clínica Login</h2>
@@ -168,58 +165,45 @@ def application(environ, start_response):
                 if((await r.json()).ok) location.href='/usuarios'; else alert("Datos incorrectos");
             }}
         </script>"""
-        start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Login", content).encode()]
-
-    # --- PANTALLA USUARIOS ---
     elif path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
         rows = ""
         for u in cur.fetchall():
-            img = "https://ui-avatars.com/api/?name="+u['strNombreUsuario']+"&background=random"
+            img = f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
             rows += f"""<tr>
                 <td><img src='{img}' class='avatar-table'></td>
-                <td>{u['strNombreUsuario']}</td>
-                <td>{u['strNombrePerfil']}</td>
-                <td>{u['strEstado']}</td>
+                <td>{u['strNombreUsuario']}</td><td>{u['strNombrePerfil']}</td><td>{u['strEstado']}</td>
                 <td>
-                    <button class='btn-blue' onclick='preEdit({u['id']}, {{u:"{u['strNombreUsuario']}", idp:{u['idPerfil']}, st:"{u['strEstado']}"}})'>Editar</button>
+                    <button class='btn-blue' onclick='preEdit({u['id']}, "{u['strNombreUsuario']}", {u['idPerfil']}, "{u['strEstado']}")'>Editar</button>
                     <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Borrar</button>
                 </td>
             </tr>"""
-        
         cur.execute("SELECT * FROM perfiles"); p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
         content = f"""<div class='card'>
-            <div style='display:flex;justify-content:space-between'><h2>👥 Gestión Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO</button></div>
+            <div style='display:flex;justify-content:space-between'><h2>👥 Usuarios</h2><button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO</button></div>
             <table><thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>{rows}</tbody></table>
         </div>
-        
         <div id='mNew' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mNew')">&times;</span>
             <h3>Registrar Usuario</h3>
             <div class='grid-2'>
-                <div><label>Usuario</label><input id='un'></div>
-                <div><label>Correo</label><input id='uc'></div>
-                <div><label>Clave</label><input id='up' type='password'></div>
-                <div><label>Celular</label><input id='ut'></div>
-                <div><label>Perfil</label><select id='uip'>{p_opts}</select></div>
-                <div><label>Estado</label><select id='ust'><option>Activo</option><option>Inactivo</option></select></div>
+                <div><label>Usuario</label><input id='un'></div><div><label>Correo</label><input id='uc'></div>
+                <div><label>Clave</label><input id='up' type='password'></div><div><label>Celular</label><input id='ut'></div>
+                <div><label>Perfil</label><select id='uip'>{p_opts}</select></div><div><label>Estado</label><select id='ust'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
-            <label>Foto</label><input type='file' onchange="handleImg(event,'pv1','img_b64')">
-            <input type='hidden' id='img_b64'>
-            <img id='pv1' style='width:50px;display:block;margin:10px 0'>
+            <label>Foto</label><input type='file' onchange="handleImg(event,'pv1')"><img id='pv1' style='width:50px;display:block;margin:10px 0'>
             <button class='btn-emerald' onclick=\"runCrud('save','usuarios',0,{{u:document.getElementById('un').value, p:document.getElementById('up').value, idp:document.getElementById('uip').value, st:document.getElementById('ust').value}})\">GUARDAR</button>
         </div></div>
-
         <div id='mEdit' class='modal'><div class='modal-content'><span class='close-x' onclick="closeM('mEdit')">&times;</span>
-            <h3>Editar Usuario</h3>
-            <input type='hidden' id='ed_id'>
+            <h3>Editar Usuario</h3><input type='hidden' id='ed_id'>
             <label>Usuario</label><input id='ed_u'>
             <label>Perfil</label><select id='ed_idp'>{p_opts}</select>
             <label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select>
             <button class='btn-emerald' onclick=\"runCrud('update','usuarios',document.getElementById('ed_id').value,{{u:document.getElementById('ed_u').value, idp:document.getElementById('ed_idp').value, st:document.getElementById('ed_st').value}})\">ACTUALIZAR</button>
         </div></div>"""
-
     elif path == "/logout":
         start_response("303 See Other", [("Location", "/login"), ("Set-Cookie", "token=; Max-Age=0; Path=/")]); return [b""]
-    
+    else:
+        content = f"<div class='card'><h2>Dashboard</h2><p>Bienvenido {u_data['u'] if u_data else ''}</p></div>"
+
     cur.close(); conn.close()
     start_response("200 OK", [("Content-Type", "text/html")]); return [render_layout("Clinica", content, u_data).encode()]
