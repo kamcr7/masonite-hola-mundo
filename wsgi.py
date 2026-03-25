@@ -186,102 +186,103 @@ def application(environ, start_response):
     # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
-  # --- PANTALLA USUARIOS (CON VALIDACIÓN DE CAMPOS) ---
+ # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
-        try:
-            # 1. Consultamos los datos (asegúrate de que estas columnas existan en tu BD)
-            cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
-            usuarios = cur.fetchall()
-            
-            # 2. Generamos las filas con manejo de errores por si los campos vienen vacíos (None)
-            rows = ""
-            for u in usuarios:
-                correo = u.get('strCorreo') or 'Sin correo'
-                numero = u.get('strNumero') or 'Sin tel'
-                id_p = u.get('idPerfil') or 0
-                est = u.get('strEstado') or 'Inactivo'
-                nom = u.get('strNombreUsuario') or 'Anonimo'
-                
-                rows += f"""<tr>
-                    <td><img src='https://ui-avatars.com/api/?name={nom}&background=random' class='avatar-table'></td>
-                    <td><b>{nom}</b><br><small>{correo}</small></td>
-                    <td>{u.get('strNombrePerfil') or 'Sin Perfil'}</td>
-                    <td><span class='status-pill {'active' if est=='Activo' else 'inactive'}'>{est}</span></td>
-                    <td>
-                        <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{nom}\", c:\"{correo}\", t:\"{numero}\", idp:{id_p}, st:\"{est}\"}})'>Editar</button>
-                        <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Eliminar</button>
-                    </td>
-                </tr>"""
+        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
+        usuarios = cur.fetchall()
+        
+        rows = "".join([f"""<tr>
+            <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
+            <td><b>{u['strNombreUsuario']}</b></td>
+            <td>{u['strNombrePerfil']}</td>
+            <td><span class='status-pill {'active' if u['strEstado']=='Activo' else 'inactive'}'>{u['strEstado']}</span></td>
+            <td>
+                <button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}})'>Editar</button>
+                <button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>
+            </td>
+        </tr>""" for u in usuarios])
 
-            cur.execute("SELECT * FROM perfiles")
-            p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
+        cur.execute("SELECT * FROM perfiles")
+        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
 
-            content = f"""
-            <div class='card'>
-                <div style='display:flex;justify-content:space-between'>
-                    <h2>👥 Gestión de Usuarios</h2>
-                    <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+        content = f"""
+        <div class='card'>
+            <h2>👥 Gestión de Usuarios</h2>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+            <table>
+                <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+
+        <div id='mNew' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mNew')">&times;</span>
+            <h3>Nuevo Usuario</h3>
+            <div class='grid-2'>
+                <div>
+                    <label>Nombre (Letras, máx 15)</label>
+                    <input id='un' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')">
                 </div>
-                <table>
-                    <thead><tr><th>IMG</th><th>USUARIO / INFO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
-                    <tbody>{rows}</tbody>
-                </table>
+                <div>
+                    <label>Pass (5-8 carac.)</label>
+                    <input id='up' type='password' minlength="5" maxlength="8">
+                </div>
+                <div>
+                    <label>Correo (@gmail.com)</label>
+                    <input id='uc' type='email' maxlength="30" placeholder="ejemplo@gmail.com">
+                </div>
+                <div>
+                    <label>Teléfono (10 dígitos)</label>
+                    <input id='ut' maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                </div>
+                <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
+            <button class='btn-emerald' onclick="validateAndSave()">GUARDAR USUARIO</button>
+        </div></div>
 
-            <div id='mNew' class='modal'><div class='modal-content'>
-                <span class='close-x' onclick="closeM('mNew')">&times;</span>
-                <h3>Nuevo Usuario</h3>
-                <div class='grid-2'>
-                    <div><label>Usuario</label><input id='un'></div>
-                    <div><label>Pass</label><input id='up' type='password'></div>
-                    <div><label>Correo</label><input id='uc' type='email'></div>
-                    <div><label>Teléfono</label><input id='ut' oninput="this.value=this.value.replace(/[^0-9]/g,'')"></div>
-                    <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
-                    <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
-                </div>
-                <button class='btn-emerald' onclick="saveUser()">GUARDAR</button>
-            </div></div>
+        <div id='mEdit' class='modal'><div class='modal-content'>
+            <span class='close-x' onclick="closeM('mEdit')">&times;</span>
+            <h3>Editar Usuario</h3>
+            <input type='hidden' id='ed_id'>
+            <div class='grid-2'>
+                <div><label>Usuario</label><input id='ed_u' maxlength="15" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g,'')"></div>
+                <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
+            </div>
+            <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
+        </div></div>
 
-            <div id='mEdit' class='modal'><div class='modal-content'>
-                <span class='close-x' onclick="closeM('mEdit')">&times;</span>
-                <h3>Editar Usuario</h3>
-                <input type='hidden' id='ed_id'>
-                <div class='grid-2'>
-                    <div><label>Usuario</label><input id='ed_u'></div>
-                    <div><label>Correo</label><input id='ed_c'></div>
-                    <div><label>Teléfono</label><input id='ed_t'></div>
-                    <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
-                    <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
-                </div>
-                <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
-            </div></div>
+        <script>
+            function validateAndSave() {{
+                const u = document.getElementById('un').value.trim();
+                const p = document.getElementById('up').value;
+                const c = document.getElementById('uc').value.trim();
+                const t = document.getElementById('ut').value.trim();
+                const idp = document.getElementById('un_idp').value;
+                const st = document.getElementById('un_st').value;
 
-            <script>
-                function saveUser() {{
-                    const d = {{
-                        u: document.getElementById('un').value,
-                        p: document.getElementById('up').value,
-                        c: document.getElementById('uc').value,
-                        t: document.getElementById('ut').value,
-                        idp: document.getElementById('un_idp').value,
-                        st: document.getElementById('un_st').value
-                    }};
-                    runCrud('save', 'usuarios', 0, d);
-                }}
-                function updateUser() {{
-                    const d = {{
-                        u: document.getElementById('ed_u').value,
-                        c: document.getElementById('ed_c').value,
-                        t: document.getElementById('ed_t').value,
-                        idp: document.getElementById('ed_idp').value,
-                        st: document.getElementById('ed_st').value
-                    }};
-                    runCrud('update', 'usuarios', document.getElementById('ed_id').value, d);
-                }}
-            </script>
-            """
-        except Exception as e:
-            content = f"<div class='card' style='color:red'><h3>Error en Usuarios:</h3> {str(e)}</div>"
+                // Validaciones de JS
+                if(u.length < 3) return alert("Nombre demasiado corto");
+                if(p.length < 5 || p.length > 8) return alert("La contraseña debe tener entre 5 y 8 caracteres");
+                if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+                if(t.length !== 10) return alert("El teléfono debe tener exactamente 10 dígitos");
+
+                const data = {{ u, p, idp, st }}; // Tu API solo procesa estos 4 según el código que enviaste
+                runCrud('save', 'usuarios', 0, data);
+            }}
+
+            function updateUser() {{
+                const id = document.getElementById('ed_id').value;
+                const u = document.getElementById('ed_u').value.trim();
+                const idp = document.getElementById('ed_idp').value;
+                const st = document.getElementById('ed_st').value;
+
+                if(!u) return alert("El nombre es obligatorio");
+                runCrud('update', 'usuarios', id, {{ u, idp, st }});
+            }}
+        </script>
+        """
             
     # --- PANTALLA PERFILES ---
     elif path == "/perfiles":
