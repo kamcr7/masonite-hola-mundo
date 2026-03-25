@@ -109,38 +109,44 @@ def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ); content = ""
 
-   # --- API CRUD ---
+# --- API CRUD CORREGIDO ---
     if path == "/api/crud" and method == "POST":
         p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
         conn = conectar_bd(); cur = conn.cursor()
         try:
-            if p['action'] == 'delete': cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            if p['action'] == 'delete': 
+                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
-                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
+                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)", 
                                (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
                 elif p['table'] == 'perfiles':
-                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'],))
+                    # VALIDACIÓN DE DUPLICADOS
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
+                    if cur.fetchone():
+                        raise Exception("El nombre de perfil ya existe")
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
                 elif p['table'] == 'modulos':
-                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)", 
                                (p['data']['n'], p['data']['r'], p['data']['p']))
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
-                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s", 
                                (p['data']['u'], p['data']['idp'], p['data']['st'], p['id']))
                 elif p['table'] == 'perfiles':
-                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (p['data']['n'], p['id']))
-                elif p['table'] == 'modulos':
-                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
-                               (p['data']['n'], p['data']['r'], p['data']['p'], p['id']))
+                    # VALIDACIÓN DE DUPLICADOS AL EDITAR
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
+                    if cur.fetchone():
+                        raise Exception("Ya existe otro perfil con ese nombre")
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
             conn.commit(); res = b'{"ok":true}'
-        except Exception as e: conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
-        finally: cur.close(); conn.close()
+        except Exception as e: 
+            conn.rollback(); res = json.dumps({"ok":False, "error":str(e)}).encode()
+        finally: 
+            cur.close(); conn.close()
         start_response("200 OK", [("Content-Type", "application/json")]); return [res]
-    if not u_data and path != "/login":
-        start_response("303 See Other", [("Location", "/login")]); return [b""]
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    
     # --- PANTALLA USUARIOS ---
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
@@ -167,6 +173,7 @@ def application(environ, start_response):
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
         rows = ""
+        # Usamos enumerate para que la numeración visual sea siempre correlativa
         for index, p in enumerate(perfiles, start=1):
             rows += f"""<tr>
                 <td>{index}</td>
@@ -191,8 +198,8 @@ def application(environ, start_response):
             <div class='modal-content'>
                 <span class='close-x' onclick="closeM('mNewP')">&times;</span>
                 <h3>Nuevo Perfil</h3>
-                <label>Nombre del Perfil (Solo letras, máx. 20)</label>
-                <input id='pn' placeholder='Ej: Ventas' maxlength="20"
+                <label>Nombre del Perfil (Máx. 15 letras)</label>
+                <input id='pn' placeholder='Ej: Ventas' maxlength="15"
                        oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
                 <button class='btn-emerald' onclick=\"savePerfil()\">CREAR PERFIL</button>
             </div>
@@ -204,23 +211,24 @@ def application(environ, start_response):
                 <h3>Editar Perfil</h3>
                 <input type='hidden' id='ed_id'>
                 <label>Nombre del Perfil</label>
-                <input id='ed_n' maxlength="20"
+                <input id='ed_n' maxlength="15"
                        oninput="this.value = this.value.replace(/[^A-Za-z\\s]/g, '')">
                 <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
             </div>
         </div>
 
         <script>
-            // Funciones específicas para validar duplicados antes de enviar al server
+            // Funciones para limpiar espacios y enviar datos
             async function savePerfil() {{
                 const nom = document.getElementById('pn').value.trim();
-                if(!nom) return alert("Escribe un nombre");
+                if(!nom) return alert("Escribe un nombre válido");
                 runCrud('save', 'perfiles', 0, {{n: nom}});
             }}
 
             async function updatePerfil() {{
                 const id = document.getElementById('ed_id').value;
                 const nom = document.getElementById('ed_n').value.trim();
+                if(!nom) return alert("El nombre no puede estar vacío");
                 runCrud('update', 'perfiles', id, {{n: nom}});
             }}
         </script>
