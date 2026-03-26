@@ -43,8 +43,18 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
         def get_links(padre):
-            return "".join([f'<a href="{m["strRuta"]}">📦 {m["strNombreModulo"]}</a>'
-                            for m in all_mods if m['strMenuPadre'] == padre])
+            links = []
+            for m in all_mods:
+                if m['strMenuPadre'] == padre:
+                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
+                    # Ejemplo: "Principal 1.1" -> "/principal-1.1"
+                    ruta = m["strRuta"]
+                    if not ruta or ruta.strip() == "":
+                        nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
+                        ruta = f"/{nombre_slug}"
+                    
+                    links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
+            return "".join(links)
         nav = f"""
         <div class="top-nav">
           <div class="nav-container">
@@ -768,67 +778,47 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # VISTAS DE EJEMPLO (MAQUETAS)
+    # VISTA DE MAQUETA DINÁMICA
     # ----------------------------------------------------------
-    # Asegúrate de que estas rutas sean las mismas que pones en el <a href='/...'>
-    elif path in ["/principal-1.1", "/principal-1.2", "/principal-2.1", "/prueba-1"]:
-        titulo_seccion = path.replace("/", "").replace("-", " ").title()
+    # Detecta rutas que empiezan con /principal o /modulo
+    elif path.startswith("/principal") or path.startswith("/modulo"):
+        # Esto limpia el nombre para que se vea bien en el título
+        # Ej: /principal-1.1 -> PRINCIPAL 1.1
+        titulo = path.replace("/", "").replace("-", " ").upper()
         
         content = f"""
         <div class='card'>
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
-            <h2 style="margin:0; color:#1e293b;">📄 {titulo_seccion}</h2>
-            <div style="display:flex; gap:10px;">
-              <div style="position:relative;">
-                <input type='text' class='search-input' placeholder='Buscar cliente o folio...' 
-                       style="width:280px; padding-left:35px;">
-                <span style="position:absolute; left:10px; top:10px; color:#94a3b8;">🔍</span>
-              </div>
-              <button class='btn-blue' style='width:auto; white-space:nowrap;'>+ Emitir Factura</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0; color:var(--emerald);">📄 Gestión: {titulo}</h2>
+                <button class='btn-emerald' style='width:auto'>+ Nuevo Registro</button>
             </div>
-          </div>
-          
-          <div style="overflow-x:auto;">
             <table>
-              <thead>
-                <tr>
-                  <th>FOLIO FISCAL</th>
-                  <th>RAZÓN SOCIAL CLIENTE</th>
-                  <th>MONTO TOTAL</th>
-                  <th>ESTATUS</th>
-                  <th>ACCIONES</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><b style="color:#2563eb;">FAC-10001</b></td>
-                  <td>Corporativo Industrial S.A. de C.V.</td>
-                  <td>$154,200.00</td>
-                  <td><span class='status-pill active'>Vigente</span></td>
-                  <td style="white-space:nowrap;">
-                    <button class='btn-blue' style='width:auto; padding:5px 10px; font-size:12px;'>Editar</button>
-                    <button class='btn-red' style='width:auto; padding:5px 10px; font-size:12px;'>Eliminar</button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><b style="color:#2563eb;">FAC-10002</b></td>
-                  <td>Servicios Logísticos Nacionales</td>
-                  <td>$3,250.00</td>
-                  <td><span class='status-pill inactive'>Cancelado</span></td>
-                  <td>
-                    <button class='btn-blue' style='width:auto; padding:5px 10px; font-size:12px;'>Editar</button>
-                    <button class='btn-red' style='width:auto; padding:5px 10px; font-size:12px;'>Eliminar</button>
-                  </td>
-                </tr>
-              </tbody>
+                <thead>
+                    <tr>
+                        <th>FOLIO</th>
+                        <th>CLIENTE / DETALLE</th>
+                        <th>MONTO</th>
+                        <th>ESTADO</th>
+                        <th>ACCIONES</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><b>#1001</b></td>
+                        <td>Empresa de Prueba S.A.</td>
+                        <td>$5,000.00</td>
+                        <td><span class='status-pill active'>Vigente</span></td>
+                        <td><button class='btn-blue'>Editar</button></td>
+                    </tr>
+                    <tr>
+                        <td><b>#1002</b></td>
+                        <td>Cliente Particular</td>
+                        <td>$1,200.00</td>
+                        <td><span class='status-pill inactive'>Cancelado</span></td>
+                        <td><button class='btn-blue'>Editar</button></td>
+                    </tr>
+                </tbody>
             </table>
-          </div>
-          
-          <div class='paginador-ui' style="margin-top:20px;">
-            <button class='btn-blue' disabled>❮ Anterior</button>
-            <span style='color:var(--emerald); font-weight:bold;'>Página 1 de 1</span>
-            <button class='btn-blue' disabled>Siguiente ❯</button>
-          </div>
         </div>
         """
         
