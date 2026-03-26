@@ -641,7 +641,7 @@ def application(environ, start_response):
         return [render_layout("Login - Clínica", login_html).encode("utf-8")]
  
     # ----------------------------------------------------------
-    # 4. LOGOUT
+    # 4. LOGOUT6
     # ----------------------------------------------------------
     if path == "/logout":
         start_response("303 See Other", [
