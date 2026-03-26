@@ -34,42 +34,72 @@ def conectar_bd():
     )
  
 # =========================================================
-# LAYOUT PRINCIPAL
+# LAYOUT PRINCIPAL (CON FILTRADO DE PERMISOS DINÁMICO)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
+        
+        # 1. Traer todos los módulos configurados en la BD
+        cur.execute("SELECT * FROM modulos")
+        all_mods = cur.fetchall()
+        
+        # 2. Traer la matriz de permisos para el perfil del usuario logueado
+        # Usamos los nombres exactos de tu tabla: nombreModulo y permisoVer
+        cur.execute("SELECT nombreModulo, permisoVer FROM permisos WHERE idPerfil = %s", (user['idPerfil'],))
+        mis_permisos = {p['nombreModulo']: p['permisoVer'] for p in cur.fetchall()}
+        
         cur.close(); conn.close()
+
+        # Función para generar links de los menús Principal 1 y 2 basados en permisos
         def get_links(padre):
             links = []
             for m in all_mods:
-                if m['strMenuPadre'] == padre:
-                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
-                    # Ejemplo: "Principal 1.1" -> "/principal-1.1"
+                nombre = m['strNombreModulo']
+                # SOLO si el padre coincide Y el permisoVer en la tabla 'permisos' es 1
+                if m['strMenuPadre'] == padre and mis_permisos.get(nombre) == 1:
                     ruta = m["strRuta"]
                     if not ruta or ruta.strip() == "":
-                        nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
+                        nombre_slug = nombre.lower().replace(" ", "-")
                         ruta = f"/{nombre_slug}"
-                    
-                    links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
+                    links.append(f'<a href="{ruta}">📦 {nombre}</a>')
             return "".join(links)
+
+        # 3. Construcción del menú de Seguridad dinámico
+        # Aquí verificamos los 4 módulos base de seguridad contra la tabla de permisos
+        seguridad_items = [
+            {"nom": "Perfiles", "icon": "👤", "url": "/perfiles"},
+            {"nom": "Módulos",  "icon": "📦", "url": "/modulos"},
+            {"nom": "Usuarios", "icon": "👥", "url": "/usuarios"},
+            {"nom": "Permisos", "icon": "🔐", "url": "/permisos"}
+        ]
+        
+        html_seguridad = ""
+        for item in seguridad_items:
+            if mis_permisos.get(item["nom"]) == 1:
+                html_seguridad += f'<a href="{item["url"]}">{item["icon"]} {item["nom"]}</a>'
+
+        # Solo renderizamos el dropdown de Seguridad si tiene al menos un acceso
+        dropdown_seguridad = ""
+        if html_seguridad:
+            dropdown_seguridad = f"""
+            <div class="dropdown">
+                <button class="dropbtn">Seguridad ▾</button>
+                <div class="dropdown-content">
+                    {html_seguridad}
+                </div>
+            </div>"""
+
         nav = f"""
         <div class="top-nav">
           <div class="nav-container">
             <div class="nav-left">
               <span class="logo">🏥 Clinica</span>
               <a href="/dashboard" class="nav-link">Inicio</a>
-              <div class="dropdown">
-                <button class="dropbtn">Seguridad ▾</button>
-                <div class="dropdown-content">
-                  <a href="/perfiles">👤 Perfiles</a>
-                  <a href="/modulos">📦 Módulos</a>
-                  <a href="/usuarios">👥 Usuarios</a>
-                  <a href="/permisos">🔐 Permisos</a>
-                </div>
-              </div>
+              
+              {dropdown_seguridad}
+
               <div class="dropdown">
                 <button class="dropbtn">Principal 1 ▾</button>
                 <div class="dropdown-content">{get_links("Principal 1")}</div>
@@ -85,7 +115,7 @@ def render_layout(title, content, user=None):
             </div>
           </div>
         </div>"""
- 
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -166,7 +196,7 @@ def render_layout(title, content, user=None):
   <script>
     function openM(id) {{ document.getElementById(id).style.display = 'block'; }}
     function closeM(id) {{ document.getElementById(id).style.display = 'none'; }}
- 
+
     async function runCrud(action, table, id, data={{}}) {{
       const res = await fetch('/api/crud', {{
         method: 'POST',
@@ -177,7 +207,7 @@ def render_layout(title, content, user=None):
       if (j.ok) location.reload();
       else alert("Error: " + (j.error || "Desconocido"));
     }}
- 
+
     function preEdit(id, fields, mId='mEdit') {{
       for (let k in fields) {{
         let el = document.getElementById('ed_' + k);
@@ -186,11 +216,11 @@ def render_layout(title, content, user=None):
       document.getElementById('ed_id').value = id;
       openM(mId);
     }}
- 
+
     /* ---- PAGINADOR ---- */
     let paginaActual = 1;
     const filasPorPagina = 5;
- 
+
     function filtrar(rowClass, nameClass) {{
       const val = (document.getElementById('txtBusca') || {{}}).value || "";
       document.querySelectorAll(rowClass).forEach(row => {{
@@ -200,7 +230,7 @@ def render_layout(title, content, user=None):
       }});
       renderTable(rowClass);
     }}
- 
+
     function renderTable(rowClass) {{
       const filas = Array.from(document.querySelectorAll(rowClass));
       const visibles = filas.filter(r => r.dataset.visible !== "false");
@@ -212,18 +242,19 @@ def render_layout(title, content, user=None):
       const info = document.getElementById('infoPagina');
       if (info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
     }}
- 
+
     function cambiarPagina(delta, rowClass) {{
       paginaActual += delta;
       renderTable(rowClass);
     }}
- 
+
     window.onload = () => {{
       const b = document.getElementById('txtBusca');
       if (b) b.value = "";
       if (document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
       if (document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
       if (document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+      if (document.querySelector('.perm-row')) renderTable('.perm-row');
     }};
   </script>
 </head>
@@ -232,7 +263,6 @@ def render_layout(title, content, user=None):
   <div class="container">{content}</div>
 </body>
 </html>"""
- 
  
 # =========================================================
 # APLICACIÓN WSGI PRINCIPAL
@@ -280,22 +310,62 @@ def application(environ, start_response):
         return [res]
  
     # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (MODIFICADO PARA TABLA PERMISOS)
+    # 2. API: CRUD PRINCIPAL (CON VALIDACIÓN DE PERMISOS REAL)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
-        conn = conectar_bd(); cur = conn.cursor()
+        
+        # Obtenemos el usuario de la sesión para saber su idPerfil
+        user_session = session.get('user')
+        if not user_session:
+            start_response("401 Unauthorized", [("Content-Type", "application/json")])
+            return [b'{"ok":false,"error":"Sesion expirada"}']
+
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary para leer permisos fácil
         try:
+            # --- BLOQUE DE SEGURIDAD: VALIDACIÓN DE PERMISOS ---
+            # Mapeamos el nombre de la tabla al nombre del módulo (ej: 'usuarios' -> 'Usuarios')
+            tabla_a_modulo = {
+                'usuarios': 'Usuarios',
+                'perfiles': 'Perfiles',
+                'modulos': 'Módulos',
+                'permisos': 'Permisos'
+            }
+            nom_mod = tabla_a_modulo.get(p['table'], p['table'])
+
+            # Consultamos los permisos de este usuario para este módulo
+            cur.execute("""SELECT permisoCrear, permisoEditar, permisoEliminar 
+                           FROM permisos WHERE idPerfil = %s AND nombreModulo = %s""", 
+                        (user_session['idPerfil'], nom_mod))
+            perm = cur.fetchone()
+
+            # Si no es un SuperAdmin (idPerfil=1 opcional) validamos estrictamente:
+            if user_session['idPerfil'] != 1:
+                if p['action'] == 'save' and p['table'] != 'permisos': # save_permisos_matrix tiene su lógica
+                    if not perm or not perm['permisoCrear']:
+                        raise Exception(f"No tienes permiso para AGREGAR en {nom_mod}")
+                
+                elif p['action'] == 'update':
+                    if not perm or not perm['permisoEditar']:
+                        raise Exception(f"No tienes permiso para EDITAR en {nom_mod}")
+                
+                elif p['action'] == 'delete':
+                    if not perm or not perm['permisoEliminar']:
+                        raise Exception(f"No tienes permiso para ELIMINAR en {nom_mod}")
+            # --------------------------------------------------
+
+            # Volvemos a cursor normal para el resto del CRUD si prefieres
+            cur.close(); cur = conn.cursor() 
+
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
-            # ACCIÓN ESPECIAL PARA LA MATRIZ DE PERMISOS
             elif p['action'] == 'save_permisos_matrix':
+                # Solo el admin debería poder guardar permisos
+                if user_session['idPerfil'] != 1: raise Exception("No autorizado")
                 id_p = p['data']['idp']
-                # 1. Limpiamos los permisos anteriores del perfil
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
-                # 2. Insertamos la nueva matriz con tus columnas de Railway
                 for per in p['data']['perms']:
                     cur.execute("""
                         INSERT INTO permisos 
@@ -323,16 +393,6 @@ def application(environ, start_response):
                     if cur.fetchone(): raise Exception("El módulo ya existe")
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (m_nom, p['data']['r'], p['data']['p']))
-
-                # Bloque antiguo de permisos actualizado por si acaso
-                elif p['table'] == 'permisos':
-                    id_p = p['data']['idp']
-                    cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
-                    for per in p['data']['perms']:
-                        cur.execute("""INSERT INTO permisos
-                            (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar)
-                            VALUES (%s,%s,%s,%s,%s,%s)""",
-                            (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
 
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
