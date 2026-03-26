@@ -526,6 +526,72 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
+    # 8. PERFILES
+    # ----------------------------------------------------------
+    elif path == "/perfiles":
+        cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
+        perfiles = cur.fetchall()
+        rows = "".join([f"""
+        <tr class='p-row'>
+          <td>{i}</td>
+          <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
+          <td>
+            <button class='btn-blue' onclick='preEdit({p["id"]}, {{n:"{p["strNombrePerfil"]}"}}, "mEditP")'>Editar</button>
+            <button class='btn-red' onclick="runCrud('delete','perfiles',{p['id']})">Borrar</button>
+          </td>
+        </tr>""" for i, p in enumerate(perfiles, 1)])
+
+        content = f"""
+        <div class='card'>
+          <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
+          <div class='toolbar'>
+            <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
+            <input type='text' id='txtBusca' class='search-input'
+              onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar...'>
+          </div>
+          <table>
+            <thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead>
+            <tbody>{rows}</tbody>
+          </table>
+          <div class='paginador-ui'>
+            <button class='btn-blue' onclick="cambiarPagina(-1,'.p-row')">❮ Anterior</button>
+            <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
+            <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
+          </div>
+        </div>
+
+        <div id='mNewP' class='modal'><div class='modal-content'>
+          <span class='close-x' onclick="closeM('mNewP')">&times;</span>
+          <h3>Nuevo Perfil</h3>
+          <label>Nombre del Perfil (Solo letras, máx 15)</label>
+          <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+          <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
+        </div></div>
+
+        <div id='mEditP' class='modal'><div class='modal-content'>
+          <span class='close-x' onclick="closeM('mEditP')">&times;</span>
+          <h3>Editar Perfil</h3>
+          <input type='hidden' id='ed_id'>
+          <label>Nombre</label>
+          <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+          <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
+        </div></div>
+
+        <script>
+          function savePerfil() {{
+            const n = document.getElementById('pn').value.trim();
+            if (!n) return alert("⚠️ Nombre obligatorio");
+            if (n.length > 15) return alert("⚠️ Máximo 15 caracteres");
+            runCrud('save','perfiles',0,{{n}});
+          }}
+          function updatePerfil() {{
+            const n = document.getElementById('ed_n').value.trim();
+            if (!n) return alert("⚠️ Nombre obligatorio");
+            runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
+          }}
+        </script>"""
+        
+    # ----------------------------------------------------------
     # 9. MÓDULOS
     # ----------------------------------------------------------
     elif path == "/modulos":
