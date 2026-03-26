@@ -267,7 +267,7 @@ def application(environ, start_response):
             <h2>👥 Gestión de Usuarios</h2>
             <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
                 <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar..." >
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar..." style="width:200px; margin:0;">
             </div>
             <table>
                 <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
