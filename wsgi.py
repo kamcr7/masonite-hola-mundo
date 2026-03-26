@@ -308,18 +308,20 @@ def application(environ, start_response):
         """
 
     # ==========================================
-    # --- PANTALLA PERFILES (ID ORDENADO 1, 2, 3...) ---
+    # --- PANTALLA PERFILES CORREGIDA ---
     # ==========================================
     elif path == "/perfiles":
         cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
         perfiles = cur.fetchall()
         rows = ""
         for i, p in enumerate(perfiles, 1):
+            # Usamos comillas simples para los strings en preEdit para evitar errores de escape
+            nombre_p = p['strNombrePerfil'].replace('"', '&quot;')
             rows += f"""<tr class='p-row'>
                 <td>{i}</td>
-                <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
+                <td><b class='p-name'>{nombre_p}</b></td>
                 <td>
-                    <button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>
+                    <button class='btn-blue' onclick='preEdit({p["id"]}, {{n:"{nombre_p}"}}, "mEditP")'>Editar</button>
                     <button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>
                 </td>
             </tr>"""
@@ -338,16 +340,22 @@ def application(environ, start_response):
                 <button class="btn-blue" onclick="cambiarPagina(1, '.p-row')">❯</button>
             </div>
         </div>
+
         <div id='mNewP' class='modal'><div class='modal-content'>
-            <span class='close-x' onclick="closeM('mNewP')">&times;</span><h3>Nuevo Perfil</h3>
-            <input id='pn' placeholder="Nombre perfil..."><button class='btn-emerald' onclick=\"savePerfil()\">GUARDAR</button>
+            <span class='close-x' onclick="closeM('mNewP')">&times;</span>
+            <h3>Nuevo Perfil</h3>
+            <input id='pn' maxlength="20" onkeypress="return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/i.test(event.key)" placeholder="Nombre perfil...">
+            <button class='btn-emerald' onclick=\"savePerfil()\">GUARDAR</button>
         </div></div>
+
         <div id='mEditP' class='modal'><div class='modal-content'>
-            <span class='close-x' onclick="closeM('mEditP')">&times;</span><h3>Editar Perfil</h3>
-            <input type='hidden' id='ed_id'><input id='ed_n'><button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
+            <span class='close-x' onclick="closeM('mEditP')">&times;</span>
+            <h3>Editar Perfil</h3>
+            <input type='hidden' id='ed_id'>
+            <input id='ed_n' maxlength="20" onkeypress="return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/i.test(event.key)">
+            <button class='btn-emerald' onclick=\"updatePerfil()\">ACTUALIZAR</button>
         </div></div>
         """
-
     # ==========================================
     # --- PANTALLA MODULOS (CORREGIDO UPDATE) ---
     # ==========================================
