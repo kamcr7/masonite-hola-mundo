@@ -493,7 +493,9 @@ def application(environ, start_response):
         </div>
         """
         
-      # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
+    # ==========================================
+    # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
+    # ==========================================
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
         configs = {
             "/principal1_1": {"t": "Gestión de Pacientes", "h": ["ID", "Nombre", "Especialidad", "Estado"]},
@@ -506,46 +508,62 @@ def application(environ, start_response):
         titulo_modulo = conf["t"]
         headers_html = "".join([f"<th>{h}</th>" for h in conf["h"]]) + "<th>Acciones</th>"
 
+        # Generación de filas según el módulo
         if "1_1" in path:
-            rows_html = "<tr class='static-row' data-visible='true'><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td>"
+            rows_html = """
+            <tr class='static-row' data-visible='true'><td>1</td><td class='search-key'>Juan Pérez</td><td>General</td><td><span class='badge'>Activo</span></td>
+            <tr class='static-row' data-visible='true'><td>2</td><td class='search-key'>María García</td><td>Pediatría</td><td><span class='badge'>Activo</span></td>"""
         elif "1_2" in path:
-            rows_html = "<tr class='static-row' data-visible='true'><td>101</td><td>2026-03-25</td><td>10:00 AM</td><td><span class='status-pill active'>Confirmada</span></td>"
+            rows_html = """
+            <tr class='static-row' data-visible='true'><td>101</td><td class='search-key'>2026-03-25</td><td>10:00 AM</td><td><span class='badge'>Confirmada</span></td>
+            <tr class='static-row' data-visible='true'><td>102</td><td class='search-key'>2026-03-26</td><td>11:30 AM</td><td><span class='badge'>Pendiente</span></td>"""
+        elif "2_1" in path:
+            rows_html = """
+            <tr class='static-row' data-visible='true'><td>001</td><td class='search-key'>Paracetamol</td><td>50 u.</td><td><span class='badge' style='background:orange'>Stock Bajo</span></td>
+            <tr class='static-row' data-visible='true'><td>002</td><td class='search-key'>Amoxicilina</td><td>200 u.</td><td><span class='badge'>OK</span></td>"""
         else:
-            rows_html = "<tr class='static-row' data-visible='true'><td>001</td><td>Producto ABC</td><td>50 u.</td><td><span class='status-pill inactive'>Stock Bajo</span></td>"
+            rows_html = """
+            <tr class='static-row' data-visible='true'><td>1</td><td class='search-key'>Enero 2026</td><td>$45,000</td><td><span class='badge'>Cerrado</span></td>
+            <tr class='static-row' data-visible='true'><td>2</td><td class='search-key'>Febrero 2026</td><td>$38,200</td><td><span class='badge'>Proceso</span></td>"""
         
-        rows_html += "<td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
+        # Añadir botones de acción a todas las filas (clase corregida para el cierre de etiqueta)
+        rows_html = rows_html.replace("</td>", "</td><td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>", -1)
+        # Nota: La lógica anterior es un truco rápido, pero para mayor claridad:
+        final_rows = ""
+        for row in rows_html.split("</tr>"):
+            if "static-row" in row:
+                final_rows += row + "<td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
 
-        # ASIGNAMOS A CONTENT (sin el return aquí)
         content = f"""
         <div class='card'>
-            <h2>{titulo_modulo}</h2>
-            <input type="text" id="txtBusca" onkeyup="filtrar('.static-row', 'td')" placeholder="🔍 Buscar..." style="width:250px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2>{titulo_modulo}</h2>
+                <button class="btn-emerald" onclick="alert('Nuevo Registro')">+ Añadir</button>
+            </div>
+            <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.static-row', '.search-key')" placeholder="🔍 Buscar por nombre/fecha..." style="width:100%; max-width:300px; margin-bottom:15px;">
             <table>
                 <thead><tr>{headers_html}</tr></thead>
-                <tbody>{rows_html}</tbody>
+                <tbody>{final_rows}</tbody>
             </table>
             <div class="paginador-ui">
                 <button class="btn-blue" onclick="cambiarPagina(-1, '.static-row')">❮ Ant.</button>
-                <span id="infoPagina"></span>
+                <span id="infoPagina" style="font-weight:bold;"></span>
                 <button class="btn-blue" onclick="cambiarPagina(1, '.static-row')">Sig. ❯</button>
             </div>
         </div>
         <script>
-            // Usamos un pequeño delay para que el navegador termine de cargar el DOM
-            setTimeout(() => {{ 
-                if(typeof renderTable === 'function') {{
-                    renderTable('.static-row'); 
-                }}
-            }}, 100);
+            setTimeout(() => {{ if(typeof renderTable === 'function') renderTable('.static-row'); }}, 100);
         </script>
         """
-   # ==========================================
+
+    # ==========================================
     # --- JAVASCRIPT GLOBAL FINAL ---
     # ==========================================
     content += """
     <style>
         .paginador-ui { display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }
         .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .badge { padding: 4px 8px; border-radius: 4px; background: var(--emerald); color: white; font-size: 11px; font-weight: bold; }
     </style>
     <script>
         function filtrar(rowClass, nameClass) {
@@ -561,9 +579,8 @@ def application(environ, start_response):
         function renderTable(rowClass) {
             const filas = Array.from(document.querySelectorAll(rowClass));
             const visibles = filas.filter(r => r.dataset.visible !== "false");
-            
-            // Usamos 5 directamente para evitar errores de variable no definida
             const total = Math.ceil(visibles.length / 5) || 1;
+            
             if (paginaActual > total) paginaActual = total;
             if (paginaActual < 1) paginaActual = 1;
             
@@ -579,51 +596,6 @@ def application(environ, start_response):
             renderTable(rowClass);
         }
 
-        // --- FUNCIONES DE ACCIÓN (USUARIOS, MODULOS, PERFILES) ---
-        function validateAndSave() {
-            const u = document.getElementById('un').value.trim();
-            const p = document.getElementById('up').value;
-            const c = document.getElementById('uc').value.trim();
-            const t = document.getElementById('ut').value.trim();
-            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
-            if(p.length < 5) return alert("La contraseña debe ser mayor a 5 caracteres");
-            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
-            if(t.length !== 10) return alert("El teléfono debe tener 10 dígitos");
-            runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
-        }
-
-        function updateUser() {
-            runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
-                u: document.getElementById('ed_u').value, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
-            });
-        }
-
-        function saveMod() {
-            const n = document.getElementById('mn').value.trim();
-            if(!n) return alert("Nombre obligatorio");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
-        }
-
-        function updateMod() {
-            const id = document.getElementById('ed_id').value;
-            const n = document.getElementById('ed_n_mod').value.trim();
-            const p = document.getElementById('ed_p_mod').value;
-            if(!n) return alert("Nombre obligatorio");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-            runCrud('update', 'modulos', id, { n, r, p });
-        }
-
-        function savePerfil() {
-            const n = document.getElementById('pn').value.trim();
-            if(!n) return alert("Nombre obligatorio");
-            runCrud('save', 'perfiles', 0, {n});
-        }
-        function updatePerfil() {
-            runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
-        }
-
-        // --- PERMISOS ---
         async function cargarPermisos(idp) {
             if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
@@ -642,28 +614,6 @@ def application(environ, start_response):
             }
         }
 
-        function bulk(v) {
-            document.querySelectorAll('.perm-row').forEach(row => {
-                if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
-            });
-        }
-
-        function guardarPermisos() {
-            const idp = document.getElementById('sel_perfil').value;
-            const matrix = [];
-            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
-            ids.forEach(id => {
-                matrix.push({
-                    idm: parseInt(id),
-                    v: document.getElementById('v_'+id).checked ? 1 : 0,
-                    a: document.getElementById('a_'+id).checked ? 1 : 0,
-                    e: document.getElementById('e_'+id).checked ? 1 : 0,
-                    d: document.getElementById('d_'+id).checked ? 1 : 0
-                });
-            });
-            runCrud('save', 'permisos', 0, { idp, perms: matrix });
-        }
-
         window.onload = () => {
             const b = document.getElementById('txtBusca');
             if(b) b.value = "";
@@ -671,6 +621,7 @@ def application(environ, start_response):
             if(document.querySelector('.p-row')) renderTable('.p-row');
             if(document.querySelector('.m-row')) renderTable('.m-row');
             if(document.querySelector('.perm-row')) renderTable('.perm-row');
+            if(document.querySelector('.static-row')) renderTable('.static-row');
         };
     </script>
     """
