@@ -630,7 +630,7 @@ def application(environ, start_response):
         <div id='mNewM' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mNewM')">&times;</span>
           <h3>Nuevo Módulo</h3>
-          <label>Nombre del Módulo (Letras, Números y Puntos, máx 20)</label>
+          <label>Nombre del Módulo</label>
           <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <label>Menú Padre</label>
           <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
@@ -667,7 +667,64 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 10. PERMISOS
+    # 10.VISTA DE EJEMPLO PARA SUBMENÚS (Facturación Demo)
+    # ----------------------------------------------------------
+    elif path in ["/principal-1.1", "/principal-1.2", "/principal-2.1"]:
+        # Título dinámico según la ruta para que parezca real
+        titulo_seccion = path.replace("/", "").replace("-", " ").title()
+        
+        content = f"""
+        <div class='card'>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2 style="margin:0;">📄 Emisión de Facturas ({titulo_seccion})</h2>
+            <div style="display:flex; gap:10px;">
+              <input type='text' class='search-input' placeholder='🔍 Buscar cliente o folio...' style="width:250px;">
+              <button class='btn-blue' style='width:auto'>+ Emitir Factura</button>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>FOLIO FISCAL</th>
+                <th>RAZÓN SOCIAL CLIENTE</th>
+                <th>MONTO TOTAL</th>
+                <th>ESTATUS</th>
+                <th>ACCIONES</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b style="color:var(--blue);">FAC-10001</b></td>
+                <td>Corporativo Industrial S.A. de C.V.</td>
+                <td>$154,200.00</td>
+                <td><span class='status-pill active'>Vigente</span></td>
+                <td>
+                  <span style="color:var(--blue); cursor:pointer; margin-right:10px;">Editar</span>
+                  <span style="color:var(--red); cursor:pointer;">Eliminar</span>
+                </td>
+              </tr>
+              <tr>
+                <td><b style="color:var(--blue);">FAC-10002</b></td>
+                <td>Servicios Logísticos Nacionales</td>
+                <td>$3,250.00</td>
+                <td><span class='status-pill inactive'>Cancelado</span></td>
+                <td>
+                  <span style="color:var(--blue); cursor:pointer; margin-right:10px;">Editar</span>
+                  <span style="color:var(--red); cursor:pointer;">Eliminar</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          
+          <div style="margin-top:20px; color:#64748b; font-size:14px;">
+            * Nota: Esta pantalla es una maqueta visual sin funciones de base de datos.
+          </div>
+        </div>
+        """
+        
+    # ----------------------------------------------------------
+    # 11. PERMISOS
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
