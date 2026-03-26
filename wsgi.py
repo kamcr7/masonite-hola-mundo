@@ -281,8 +281,8 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
-    # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL
+  # ----------------------------------------------------------
+    # 2. API: CRUD PRINCIPAL (CORREGIDO PARA PERMISOS)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
@@ -291,7 +291,7 @@ def application(environ, start_response):
         try:
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
- 
+
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
@@ -299,30 +299,34 @@ def application(environ, start_response):
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
                                 (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
- 
+
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil)=LOWER(%s)", (nombre,))
                     if cur.fetchone(): raise Exception("Ese perfil ya existe")
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
- 
+
                 elif p['table'] == 'modulos':
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo)=LOWER(%s)", (m_nom,))
                     if cur.fetchone(): raise Exception("El módulo ya existe")
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (m_nom, p['data']['r'], p['data']['p']))
- 
-                elif p['table'] == 'permisos':
-                    id_p = p['data']['idp']
-                    cur.execute("DELETE FROM perfil_modulo WHERE idPerfil=%s", (id_p,))
-                    for per in p['data']['perms']:
-                        if per['v'] or per['a'] or per['e'] or per['d']:
-                            cur.execute("""INSERT INTO perfil_modulo
-                                (idPerfil, idModulo, can_view, can_add, can_edit, can_delete)
-                                VALUES (%s,%s,%s,%s,%s,%s)""",
-                                (id_p, per['idm'], per['v'], per['a'], per['e'], per['d']))
- 
+
+            # NUEVA LÓGICA DE PERMISOS CORREGIDA
+            elif p['action'] == 'save_permisos_matrix':
+                id_p = p['data']['idp']
+                # Limpiar permisos previos del perfil
+                cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
+                # Insertar la nueva matriz
+                for per in p['data']['perms']:
+                    # Solo insertamos si tiene al menos un permiso activo
+                    if per['v'] or per['c'] or per['e'] or per['d']:
+                        cur.execute("""INSERT INTO permisos 
+                            (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) 
+                            VALUES (%s,%s,%s,%s,%s,%s)""",
+                            (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
+
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
@@ -330,20 +334,20 @@ def application(environ, start_response):
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                 (u_nom, p['data']['idp'], p['data']['st'], p['id']))
- 
+
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil)=LOWER(%s) AND id!=%s", (nombre, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro perfil con ese nombre")
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
- 
+
                 elif p['table'] == 'modulos':
                     m_nom = p['data']['n'].strip()
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo)=LOWER(%s) AND id!=%s", (m_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
                                 (m_nom, p['data']['r'], p['data']['p'], p['id']))
- 
+
             conn.commit()
             res = b'{"ok":true}'
         except Exception as e:
@@ -352,6 +356,7 @@ def application(environ, start_response):
         finally:
             if cur: cur.close()
             if conn: conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
