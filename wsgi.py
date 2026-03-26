@@ -595,14 +595,44 @@ def application(environ, start_response):
             runCrud('update', 'modulos', id, { n, r, p });
         }
 
-        // PERFILES
+        // --- PERFILES (VALIDACIÓN DE SOLO LETRAS) ---
+        function validarNombrePerfil(nombre) {
+            // Esta expresión permite letras (incluyendo ñ y acentos) y espacios
+            const regex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            
+            if (!nombre) {
+                alert("El nombre es obligatorio");
+                return false;
+            }
+            if (nombre.length < 3) {
+                alert("El nombre debe tener al menos 3 caracteres");
+                return false;
+            }
+            if (!regex.test(nombre)) {
+                alert("El nombre solo puede contener letras (sin números ni símbolos)");
+                return false;
+            }
+            return true;
+        }
+
         function savePerfil() {
             const n = document.getElementById('pn').value.trim();
-            if(!n) return alert("Nombre obligatorio");
-            runCrud('save', 'perfiles', 0, {n});
+            
+            if(validarNombrePerfil(n)) {
+                runCrud('save', 'perfiles', 0, {n});
+                document.getElementById('pn').value = ""; // Limpiar tras guardar
+            }
         }
+
         function updatePerfil() {
-            runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n').value.trim();
+            
+            if(validarNombrePerfil(n)) {
+                runCrud('update', 'perfiles', id, {n});
+                // Cerrar modal si usas uno
+                if(typeof closeModals === 'function') closeModals(); 
+            }
         }
 
         // PERMISOS
