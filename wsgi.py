@@ -40,109 +40,395 @@ def conectar_bd():
 # =========================================================
 
 def render_layout(title, content, user=None):
-    nav = ""
-    # Si no hay usuario, mandamos un layout básico sin menú para evitar el error
-    if not user:
-        return f"""<!DOCTYPE html><html><head><title>{title}</title></head>
-                   <body style="background:#0b1120; color:white; font-family:sans-serif;">
-                   <div style="padding:50px; text-align:center;">{content}</div></body></html>"""
 
-    # Si hay usuario, intentamos armar el menú
-    try:
+    nav = ""
+
+    if user:
+
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        
-        # 1. Traer módulos
-        cur.execute("SELECT * FROM modulos")
-        all_mods = cur.fetchall()
-        
-        # 2. Traer permisos del perfil actual
-        cur.execute("SELECT nombreModulo, permisoVer FROM permisos WHERE idPerfil = %s", (user['idPerfil'],))
-        perm_rows = cur.fetchall()
-        mis_permisos = {p['nombreModulo']: p['permisoVer'] for p in perm_rows} if perm_rows else {}
-        
+
+        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
+
         cur.close(); conn.close()
 
         def get_links(padre):
+
             links = []
+
             for m in all_mods:
-                nombre = m['strNombreModulo']
-                if m['strMenuPadre'] == padre and mis_permisos.get(nombre) == 1:
-                    ruta = m["strRuta"] or f"/{nombre.lower().replace(' ', '-')}"
-                    links.append(f'<a href="{ruta}">📦 {nombre}</a>')
+
+                if m['strMenuPadre'] == padre:
+
+                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
+
+                    # Ejemplo: "Principal 1.1" -> "/principal-1.1"
+
+                    ruta = m["strRuta"]
+
+                    if not ruta or ruta.strip() == "":
+
+                        nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
+
+                        ruta = f"/{nombre_slug}"
+
+                   
+
+                    links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
+
             return "".join(links)
 
-        # 3. Seguridad Dinámica
-        seguridad_items = [
-            {"nom": "Perfiles", "icon": "👤", "url": "/perfiles"},
-            {"nom": "Módulos",  "icon": "📦", "url": "/modulos"},
-            {"nom": "Usuarios", "icon": "👥", "url": "/usuarios"},
-            {"nom": "Permisos", "icon": "🔐", "url": "/permisos"}
-        ]
-        
-        html_seguridad = ""
-        for item in seguridad_items:
-            if mis_permisos.get(item["nom"]) == 1:
-                html_seguridad += f'<a href="{item["url"]}">{item["icon"]} {item["nom"]}</a>'
-
-        dropdown_seguridad = f"""
-            <div class="dropdown">
-                <button class="dropbtn">Seguridad ▾</button>
-                <div class="dropdown-content">{html_seguridad if html_seguridad else "<a>🚫 Sin acceso</a>"}</div>
-            </div>""" if html_seguridad else ""
-
-        # NOTA: Usamos user.get('u') o user.get('strNombreUsuario') según como lo guardes en login
-        nombre_mostrar = user.get('u') or user.get('strNombreUsuario') or "Usuario"
-
         nav = f"""
+
         <div class="top-nav">
+
           <div class="nav-container">
+
             <div class="nav-left">
+
               <span class="logo">🏥 Clinica</span>
+
               <a href="/dashboard" class="nav-link">Inicio</a>
-              {dropdown_seguridad}
+
               <div class="dropdown">
-                <button class="dropbtn">Principal 1 ▾</button>
-                <div class="dropdown-content">{get_links("Principal 1") or "<a>Sin módulos</a>"}</div>
+
+                <button class="dropbtn">Seguridad ▾</button>
+
+                <div class="dropdown-content">
+
+                  <a href="/perfiles">👤 Perfiles</a>
+
+                  <a href="/modulos">📦 Módulos</a>
+
+                  <a href="/usuarios">👥 Usuarios</a>
+
+                  <a href="/permisos">🔐 Permisos</a>
+
+                </div>
+
               </div>
+
+              <div class="dropdown">
+
+                <button class="dropbtn">Principal 1 ▾</button>
+
+                <div class="dropdown-content">{get_links("Principal 1")}</div>
+
+              </div>
+
+              <div class="dropdown">
+
+                <button class="dropbtn">Principal 2 ▾</button>
+
+                <div class="dropdown-content">{get_links("Principal 2")}</div>
+
+              </div>
+
             </div>
+
             <div class="nav-right">
-              <span class="user-pill">{nombre_mostrar}</span>
+
+              <span class="user-pill">{user['u']}</span>
+
               <a href="/logout" class="btn-salir">Salir</a>
+
             </div>
+
           </div>
+
         </div>"""
-    except Exception as e:
-        # Si algo falla en la BD, mostramos un error limpio en lugar de "Internal Server Error"
-        nav = f"<div style='background:red; color:white; padding:10px;'>Error cargando menú: {e}</div>"
+
+ 
 
     return f"""<!DOCTYPE html>
+
 <html lang="es">
+
 <head>
+
   <meta charset="utf-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <title>{title}</title>
+
   <style>
-    /* ... (Aquí pegas todo tu CSS de antes) ... */
-    :root {{ --bg: #0b1120; --card: #1e293b; --emerald: #10b981; --border: #334155; --text: #f8fafc; }}
+
+    :root {{
+
+      --bg: #0b1120; --card: #1e293b; --emerald: #10b981;
+
+      --border: #334155; --text: #f8fafc;
+
+    }}
+
+    * {{ box-sizing: border-box; }}
+
     body {{ font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; }}
+
+    /* NAV */
+
     .top-nav {{ background: #070b14; height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; position: sticky; top: 0; z-index: 200; }}
+
     .nav-container {{ width: 100%; max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; padding: 0 20px; align-items: center; }}
-    .logo {{ color: #10b981; font-weight: bold; font-size: 1.2rem; }}
+
+    .logo {{ color: #10b981; font-weight: bold; font-size: 1.2rem; margin-right: 20px; }}
+
     .nav-link {{ color: #94a3b8; text-decoration: none; padding: 10px; font-size: 14px; }}
+
+    .nav-link:hover {{ color: white; }}
+
     .dropdown {{ position: relative; display: inline-block; }}
-    .dropdown-content {{ display: none; position: absolute; background: var(--card); min-width: 180px; border: 1px solid var(--border); border-radius: 12px; }}
-    .dropdown:hover .dropdown-content {{ display: block; }}
+
+    .dropdown-content {{ display: none; position: absolute; background: var(--card); min-width: 180px; border: 1px solid var(--border); border-radius: 12px; z-index: 300; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); top: 100%; left: 0; }}
+
     .dropdown-content a {{ color: white; padding: 12px; text-decoration: none; display: block; border-bottom: 1px solid #334155; font-size: 14px; }}
-    .dropbtn {{ background: transparent; color: #94a3b8; border: none; padding: 15px; cursor: pointer; }}
+
+    .dropdown-content a:last-child {{ border-bottom: none; }}
+
+    .dropdown-content a:hover {{ background: #2d3748; border-radius: 0 0 12px 12px; }}
+
+    .dropdown:hover .dropdown-content {{ display: block; }}
+
+    .dropbtn {{ background: transparent; color: #94a3b8; border: none; padding: 15px; cursor: pointer; font-size: 14px; }}
+
+    .dropbtn:hover {{ color: white; }}
+
+    .user-pill {{ color: var(--emerald); border: 1px solid var(--border); padding: 6px 16px; border-radius: 25px; margin-right: 15px; font-size: 13px; font-weight: bold; }}
+
+    .btn-salir {{ background: #ef4444; color: white; text-decoration: none; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: bold; }}
+
+    .nav-right {{ display: flex; align-items: center; }}
+
+    /* LAYOUT */
+
     .container {{ padding: 40px; max-width: 1200px; margin: 0 auto; }}
+
     .card {{ background: var(--card); padding: 30px; border-radius: 16px; border: 1px solid var(--border); }}
-    .user-pill {{ color: var(--emerald); border: 1px solid var(--border); padding: 6px 16px; border-radius: 25px; margin-right: 15px; font-size: 13px; }}
-    .btn-salir {{ background: #ef4444; color: white; text-decoration: none; padding: 8px 18px; border-radius: 8px; font-size: 13px; }}
+
+    /* TABLE */
+
+    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: #0f172a; border-radius: 12px; overflow: hidden; }}
+
+    th {{ background: #1e293b; color: #94a3b8; font-size: 12px; text-transform: uppercase; padding: 15px; text-align: left; }}
+
+    td {{ padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; }}
+
+    tr:last-child td {{ border-bottom: none; }}
+
+    .avatar-table {{ width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #334155; border: 1px solid var(--border); }}
+
+    .status-pill {{ padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }}
+
+    .active {{ background: #065f46; color: #34d399; }}
+
+    .inactive {{ background: #7f1d1d; color: #f87171; }}
+
+    /* FORMS */
+
+    input, select {{
+
+      background: #0f172a; border: 1px solid var(--border); color: white;
+
+      padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px;
+
+      font-size: 14px; outline: none; transition: border 0.2s;
+
+    }}
+
+    input:focus, select:focus {{ border-color: var(--emerald); }}
+
+    label {{ display: block; color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 5px; }}
+
+    .btn-emerald {{ background: var(--emerald); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.3s; font-size: 14px; }}
+
+    .btn-emerald:hover {{ background: #059669; }}
+
+    .btn-blue {{ color: #3b82f6; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
+
+    .btn-blue:hover {{ color: #60a5fa; }}
+
+    .btn-red {{ color: #ef4444; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
+
+    .btn-red:hover {{ color: #f87171; }}
+
+    /* MODAL */
+
+    .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; overflow-y: auto; }}
+
+    .modal-content {{ background: var(--card); width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; }}
+
+    .close-x {{ position: absolute; top: 20px; right: 25px; color: #94a3b8; cursor: pointer; font-size: 24px; line-height: 1; }}
+
+    .close-x:hover {{ color: white; }}
+
+    .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }}
+
+    /* PAGINADOR */
+
+    .paginador-ui {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }}
+
+    .paginador-ui button:disabled {{ opacity: 0.4; cursor: not-allowed; }}
+
+    /* PERMISOS */
+
+    .check-item {{ background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 10px; cursor: pointer; }}
+
+    /* DASHBOARD CARDS */
+
+    .dash-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }}
+
+    .dash-card {{ background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 25px; text-decoration: none; text-align: center; transition: 0.2s; display: block; }}
+
+    .dash-card:hover {{ border-color: var(--emerald); transform: translateY(-2px); }}
+
+    .dash-card .icon {{ font-size: 36px; margin-bottom: 10px; }}
+
+    .dash-card h3 {{ color: #10b981; margin: 0; font-size: 16px; }}
+
+    /* SEARCH BAR */
+
+    .toolbar {{ display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; gap: 10px; }}
+
+    .search-input {{ width: 220px; margin-bottom: 0; }}
+
   </style>
+
+  <script>
+
+    function openM(id) {{ document.getElementById(id).style.display = 'block'; }}
+
+    function closeM(id) {{ document.getElementById(id).style.display = 'none'; }}
+
+ 
+
+    async function runCrud(action, table, id, data={{}}) {{
+
+      const res = await fetch('/api/crud', {{
+
+        method: 'POST',
+
+        headers: {{ 'Content-Type': 'application/json' }},
+
+        body: JSON.stringify({{ action, table, id, data }})
+
+      }});
+
+      const j = await res.json();
+
+      if (j.ok) location.reload();
+
+      else alert("Error: " + (j.error || "Desconocido"));
+
+    }}
+
+ 
+
+    function preEdit(id, fields, mId='mEdit') {{
+
+      for (let k in fields) {{
+
+        let el = document.getElementById('ed_' + k);
+
+        if (el) el.value = fields[k];
+
+      }}
+
+      document.getElementById('ed_id').value = id;
+
+      openM(mId);
+
+    }}
+
+ 
+
+    /* ---- PAGINADOR ---- */
+
+    let paginaActual = 1;
+
+    const filasPorPagina = 5;
+
+ 
+
+    function filtrar(rowClass, nameClass) {{
+
+      const val = (document.getElementById('txtBusca') || {{}}).value || "";
+
+      document.querySelectorAll(rowClass).forEach(row => {{
+
+        const b = row.querySelector(nameClass);
+
+        const text = b ? b.innerText.toUpperCase() : "";
+
+        row.dataset.visible = text.includes(val.toUpperCase()) ? "true" : "false";
+
+      }});
+
+      renderTable(rowClass);
+
+    }}
+
+ 
+
+    function renderTable(rowClass) {{
+
+      const filas = Array.from(document.querySelectorAll(rowClass));
+
+      const visibles = filas.filter(r => r.dataset.visible !== "false");
+
+      const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+
+      if (paginaActual > total) paginaActual = total;
+
+      filas.forEach(r => r.style.display = 'none');
+
+      visibles.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
+
+              .forEach(r => r.style.display = '');
+
+      const info = document.getElementById('infoPagina');
+
+      if (info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
+
+    }}
+
+ 
+
+    function cambiarPagina(delta, rowClass) {{
+
+      paginaActual += delta;
+
+      renderTable(rowClass);
+
+    }}
+
+ 
+
+    window.onload = () => {{
+
+      const b = document.getElementById('txtBusca');
+
+      if (b) b.value = "";
+
+      if (document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+
+      if (document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+
+      if (document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+
+    }};
+
+  </script>
+
 </head>
+
 <body>
+
   {nav}
+
   <div class="container">{content}</div>
+
 </body>
+
 </html>"""
  
 # =========================================================
@@ -307,8 +593,8 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
-# ----------------------------------------------------------
-    # 3. LOGIN (CORREGIDO CON ID PERFIL)
+    # ----------------------------------------------------------
+    # 3. LOGIN
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
@@ -321,18 +607,10 @@ def application(environ, start_response):
                 "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
                 (usuario, hash_password(pwd))
             )
-            user_db = cur2.fetchone()
+            user = cur2.fetchone()
             cur2.close(); conn2.close()
-            
-            if user_db:
-                # AGREGAMOS idPerfil al TOKEN para que el Layout no falle
-                token = jwt_encode({
-                    "u": user_db["strNombreUsuario"], 
-                    "id": user_db["id"], 
-                    "idPerfil": user_db["idPerfil"], # <--- LÍNEA CLAVE
-                    "exp": time.time() + 86400
-                })
-                
+            if user:
+                token = jwt_encode({"u": user["strNombreUsuario"], "id": user["id"], "exp": time.time() + 86400})
                 start_response("303 See Other", [
                     ("Location", "/dashboard"),
                     ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
@@ -340,7 +618,7 @@ def application(environ, start_response):
                 return [b""]
             else:
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:15px;'>⚠️ Usuario o contraseña incorrectos</p>"
-
+ 
         login_html = f"""
         <div style="min-height:80vh; display:flex; align-items:center; justify-content:center;">
           <div class="card" style="width:400px;">
@@ -359,10 +637,8 @@ def application(environ, start_response):
             </form>
           </div>
         </div>"""
-        
-        # Pasamos None al layout en login porque aún no hay sesión activa
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-        return [render_layout("Login - Clínica", login_html, user=None).encode("utf-8")]
+        return [render_layout("Login - Clínica", login_html).encode("utf-8")]
  
     # ----------------------------------------------------------
     # 4. LOGOUT
