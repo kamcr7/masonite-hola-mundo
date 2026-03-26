@@ -778,15 +778,15 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 11. VISTAS DE MAQUETAS RELACIONADAS
+    # 11.VISTAS DE MAQUETAS RELACIONADAS PÚLIDAS (Visual Fixed)
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
-        # 1. Definimos los datos de las tablas según la ruta
+        # 1. Definimos los datos de las tablas según la ruta (sin cambios aquí)
         vistas = {
             "/principal-1.1": {
                 "titulo": "👥 Catálogo de Clientes",
                 "color": "#3b82f6",
-                "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ACCIONES"],
+                "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ESTADO", "ACCIONES"],
                 "filas": [
                     ["001", "Corporativo Industrial S.A.", "CIN010101ABC", "Ing. Roberto M.", "active"],
                     ["002", "Servicios Médicos Local", "SML020202HJK", "Dra. Elena G.", "active"]
@@ -804,7 +804,7 @@ def application(environ, start_response):
             "/principal-2.1": {
                 "titulo": "💰 Control de Pagos",
                 "color": "#f59e0b",
-                "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ACCIONES"],
+                "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ESTADO", "ACCIONES"],
                 "filas": [
                     ["TRX-990", "FAC-8801", "25/03/2026", "Transferencia", "active"],
                     ["TRX-991", "FAC-8802", "26/03/2026", "Efectivo", "inactive"]
@@ -820,35 +820,42 @@ def application(environ, start_response):
             "filas": [["Ejemplo A", "Ejemplo B", "Ejemplo C", "active"]]
         })
 
-        # 3. Construimos las cabeceras de la tabla
-        thead = "".join([f"<th>{h}</th>" for h in config["headers"]])
+        # 3. Construimos las cabeceras de la tabla (Alineación a la izquierda)
+        thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
         
         # 4. Construimos las filas de la tabla
         tbody = ""
         for f in config["filas"]:
-            # f[-1] siempre es el estatus para el pill
-            status_text = "Vigente" if f[-2] == "active" else "Pendiente"
+            # Identificamos el penúltimo elemento como el estado
+            # status_idx = -2 si la tabla tiene headers definidos en el diccionario.
+            status_idx = config["headers"].index("ESTADO") if "ESTADO" in config["headers"] else -2
+            status_val = f[status_idx]
+            status_text = "Vigente" if status_val == "active" else "Pendiente"
+            
+            # Construimos las celdas de datos antes del estado
+            cells_before = "".join([f"<td>{str(col)}</td>" for col in f[:status_idx]])
+            # Construimos las celdas de datos después del estado (si las hay)
+            cells_after = "".join([f"<td>{str(col)}</td>" for col in f[status_idx+1:]])
+
             tbody += f"""
             <tr>
-                {"".join([f"<td>{str(col)}</td>" for col in f[:-1]])}
-                <td><span class='status-pill {f[-1]}'>{status_text}</span></td>
-                <td><button class='btn-blue'>Detalles</button></td>
+                {cells_before}
+                <td><span class='status-pill {status_val}'>{status_text}</span></td>
+                {cells_after}
+                <td><button style='background:none; border:none; color:#94a3b8; cursor:pointer; font-size:13px; font-weight:bold; padding:0;'>Detalles</button></td>
             </tr>"""
 
         content = f"""
         <div class='card'>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
                 <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
-                <div style="font-size:12px; color:#94a3b8;">Referencia: {path}</div>
+                <button class='btn-emerald' style='width:auto;'>+ NUEVO REGISTRO</button>
             </div>
             <table>
                 <thead><tr>{thead}</tr></thead>
                 <tbody>{tbody}</tbody>
             </table>
-            <p style="margin-top:15px; font-size:12px; color:#64748b;">
-                * Los datos de <b>{config['titulo']}</b> están vinculados mediante IDs de referencia.
-            </p>
-        </div>"""
+            </div>"""
         
     # ----------------------------------------------------------
     # Cierre de BD y respuesta
