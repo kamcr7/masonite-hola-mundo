@@ -665,66 +665,9 @@ def application(environ, start_response):
             runCrud('update','modulos', id, {{ n, r, p }});
           }}
         </script>"""
- 
+     
     # ----------------------------------------------------------
-    # 10.VISTA DE EJEMPLO PARA SUBMENÚS (Facturación Demo)
-    # ----------------------------------------------------------
-    elif path in ["/principal-1.1", "/principal-1.2", "/principal-2.1"]:
-        # Título dinámico según la ruta para que parezca real
-        titulo_seccion = path.replace("/", "").replace("-", " ").title()
-        
-        content = f"""
-        <div class='card'>
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            <h2 style="margin:0;">📄 Emisión de Facturas ({titulo_seccion})</h2>
-            <div style="display:flex; gap:10px;">
-              <input type='text' class='search-input' placeholder='🔍 Buscar cliente o folio...' style="width:250px;">
-              <button class='btn-blue' style='width:auto'>+ Emitir Factura</button>
-            </div>
-          </div>
-          
-          <table>
-            <thead>
-              <tr>
-                <th>FOLIO FISCAL</th>
-                <th>RAZÓN SOCIAL CLIENTE</th>
-                <th>MONTO TOTAL</th>
-                <th>ESTATUS</th>
-                <th>ACCIONES</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><b style="color:var(--blue);">FAC-10001</b></td>
-                <td>Corporativo Industrial S.A. de C.V.</td>
-                <td>$154,200.00</td>
-                <td><span class='status-pill active'>Vigente</span></td>
-                <td>
-                  <span style="color:var(--blue); cursor:pointer; margin-right:10px;">Editar</span>
-                  <span style="color:var(--red); cursor:pointer;">Eliminar</span>
-                </td>
-              </tr>
-              <tr>
-                <td><b style="color:var(--blue);">FAC-10002</b></td>
-                <td>Servicios Logísticos Nacionales</td>
-                <td>$3,250.00</td>
-                <td><span class='status-pill inactive'>Cancelado</span></td>
-                <td>
-                  <span style="color:var(--blue); cursor:pointer; margin-right:10px;">Editar</span>
-                  <span style="color:var(--red); cursor:pointer;">Eliminar</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          
-          <div style="margin-top:20px; color:#64748b; font-size:14px;">
-            * Nota: Esta pantalla es una maqueta visual sin funciones de base de datos.
-          </div>
-        </div>
-        """
-        
-    # ----------------------------------------------------------
-    # 11. PERMISOS
+    # 10. PERMISOS
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
@@ -824,6 +767,71 @@ def application(environ, start_response):
           }}
         </script>"""
  
+    # ----------------------------------------------------------
+    # VISTAS DE EJEMPLO (MAQUETAS)
+    # ----------------------------------------------------------
+    # Asegúrate de que estas rutas sean las mismas que pones en el <a href='/...'>
+    elif path in ["/principal-1.1", "/principal-1.2", "/principal-2.1", "/prueba-1"]:
+        titulo_seccion = path.replace("/", "").replace("-", " ").title()
+        
+        content = f"""
+        <div class='card'>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+            <h2 style="margin:0; color:#1e293b;">📄 {titulo_seccion}</h2>
+            <div style="display:flex; gap:10px;">
+              <div style="position:relative;">
+                <input type='text' class='search-input' placeholder='Buscar cliente o folio...' 
+                       style="width:280px; padding-left:35px;">
+                <span style="position:absolute; left:10px; top:10px; color:#94a3b8;">🔍</span>
+              </div>
+              <button class='btn-blue' style='width:auto; white-space:nowrap;'>+ Emitir Factura</button>
+            </div>
+          </div>
+          
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>FOLIO FISCAL</th>
+                  <th>RAZÓN SOCIAL CLIENTE</th>
+                  <th>MONTO TOTAL</th>
+                  <th>ESTATUS</th>
+                  <th>ACCIONES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b style="color:#2563eb;">FAC-10001</b></td>
+                  <td>Corporativo Industrial S.A. de C.V.</td>
+                  <td>$154,200.00</td>
+                  <td><span class='status-pill active'>Vigente</span></td>
+                  <td style="white-space:nowrap;">
+                    <button class='btn-blue' style='width:auto; padding:5px 10px; font-size:12px;'>Editar</button>
+                    <button class='btn-red' style='width:auto; padding:5px 10px; font-size:12px;'>Eliminar</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><b style="color:#2563eb;">FAC-10002</b></td>
+                  <td>Servicios Logísticos Nacionales</td>
+                  <td>$3,250.00</td>
+                  <td><span class='status-pill inactive'>Cancelado</span></td>
+                  <td>
+                    <button class='btn-blue' style='width:auto; padding:5px 10px; font-size:12px;'>Editar</button>
+                    <button class='btn-red' style='width:auto; padding:5px 10px; font-size:12px;'>Eliminar</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class='paginador-ui' style="margin-top:20px;">
+            <button class='btn-blue' disabled>❮ Anterior</button>
+            <span style='color:var(--emerald); font-weight:bold;'>Página 1 de 1</span>
+            <button class='btn-blue' disabled>Siguiente ❯</button>
+          </div>
+        </div>
+        """
+        
     # ----------------------------------------------------------
     # Cierre de BD y respuesta
     # ----------------------------------------------------------
