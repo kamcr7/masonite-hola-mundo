@@ -39,44 +39,68 @@ def conectar_bd():
 def render_layout(title, content, user=None):
     nav = ""
     if user:
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
+        # Extraemos el ID del perfil de forma segura
+        id_perfil_usuario = user.get('idPerfil') or user.get('pid') 
+        
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True)
+        
+        # 1. Traemos solo los módulos donde el usuario tiene permiso de VER
+        query_permisos = """
+            SELECT nombreModulo FROM permisos 
+            WHERE idPerfil = %s AND permisoVer = 1
+        """
+        cur.execute(query_permisos, (id_perfil_usuario,))
+        permisos_activos = [p['nombreModulo'] for p in cur.fetchall()]
+        
+        # 2. Traemos la lista de módulos para armar el menú
+        cur.execute("SELECT * FROM modulos")
+        all_mods = cur.fetchall()
         cur.close(); conn.close()
+
         def get_links(padre):
             links = []
             for m in all_mods:
-                if m['strMenuPadre'] == padre:
-                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
+                # SOLO añadir si el padre coincide Y el nombre del módulo está en sus permisos
+                if m['strMenuPadre'] == padre and m['strNombreModulo'] in permisos_activos:
                     ruta = m["strRuta"]
                     if not ruta or ruta.strip() == "":
                         nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
                         ruta = f"/{nombre_slug}"
-                    
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
-            
+        
+        # 3. Construcción del menú de Seguridad filtrado
+        seguridad_links = ""
+        opciones_seg = [
+            ("Perfiles", "/perfiles", "👤"),
+            ("Módulos", "/modulos", "📦"),
+            ("Usuarios", "/usuarios", "👥"),
+            ("Permisos", "/permisos", "🔐")
+        ]
+        for nom, rut, ico in opciones_seg:
+            if nom in permisos_activos:
+                seguridad_links += f'<a href="{rut}">{ico} {nom}</a>'
+
+        # Solo mostramos el dropdown de Seguridad si tiene al menos un permiso ahí
+        nav_seguridad = ""
+        if seguridad_links:
+            nav_seguridad = f"""
+            <div class="dropdown">
+                <button class="dropbtn">Seguridad ▾</button>
+                <div class="dropdown-content">{seguridad_links}</div>
+            </div>"""
+
         nav = f"""
         <div class="top-nav">
           <div class="nav-container">
             <div class="nav-left">
               <span class="logo">🏥 Clinica</span>
               <a href="/dashboard" class="nav-link">Inicio</a>
-              <div class="dropdown">
-                <button class="dropbtn">Seguridad ▾</button>
-                <div class="dropdown-content">
-                  <a href="/perfiles">👤 Perfiles</a>
-                  <a href="/modulos">📦 Módulos</a>
-                  <a href="/usuarios">👥 Usuarios</a>
-                  <a href="/permisos">🔐 Permisos</a>
-                </div>
-              </div>
+              {nav_seguridad}
               <div class="dropdown">
                 <button class="dropbtn">Principal 1 ▾</button>
                 <div class="dropdown-content">{get_links("Principal 1")}</div>
-              </div>
-              <div class="dropdown">
-                <button class="dropbtn">Principal 2 ▾</button>
-                <div class="dropdown-content">{get_links("Principal 2")}</div>
               </div>
             </div>
             <div class="nav-right">
