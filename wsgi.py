@@ -521,31 +521,48 @@ def application(environ, start_response):
         </div>"""
  
     # ----------------------------------------------------------
-    # 7. USUARIOS
+    # 7. USUARIOS (CON CONTROL DE PERMISOS)
     # ----------------------------------------------------------
     elif path == "/usuarios":
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        
+        # 1. OBTENER PERMISOS DEL USUARIO LOGUEADO PARA ESTE MÓDULO
+        cur.execute("""SELECT permisoCrear, permisoEditar, permisoEliminar 
+                       FROM permisos WHERE idPerfil = %s AND nombreModulo = 'Usuarios'""", 
+                    (user['idPerfil'],))
+        p_user = cur.fetchone() or {'permisoCrear': 0, 'permisoEditar': 0, 'permisoEliminar': 0}
+
+        # 2. TRAER DATOS DE LA TABLA
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
         usuarios = cur.fetchall()
-        rows = "".join([f"""
-        <tr class='u-row'>
-          <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
-          <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
-          <td>{u.get('strNombrePerfil','—')}</td>
-          <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
-          <td>
-            <button class='btn-blue' onclick='preEdit({u["id"]}, {{u:"{u["strNombreUsuario"]}", idp:{u["idPerfil"]}, st:"{u["strEstado"]}"}}, "mEdit")'>Editar</button>
-            <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Borrar</button>
-          </td>
-        </tr>""" for u in usuarios])
+        
+        rows = ""
+        for u in usuarios:
+            # BOTONES CONDICIONALES
+            btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
+            btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
+            
+            rows += f"""
+            <tr class='u-row' data-visible='true'>
+              <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
+              <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
+              <td>{u.get('strNombrePerfil','—')}</td>
+              <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
+              <td>{btn_edit} {btn_del}</td>
+            </tr>"""
+
+        # 3. BOTÓN NUEVO CONDICIONAL
+        btn_nuevo = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNew')\">+ NUEVO USUARIO</button>" if p_user['permisoCrear'] else ""
 
         cur.execute("SELECT * FROM perfiles")
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
+        cur.close(); conn.close()
 
         content = f"""
         <div class='card'>
           <h2 style="margin-top:0;">👥 Gestión de Usuarios</h2>
           <div class='toolbar'>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
+            {btn_nuevo}
             <input type='text' id='txtBusca' class='search-input'
               onkeyup="paginaActual=1; filtrar('.u-row','.u-name');" placeholder='🔍 Buscar...'>
           </div>
