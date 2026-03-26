@@ -265,9 +265,9 @@ def application(environ, start_response):
         content = f"""
         <div class='card'>
             <h2>👥 Gestión de Usuarios</h2>
+            # --- Dentro de if path == "/usuarios": ---
             <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
                 <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
-                # Busca esta línea y asegúrate de que esté limpia:
                 <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.u-row', '.u-name');" placeholder="🔍 Buscar..." style="width:200px; margin:0;">
             </div>
             <table>
@@ -709,13 +709,15 @@ def application(environ, start_response):
         }
 
         // Al entrar, limpiar buscador y renderizar
-        window.onload = () => {
-            const b = document.getElementById('txtBusca');
-            if(b) b.value = "";
-            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
-            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
-            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
-        };
+       window.onload = () => {
+    const buscador = document.getElementById('txtBusca');
+    if (buscador) {
+        buscador.value = ""; // Esto borra cualquier texto que el navegador haya puesto solo
+    }
+    
+    // Esto hace que la tabla se dibuje correctamente al inicio
+    if (document.querySelector('.u-row')) renderTable('.u-row');
+};
     </script>
     """
 
