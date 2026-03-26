@@ -124,82 +124,124 @@ def render_layout(title, content, user=None):
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
 def application(environ, start_response):
-    # --- 1. CONFIGURACIÓN INICIAL ---
-    path = environ.get("PATH_INFO", "/")
-    method = environ.get("REQUEST_METHOD", "GET")
-    content = ""
-    titulo_modulo = "Sistema Clínica"
+    path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
+    u_data = verify_jwt(environ); content = ""
+
+    # 1. Inicializamos en None para evitar errores de "local variable referenced before assignment"
     conn = None
     cur = None
 
-    # --- 2. APIS (RETORNO INMEDIATO JSON) ---
+# --- API GET PERMISOS (MATRIZ) ---
     if path == "/api/get_permisos":
-        from urllib.parse import parse_qs
-        params = parse_qs(environ.get('QUERY_STRING', ''))
+        from urllib.parse import parse_qs # Es más moderno que cgi
+        qs = environ.get('QUERY_STRING', '')
+        params = parse_qs(qs)
+        
+        # Obtenemos el ID y nos aseguramos de que sea un número
         idp_raw = params.get('idp', [None])[0]
-        res = b'{"ok":false}'
+        
+        res = b'{"ok":false, "perms":[]}'
         if idp_raw:
+            conn = conectar_bd()
+            cur = conn.cursor(dictionary=True)
             try:
-                conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-                cur.execute("SELECT idModulo as idm, can_view as v, can_add as a, can_edit as e, can_delete as d FROM perfil_modulo WHERE idPerfil = %s", (idp_raw,))
-                res = json.dumps({"ok": True, "perms": cur.fetchall()}).encode('utf-8')
+                # Usamos CAST o simplemente nos aseguramos que idp_raw sea usable
+                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a, 
+                               can_edit as e, can_delete as d FROM perfil_modulo 
+                               WHERE idPerfil = %s""", (idp_raw,))
+                perms = cur.fetchall()
+                # Importante: Convertir a JSON estándar
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+            except Exception as e:
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
             finally:
-                if cur: cur.close()
-                if conn: conn.close()
+                cur.close(); conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
 
+    # --- API CRUD PRINCIPAL (ACTUALIZADO PARA MATRIZ) ---
     if path == "/api/crud" and method == "POST":
+        p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
+        conn = conectar_bd(); cur = conn.cursor()
         try:
-            p = json.loads(environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0))))
-            conn = conectar_bd(); cur = conn.cursor()
-            
             if p['action'] == 'delete': 
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
+            
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
+                    u_nom = p['data']['u'].strip()
+                    cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s)", (u_nom,))
+                    if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
-                               (p['data']['u'], hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                               (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                
+                elif p['table'] == 'perfiles':
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s)", (nombre,))
+                    if cur.fetchone(): raise Exception("Ese perfil ya existe")
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
+                
+                elif p['table'] == 'modulos':
+                    m_nom = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s)", (m_nom,))
+                    if cur.fetchone(): raise Exception("El módulo ya existe")
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
+                               (m_nom, p['data']['r'], p['data']['p']))
+                
+                # --- NUEVA LÓGICA PARA GUARDAR MATRIZ DE PERMISOS ---
                 elif p['table'] == 'permisos':
-                    cur.execute("DELETE FROM perfil_modulo WHERE idPerfil = %s", (p['data']['idp'],))
+                    id_p = p['data']['idp']
+                    # Limpiamos permisos anteriores
+                    cur.execute("DELETE FROM perfil_modulo WHERE idPerfil = %s", (id_p,))
+                    # Insertamos la nueva matriz enviada desde el JS
                     for per in p['data']['perms']:
-                        if any([per['v'], per['a'], per['e'], per['d']]):
-                            cur.execute("INSERT INTO perfil_modulo (idPerfil, idModulo, can_view, can_add, can_edit, can_delete) VALUES (%s,%s,%s,%s,%s,%s)",
-                                       (p['data']['idp'], per['idm'], per['v'], per['a'], per['e'], per['d']))
-            # ... (puedes seguir agregando perfiles/modulos aquí)
+                        # Solo insertamos si el módulo tiene al menos un permiso marcado
+                        if per['v'] or per['a'] or per['e'] or per['d']:
+                            cur.execute("""INSERT INTO perfil_modulo 
+                                (idPerfil, idModulo, can_view, can_add, can_edit, can_delete) 
+                                VALUES (%s, %s, %s, %s, %s, %s)""", 
+                                (id_p, per['idm'], per['v'], per['a'], per['e'], per['d']))
+
+            elif p['action'] == 'update':
+                if p['table'] == 'usuarios':
+                    u_nom = p['data']['u'].strip()
+                    cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario) = LOWER(%s) AND id != %s", (u_nom, p['id']))
+                    if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
+                               (u_nom, p['data']['idp'], p['data']['st'], p['id']))
+                
+                elif p['table'] == 'perfiles':
+                    nombre = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil) = LOWER(%s) AND id != %s", (nombre, p['id']))
+                    if cur.fetchone(): raise Exception("Ya existe otro perfil con ese nombre")
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
+                
+                elif p['table'] == 'modulos':
+                    m_nom = p['data']['n'].strip()
+                    cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo) = LOWER(%s) AND id != %s", (m_nom, p['id']))
+                    if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
+                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
+                               (m_nom, p['data']['r'], p['data']['p'], p['id']))
             
-            conn.commit()
-            res = b'{"ok":true}'
-        except Exception as e:
+            conn.commit(); res = b'{"ok":true}'
+        except Exception as e: 
             if conn: conn.rollback()
             res = json.dumps({"ok":False, "error":str(e)}).encode()
         finally:
             if cur: cur.close()
             if conn: conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")])
-        return [res]
+        
+        start_response("200 OK", [("Content-Type", "application/json")]); return [res]
+        
+    # --- PROTECCIÓN DE SESIÓN ---
+    if not u_data and path != "/login":
+        start_response("303 See Other", [("Location", "/login")]); return [b""]
 
-    # --- 3. GESTIÓN DE PANTALLAS ---
-
-    # A. LOGIN (Si no hay sesión o va a /login)
-    if not u_data or path == "/login":
-        content = """
-        <div style="display:flex; justify-content:center; align-items:center; height:100vh; background:#0f172a;">
-            <div class="card" style="width:350px; padding:30px; background:#1e293b; border-radius:12px; color:white;">
-                <h2 style="text-align:center;">🔐 Acceso al Sistema</h2>
-                <label>Usuario</label>
-                <input type="text" id="log_u" style="width:100%; margin-bottom:15px; padding:10px; background:#0f172a; color:white; border:1px solid #334155;">
-                <label>Contraseña</label>
-                <input type="password" id="log_p" style="width:100%; margin-bottom:20px; padding:10px; background:#0f172a; color:white; border:1px solid #334155;">
-                <button class="btn-emerald" style="width:100%;" onclick="alert('Lógica de login aquí')">INGRESAR</button>
-            </div>
-        </div>"""
-        start_response("200 OK", [("Content-Type", "text/html")])
-        return [content.encode()]
-
-    # B. PANTALLAS PROTEGIDAS (Conexión para renderizar)
+    # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    #==========================================
+        
+# ==========================================
     # --- PANTALLA USUARIOS (VALIDACIÓN MEJORADA) ---
     # ==========================================
     if path == "/usuarios":
@@ -270,8 +312,7 @@ def application(environ, start_response):
             <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
         </div></div>
         """
-
- # ==========================================
+    # ==========================================
     # --- PANTALLA PERFILES CORREGIDA ---
     # ==========================================
     elif path == "/perfiles":
@@ -416,36 +457,270 @@ def application(environ, start_response):
         </div>
         """
         
-    
+       # ==========================================
+    # --- CRUDS ESTATICOS ---
+    # ==========================================
+    elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
         
-# --- 4. JS GLOBAL Y CIERRE ---
-    content += """
-    <script>
-        let paginaActual = 1; const filasPorPagina = 5;
-        function filtrar(rCls, nCls) {
-            const v = document.getElementById('txtBusca').value.toUpperCase();
-            document.querySelectorAll(rCls).forEach(r => {
-                const n = r.querySelector(nCls);
-                r.dataset.visible = (n && n.innerText.toUpperCase().includes(v)) ? "true" : "false";
-            });
-            renderTable(rCls);
+        
+        # Mapeo de títulos según la ruta
+        titulos = {
+            "/principal1_1": "Módulo Estático 1.1",
+            "/principal1_2": "Módulo Estático 1.2",
+            "/principal2_1": "Módulo Estático 2.1",
+            "/principal2_2": "Módulo Estático 2.2"
         }
-        function renderTable(cls) {
-            const f = Array.from(document.querySelectorAll(cls)).filter(r => r.dataset.visible !== "false");
-            const t = Math.ceil(f.length / 5) || 1;
-            document.querySelectorAll(cls).forEach(r => r.style.display = 'none');
-            f.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
-            if(document.getElementById('infoPagina')) document.getElementById('infoPagina').innerText = `Pág ${paginaActual}/${t}`;
-        }
-        function cambiarPagina(d, cls) { paginaActual += d; renderTable(cls); }
-        window.onload = () => {
-            if(document.querySelector('.u-row')) renderTable('.u-row');
-            if(document.querySelector('.st-row')) renderTable('.st-row');
-        };
-    </script>"""
+        titulo_modulo = titulos.get(path, "Panel Estático")
+        
+        # HTML del CRUD estático
+        content += f"""
+        <div class="card">
+            <div class="card-header">
+                <h2><i class='bx bx-spreadsheet'></i> {titulo_modulo} (Vista Previa)</h2>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="txtBusca" placeholder="Buscar registro..." onkeyup="filtrar('.static-row', '.static-name')">
+                    <button class="btn btn-add" onclick="alert('Demo: Función no disponible en vista estática')">
+                        <i class='bx bx-plus'></i> Nuevo Registro
+                    </button>
+                </div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Estado</th>
+                        <th>Fecha</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="static-row" data-visible="true">
+                        <td>101</td>
+                        <td class="static-name">Registro de Prueba A</td>
+                        <td><span class="status-active" style="background:var(--success); color:white; padding:2px 8px; border-radius:4px; font-size:12px;">Activo</span></td>
+                        <td>2024-05-20</td>
+                        <td>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
+                            <button class="btn-delete" onclick="alert('Demo')"><i class='bx bx-trash'></i></button>
+                        </td>
+                    </tr>
+                    <tr class="static-row" data-visible="true">
+                        <td>102</td>
+                        <td class="static-name">Registro de Prueba B</td>
+                        <td><span class="status-active" style="background:var(--success); color:white; padding:2px 8px; border-radius:4px; font-size:12px;">Activo</span></td>
+                        <td>2024-05-21</td>
+                        <td>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
+                        </td>
+                    </tr>
+                    <tr class="static-row" data-visible="true">
+                        <td>103</td>
+                        <td class="static-name">Elemento de Ejemplo C</td>
+                        <td><span style="background:#f1c40f; color:black; padding:2px 8px; border-radius:4px; font-size:12px;">Pendiente</span></td>
+                        <td>2024-05-22</td>
+                        <td>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
 
-    if cur: cur.close()
-    if conn: conn.close()
+            <div class="paginador-ui">
+                <button onclick="cambiarPagina(-1, '.static-row')">Anterior</button>
+                <span id="infoPagina">Página 1 de 1</span>
+                <button onclick="cambiarPagina(1, '.static-row')">Siguiente</button>
+            </div>
+        </div>
+        """
+        
+       # ==========================================
+    # --- JAVASCRIPT GLOBAL CORREGIDO ---
+    # ==========================================
+    content += """
+    <style>
+        .paginador-ui { display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }
+        .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+    <script>
+        let paginaActual = 1;
+        const filasPorPagina = 5;
+
+        function filtrar(rowClass, nameClass) {
+            const val = document.getElementById('txtBusca').value.toUpperCase();
+            document.querySelectorAll(rowClass).forEach(row => {
+                const b = row.querySelector(nameClass);
+                const text = b ? b.innerText.toUpperCase() : "";
+                row.dataset.visible = text.includes(val) ? "true" : "false";
+            });
+            renderTable(rowClass);
+        }
+
+        function renderTable(rowClass) {
+            const filas = Array.from(document.querySelectorAll(rowClass));
+            const visibles = filas.filter(r => r.dataset.visible !== "false");
+            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+            if (paginaActual > total) paginaActual = total;
+            
+            filas.forEach(r => r.style.display = 'none');
+            visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
+            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
+        }
+
+        function cambiarPagina(delta, rowClass) {
+            paginaActual += delta;
+            renderTable(rowClass);
+        }
+
+        // --- VALIDACIÓN USUARIOS ---
+        function validateAndSave() {
+            const u = document.getElementById('un').value.trim();
+            const p = document.getElementById('up').value;
+            const c = document.getElementById('uc').value.trim();
+            const t = document.getElementById('ut').value.trim();
+            
+            // Expresión para solo letras (incluye espacios y acentos)
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            // Expresión para solo números
+            const regexNumeros = /^[0-9]+$/;
+
+            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
+            
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+            if(p.length < 5) return alert("La contraseña debe tener entre 5 y 8 caracteres");
+            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+            if(t.length !== 10 || !regexNumeros.test(t)) return alert("El teléfono debe tener exactamente 10 números");
+
+            runCrud('save', 'usuarios', 0, { u, p, c, t, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+            closeM('mNew');
+        }
+
+        function updateUser() {
+            const u = document.getElementById('ed_u').value.trim();
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+
+            if(!u) return alert("El nombre es obligatorio");
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+
+            runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
+                u, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
+            });
+            closeM('mEdit');
+        }
+
+        // MODULOS
+        function saveMod() {
+            const n = document.getElementById('mn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
+        }
+
+        function updateMod() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n_mod').value.trim();
+            const p = document.getElementById('ed_p_mod').value;
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('update', 'modulos', id, { n, r, p });
+        }
+
+        // --- PERFILES (VALIDACIÓN DE SOLO LETRAS) ---
+        function validarNombrePerfil(nombre) {
+            // Esta expresión permite letras (incluyendo ñ y acentos) y espacios
+            const regex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            
+            if (!nombre) {
+                alert("El nombre es obligatorio");
+                return false;
+            }
+            if (nombre.length < 3) {
+                alert("El nombre debe tener al menos 3 caracteres");
+                return false;
+            }
+            if (!regex.test(nombre)) {
+                alert("El nombre solo puede contener letras (sin números ni símbolos)");
+                return false;
+            }
+            return true;
+        }
+
+        function savePerfil() {
+            const n = document.getElementById('pn').value.trim();
+            
+            if(validarNombrePerfil(n)) {
+                runCrud('save', 'perfiles', 0, {n});
+                document.getElementById('pn').value = ""; // Limpiar tras guardar
+            }
+        }
+
+        function updatePerfil() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n').value.trim();
+            
+            if(validarNombrePerfil(n)) {
+                runCrud('update', 'perfiles', id, {n});
+                // Cerrar modal si usas uno
+                if(typeof closeModals === 'function') closeModals(); 
+            }
+        }
+
+        // PERMISOS
+        async function cargarPermisos(idp) {
+            if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if(data.ok) {
+                data.perms.forEach(p => {
+                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                });
+                document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1;
+                filtrar('.perm-row', '.perm-name');
+            }
+        }
+
+        function bulk(v) {
+            document.querySelectorAll('.perm-row').forEach(row => {
+                if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+            });
+        }
+
+        function guardarPermisos() {
+            const idp = document.getElementById('sel_perfil').value;
+            const matrix = [];
+            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+            ids.forEach(id => {
+                matrix.push({
+                    idm: parseInt(id),
+                    v: document.getElementById('v_'+id).checked ? 1 : 0,
+                    a: document.getElementById('a_'+id).checked ? 1 : 0,
+                    e: document.getElementById('e_'+id).checked ? 1 : 0,
+                    d: document.getElementById('d_'+id).checked ? 1 : 0
+                });
+            });
+            runCrud('save', 'permisos', 0, { idp, perms: matrix });
+        }
+
+        // Al entrar, limpiar buscador y renderizar
+        window.onload = () => {
+            const b = document.getElementById('txtBusca');
+            if(b) b.value = "";
+            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+        };
+    </script>
+    """
+
+    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
+    if 'cur' in locals() and cur: cur.close()
+    if 'conn' in locals() and conn: conn.close()
     
     start_response("200 OK", [("Content-Type", "text/html")])
-    return [render_layout(titulo_modulo, content, u_data).encode()]
+    return [render_layout("Clinica", content, u_data).encode()]
