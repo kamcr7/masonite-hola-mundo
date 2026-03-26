@@ -493,9 +493,8 @@ def application(environ, start_response):
         </div>
         """
         
-        # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
+      # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
-        # 1. Configuración de títulos y columnas según la ruta
         configs = {
             "/principal1_1": {"t": "Gestión de Pacientes", "h": ["ID", "Nombre", "Especialidad", "Estado"]},
             "/principal1_2": {"t": "Control de Citas", "h": ["ID", "Fecha", "Hora", "Estado"]},
@@ -507,7 +506,6 @@ def application(environ, start_response):
         titulo_modulo = conf["t"]
         headers_html = "".join([f"<th>{h}</th>" for h in conf["h"]]) + "<th>Acciones</th>"
 
-        # 2. Datos de ejemplo (filas)
         if "1_1" in path:
             rows_html = "<tr class='static-row' data-visible='true'><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td>"
         elif "1_2" in path:
@@ -515,15 +513,12 @@ def application(environ, start_response):
         else:
             rows_html = "<tr class='static-row' data-visible='true'><td>001</td><td>Producto ABC</td><td>50 u.</td><td><span class='status-pill inactive'>Stock Bajo</span></td>"
         
-        # Añadir botones de acción a la fila
         rows_html += "<td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
 
+        # ASIGNAMOS A CONTENT (sin el return aquí)
         content = f"""
         <div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
-                <h2>{titulo_modulo}</h2>
-                <button class='btn-emerald' style='width:auto' onclick='alert("Solo lectura")'>+ Agregar</button>
-            </div>
+            <h2>{titulo_modulo}</h2>
             <input type="text" id="txtBusca" onkeyup="filtrar('.static-row', 'td')" placeholder="🔍 Buscar..." style="width:250px;">
             <table>
                 <thead><tr>{headers_html}</tr></thead>
@@ -536,19 +531,14 @@ def application(environ, start_response):
             </div>
         </div>
         <script>
-            // Forzar el renderizado de la tabla inmediatamente
+            // Usamos un pequeño delay para que el navegador termine de cargar el DOM
             setTimeout(() => {{ 
                 if(typeof renderTable === 'function') {{
-                    paginaActual = 1;
                     renderTable('.static-row'); 
                 }}
-            }}, 50);
+            }}, 100);
         </script>
         """
-        # IMPORTANTE: Asegúrate de que 'u_data' sea la variable que contiene los datos del usuario logueado
-        response_body = render_layout(titulo_modulo, content, u_data)
-        start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')])
-        return [response_body.encode("utf-8")]
     # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
@@ -558,9 +548,6 @@ def application(environ, start_response):
         .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
     <script>
-        let paginaActual = 1;
-        const filasPorPagina = 5;
-
         function filtrar(rowClass, nameClass) {
             const val = document.getElementById('txtBusca').value.toUpperCase();
             document.querySelectorAll(rowClass).forEach(row => {
