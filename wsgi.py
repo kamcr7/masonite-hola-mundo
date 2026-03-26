@@ -445,7 +445,7 @@ def application(environ, start_response):
         """
 
     # ==========================================
-    # --- JAVASCRIPT GLOBAL CORREGIDO ---
+    # --- JAVASCRIPT GLOBAL (SOLUCIÓN FINAL) ---
     # ==========================================
     content += """
     <style>
@@ -453,22 +453,15 @@ def application(environ, start_response):
         .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
     <script>
-        let paginaActual = 1;
-        const filasPorPagina = 5;
-
-        function filtrar(rowClass, nameClass) {
-            const val = document.getElementById('txtBusca').value.toUpperCase();
-            document.querySelectorAll(rowClass).forEach(row => {
-                const b = row.querySelector(nameClass);
-                const text = b ? b.innerText.toUpperCase() : "";
-                row.dataset.visible = text.includes(val) ? "true" : "false";
-            });
-            renderTable(rowClass);
+        // Usamos var para permitir la re-declaración segura o verificamos existencia
+        if (typeof paginaActual === 'undefined') {
+            var paginaActual = 1;
         }
+        var filasPorPagina = 5;
 
         function renderTable(rowClass) {
             const filas = Array.from(document.querySelectorAll(rowClass));
-            if(filas.length === 0) return; // Si no hay filas, no hacer nada
+            if(filas.length === 0) return;
 
             const visibles = filas.filter(r => r.dataset.visible !== "false");
             const total = Math.ceil(visibles.length / filasPorPagina) || 1;
@@ -483,52 +476,12 @@ def application(environ, start_response):
             if(info) info.innerText = `Página ${paginaActual} de ${total}`;
         }
 
-        function cambiarPagina(delta, rowClass) {
-            paginaActual += delta;
-            renderTable(rowClass);
-        }
-
-        // --- VALIDACIÓN Y CRUD ---
-        function validateAndSave() {
-            const u = document.getElementById('un').value.trim();
-            const p = document.getElementById('up').value;
-            const c = document.getElementById('uc').value.trim();
-            const t = document.getElementById('ut').value.trim();
-            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
-            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
-            runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
-        }
-
-        function updateUser() {
-            runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
-                u: document.getElementById('ed_u').value, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
+        // --- FUNCIONES DE PERMISOS (BOTONES TODO / NADA) ---
+        function bulk(v) {
+            // Selecciona todos los checks de la matriz, incluso los que no se ven por la paginación
+            document.querySelectorAll('.perm-check').forEach(checkbox => {
+                checkbox.checked = v;
             });
-        }
-
-        function saveMod() {
-            const n = document.getElementById('mn').value.trim();
-            if(!n) return alert("Nombre obligatorio");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
-        }
-
-        function updateMod() {
-            const n = document.getElementById('ed_n_mod').value.trim();
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-            runCrud('update', 'modulos', document.getElementById('ed_id').value, { n, r, p: document.getElementById('ed_p_mod').value });
-        }
-
-        function savePerfil() {
-            const n = document.getElementById('pn').value.trim();
-            if(!n) return alert("Nombre obligatorio");
-            runCrud('save', 'perfiles', 0, {n});
-        }
-
-        // CORRECCIÓN AQUÍ: .value fuera del paréntesis
-        function updatePerfil() {
-            const id = document.getElementById('ed_id').value;
-            const n = document.getElementById('ed_n').value;
-            runCrud('update', 'perfiles', id, {n});
         }
 
         async function cargarPermisos(idp) {
@@ -536,7 +489,9 @@ def application(environ, start_response):
             const res = await fetch('/api/get_permisos?idp=' + idp);
             const data = await res.json();
             if(data.ok) {
+                // Limpiar todos antes de marcar
                 document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+                
                 data.perms.forEach(p => {
                     if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
                     if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
@@ -544,15 +499,20 @@ def application(environ, start_response):
                     if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1; // Reiniciar página al cambiar de perfil
                 renderTable('.perm-row');
             }
         }
 
         function guardarPermisos() {
             const idp = document.getElementById('sel_perfil').value;
+            if(!idp) return alert("Selecciona un perfil");
+            
             const perms = [];
-            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
-            ids.forEach(id => {
+            // Agrupamos los valores por módulo (dataset.mod)
+            const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+            
+            modIds.forEach(id => {
                 perms.push({
                     idm: parseInt(id),
                     v: document.getElementById('v_'+id).checked ? 1 : 0,
@@ -564,25 +524,21 @@ def application(environ, start_response):
             runCrud('save', 'permisos', 0, { idp, perms });
         }
 
+        // Inicialización
         window.onload = () => {
-            // Solo ejecutar paginación si NO estamos en una pantalla estática (Principal)
-            const esPantallaEstatica = document.querySelector('.welcome-container'); 
-            if(!esPantallaEstatica) {
-                if(document.querySelector('.u-row')) renderTable('.u-row');
-                if(document.querySelector('.p-row')) renderTable('.p-row');
-                if(document.querySelector('.m-row')) renderTable('.m-row');
-            }
+            // Detectar en qué pantalla estamos para paginar la tabla correcta
+            if(document.querySelector('.u-row')) renderTable('.u-row');
+            if(document.querySelector('.p-row')) renderTable('.p-row');
+            if(document.querySelector('.m-row')) renderTable('.m-row');
+            if(document.querySelector('.perm-row')) renderTable('.perm-row');
         };
     </script>
     """
 
-    # --- CIERRE FINAL SEGURO ---
-    if 'cur' in locals() and cur is not None:
-        try: cur.close()
-        except: pass
-    if 'conn' in locals() and conn is not None:
-        try: conn.close()
-        except: pass
+    # --- CIERRE SEGURO ---
+    if 'cur' in locals() and cur: cur.close()
+    if 'conn' in locals() and conn: conn.close()
     
+    t_final = titulo_modulo if 'titulo_modulo' in locals() else "Clinica"
     start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-    return [render_layout("Clinica", content, u_data).encode("utf-8")]
+    return [render_layout(t_final, content, u_data).encode("utf-8")]
