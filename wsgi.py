@@ -457,63 +457,80 @@ def application(environ, start_response):
         </div>
         """
         
-    
-        
-        
        # ==========================================
-    # --- PANTALLAS DE CRUDS ESTÁTICOS ---
+    # --- CRUDS ESTATICOS ---
     # ==========================================
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
+        
+        
         # Mapeo de títulos según la ruta
         titulos = {
-            "/principal1_1": "Principal 1.1",
-            "/principal1_2": "Principal 1.2",
-            "/principal2_1": "Principal 2.1",
-            "/principal2_2": "Principal 2.2"
+            "/principal1_1": "Módulo Estático 1.1",
+            "/principal1_2": "Módulo Estático 1.2",
+            "/principal2_1": "Módulo Estático 2.1",
+            "/principal2_2": "Módulo Estático 2.2"
         }
-        titulo_modulo = titulos.get(path, "Módulo Estático")
+        titulo_modulo = titulos.get(path, "Panel Estático")
         
-        # HTML del CRUD estático (Simulando la misma estructura de Usuarios)
+        # HTML del CRUD estático
         content += f"""
-        <div class='card'>
-            <h2><i class='bx bx-cube'></i> Gestión {titulo_modulo} (Demo)</h2>
-            <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
-                <button class='btn-emerald' style='width:auto' onclick="alert('Esta es una pantalla estática de ejemplo')">+ NUEVO REGISTRO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.st-row', '.st-name');" placeholder="🔍 Buscar en demo..." style="width:200px; margin:0;">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class='bx bx-spreadsheet'></i> {titulo_modulo} (Vista Previa)</h2>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="txtBusca" placeholder="Buscar registro..." onkeyup="filtrar('.static-row', '.static-name')">
+                    <button class="btn btn-add" onclick="alert('Demo: Función no disponible en vista estática')">
+                        <i class='bx bx-plus'></i> Nuevo Registro
+                    </button>
+                </div>
             </div>
+            
             <table>
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>DESCRIPCIÓN</th>
-                        <th>ESTADO</th>
-                        <th>ACCIONES</th>
+                        <th>Nombre</th>
+                        <th>Estado</th>
+                        <th>Fecha</th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class='st-row'>
-                        <td>001</td>
-                        <td><b class='st-name'>Muestra de Datos A</b></td>
-                        <td><span class='status-pill active'>Activo</span></td>
+                    <tr class="static-row" data-visible="true">
+                        <td>101</td>
+                        <td class="static-name">Registro de Prueba A</td>
+                        <td><span class="status-active" style="background:var(--success); color:white; padding:2px 8px; border-radius:4px; font-size:12px;">Activo</span></td>
+                        <td>2024-05-20</td>
                         <td>
-                            <button class='btn-blue' onclick="alert('Demo Editar')">Editar</button>
-                            <button class='btn-red' onclick="alert('Demo Borrar')">Borrar</button>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
+                            <button class="btn-delete" onclick="alert('Demo')"><i class='bx bx-trash'></i></button>
                         </td>
                     </tr>
-                    <tr class='st-row'>
-                        <td>002</td>
-                        <td><b class='st-name'>Muestra de Datos B</b></td>
-                        <td><span class='status-pill active'>Activo</span></td>
+                    <tr class="static-row" data-visible="true">
+                        <td>102</td>
+                        <td class="static-name">Registro de Prueba B</td>
+                        <td><span class="status-active" style="background:var(--success); color:white; padding:2px 8px; border-radius:4px; font-size:12px;">Activo</span></td>
+                        <td>2024-05-21</td>
                         <td>
-                            <button class='btn-blue' onclick="alert('Demo Editar')">Editar</button>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
+                        </td>
+                    </tr>
+                    <tr class="static-row" data-visible="true">
+                        <td>103</td>
+                        <td class="static-name">Elemento de Ejemplo C</td>
+                        <td><span style="background:#f1c40f; color:black; padding:2px 8px; border-radius:4px; font-size:12px;">Pendiente</span></td>
+                        <td>2024-05-22</td>
+                        <td>
+                            <button class="btn-edit" onclick="alert('Demo')"><i class='bx bx-edit'></i></button>
                         </td>
                     </tr>
                 </tbody>
             </table>
+
             <div class="paginador-ui">
-                <button class="btn-blue" onclick="cambiarPagina(-1, '.st-row')">❮</button>
-                <span id="infoPagina"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1, '.st-row')">❯</button>
+                <button onclick="cambiarPagina(-1, '.static-row')">Anterior</button>
+                <span id="infoPagina">Página 1 de 1</span>
+                <button onclick="cambiarPagina(1, '.static-row')">Siguiente</button>
             </div>
         </div>
         """
