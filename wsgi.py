@@ -34,7 +34,7 @@ def conectar_bd():
     )
  
 # =========================================================
-# LAYOUT PRINCIPAL - SOLO CAMBIO DE COLORES (LIGHT MODE)
+# LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -46,13 +46,15 @@ def render_layout(title, content, user=None):
             links = []
             for m in all_mods:
                 if m['strMenuPadre'] == padre:
+                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
                     ruta = m["strRuta"]
                     if not ruta or ruta.strip() == "":
                         nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
                         ruta = f"/{nombre_slug}"
+                    
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
-        
+            
         nav = f"""
         <div class="top-nav">
           <div class="nav-container">
@@ -84,7 +86,6 @@ def render_layout(title, content, user=None):
           </div>
         </div>"""
 
-    # --- AQUÍ ESTÁ EL CAMBIO DE COLORES ---
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -98,69 +99,146 @@ def render_layout(title, content, user=None):
       --emerald: #10b981;
       --border: #e2e8f0; 
       --text: #1e293b;
-      --text-light: #64748b;
+      --text-muted: #64748b;
     }}
     * {{ box-sizing: border-box; }}
-    body {{ font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; }}
+    body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }}
     
     /* NAV CLARO */
-    .top-nav {{ background: #ffffff; height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
+    .top-nav {{ background: #ffffff; height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
     .nav-container {{ width: 100%; max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; padding: 0 20px; align-items: center; }}
-    .logo {{ color: #10b981; font-weight: bold; font-size: 1.2rem; margin-right: 20px; }}
-    .nav-link {{ color: var(--text-light); text-decoration: none; padding: 10px; font-size: 14px; }}
+    .logo {{ color: var(--emerald); font-weight: bold; font-size: 1.2rem; margin-right: 20px; }}
+    .nav-link {{ color: var(--text-muted); text-decoration: none; padding: 10px; font-size: 14px; font-weight: 500; }}
     .nav-link:hover {{ color: var(--emerald); }}
     
     .dropdown {{ position: relative; display: inline-block; }}
-    .dropdown-content {{ display: none; position: absolute; background: #ffffff; min-width: 180px; border: 1px solid var(--border); border-radius: 8px; z-index: 300; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); top: 100%; left: 0; }}
+    .dropdown-content {{ display: none; position: absolute; background: #ffffff; min-width: 180px; border: 1px solid var(--border); border-radius: 12px; z-index: 300; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); top: 100%; left: 0; overflow: hidden; }}
     .dropdown-content a {{ color: var(--text); padding: 12px; text-decoration: none; display: block; border-bottom: 1px solid var(--border); font-size: 14px; }}
     .dropdown-content a:last-child {{ border-bottom: none; }}
     .dropdown-content a:hover {{ background: #f1f5f9; color: var(--emerald); }}
     .dropdown:hover .dropdown-content {{ display: block; }}
-    .dropbtn {{ background: transparent; color: var(--text-light); border: none; padding: 15px; cursor: pointer; font-size: 14px; }}
+    .dropbtn {{ background: transparent; color: var(--text-muted); border: none; padding: 15px; cursor: pointer; font-size: 14px; font-weight: 500; }}
     .dropbtn:hover {{ color: var(--emerald); }}
     
     .user-pill {{ color: var(--emerald); background: #ecfdf5; border: 1px solid #d1fae5; padding: 6px 16px; border-radius: 25px; margin-right: 15px; font-size: 13px; font-weight: bold; }}
-    .btn-salir {{ background: #ef4444; color: white; text-decoration: none; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: bold; }}
+    .btn-salir {{ background: #ef4444; color: white; text-decoration: none; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: bold; transition: 0.2s; }}
+    .btn-salir:hover {{ background: #dc2626; }}
     .nav-right {{ display: flex; align-items: center; }}
     
-    /* CARDS Y CONTENIDO */
+    /* LAYOUT */
     .container {{ padding: 40px; max-width: 1200px; margin: 0 auto; }}
     .card {{ background: var(--card); padding: 30px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
     
-    /* TABLAS CLARAS */
+    /* TABLE CLARA */
     table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }}
-    th {{ background: #f1f5f9; color: var(--text-light); font-size: 12px; text-transform: uppercase; padding: 15px; text-align: left; }}
+    th {{ background: #f8fafc; color: var(--text-muted); font-size: 12px; text-transform: uppercase; padding: 15px; text-align: left; border-bottom: 1px solid var(--border); }}
     td {{ padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text); }}
     tr:last-child td {{ border-bottom: none; }}
-    .avatar-table {{ width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #e2e8f0; border: 1px solid var(--border); }}
+    tr:hover {{ background: #fcfcfd; }}
+    .avatar-table {{ width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #f1f5f9; border: 1px solid var(--border); }}
     
-    /* STATUS PILLS */
+    /* PILLS */
     .status-pill {{ padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }}
     .active {{ background: #dcfce7; color: #166534; }}
     .inactive {{ background: #fee2e2; color: #991b1b; }}
     
     /* FORMS CLAROS */
-    input, select {{ background: #ffffff; border: 1px solid var(--border); color: var(--text); padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px; font-size: 14px; outline: none; transition: border 0.2s; }}
+    input, select {{
+      background: #ffffff; border: 1px solid var(--border); color: var(--text);
+      padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px;
+      font-size: 14px; outline: none; transition: all 0.2s;
+    }}
     input:focus, select:focus {{ border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1); }}
-    label {{ display: block; color: var(--text-light); font-size: 12px; text-transform: uppercase; margin-bottom: 5px; font-weight: bold; }}
+    label {{ display: block; color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-bottom: 5px; font-weight: 600; }}
     
-    /* BOTONES */
     .btn-emerald {{ background: var(--emerald); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.3s; font-size: 14px; }}
-    .btn-emerald:hover {{ background: #059669; }}
+    .btn-emerald:hover {{ background: #059669; transform: translateY(-1px); }}
+    
     .btn-blue {{ color: #2563eb; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
+    .btn-blue:hover {{ color: #1d4ed8; text-decoration: underline; }}
     .btn-red {{ color: #dc2626; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
+    .btn-red:hover {{ color: #991b1b; text-decoration: underline; }}
     
     /* MODAL CLARO */
-    .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(2px); z-index: 1000; overflow-y: auto; }}
-    .modal-content {{ background: #ffffff; width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }}
-    .close-x {{ position: absolute; top: 20px; right: 25px; color: var(--text-light); cursor: pointer; font-size: 24px; }}
+    .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 1000; overflow-y: auto; }}
+    .modal-content {{ background: var(--card); width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }}
+    .close-x {{ position: absolute; top: 20px; right: 25px; color: var(--text-muted); cursor: pointer; font-size: 24px; line-height: 1; }}
+    .close-x:hover {{ color: var(--text); }}
     
-    /* DASHBOARD */
+    /* DASHBOARD CLARO */
+    .dash-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }}
     .dash-card {{ background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 25px; text-decoration: none; text-align: center; transition: 0.2s; display: block; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
     .dash-card:hover {{ border-color: var(--emerald); transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }}
+    .dash-card .icon {{ font-size: 36px; margin-bottom: 10px; display: block; }}
+    .dash-card h3 {{ color: var(--emerald); margin: 0; font-size: 16px; }}
+    
+    /* SEARCH / TOOLBAR */
+    .toolbar {{ display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; gap: 10px; }}
+    .search-input {{ width: 220px; margin-bottom: 0; background: #f1f5f9; }}
+    
+    .paginador-ui {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }}
   </style>
   <script>
-    // ... (Todos tus scripts permanecen exactamente igual)
+    function openM(id) {{ document.getElementById(id).style.display = 'block'; }}
+    function closeM(id) {{ document.getElementById(id).style.display = 'none'; }}
+ 
+    async function runCrud(action, table, id, data={{}}) {{
+      const res = await fetch('/api/crud', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ action, table, id, data }})
+      }});
+      const j = await res.json();
+      if (j.ok) location.reload();
+      else alert("Error: " + (j.error || "Desconocido"));
+    }}
+ 
+    function preEdit(id, fields, mId='mEdit') {{
+      for (let k in fields) {{
+        let el = document.getElementById('ed_' + k);
+        if (el) el.value = fields[k];
+      }}
+      document.getElementById('ed_id').value = id;
+      openM(mId);
+    }}
+ 
+    let paginaActual = 1;
+    const filasPorPagina = 5;
+ 
+    function filtrar(rowClass, nameClass) {{
+      const val = (document.getElementById('txtBusca') || {{}}).value || "";
+      document.querySelectorAll(rowClass).forEach(row => {{
+        const b = row.querySelector(nameClass);
+        const text = b ? b.innerText.toUpperCase() : "";
+        row.dataset.visible = text.includes(val.toUpperCase()) ? "true" : "false";
+      }});
+      renderTable(rowClass);
+    }}
+ 
+    function renderTable(rowClass) {{
+      const filas = Array.from(document.querySelectorAll(rowClass));
+      const visibles = filas.filter(r => r.dataset.visible !== "false");
+      const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+      if (paginaActual > total) paginaActual = total;
+      filas.forEach(r => r.style.display = 'none');
+      visibles.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
+              .forEach(r => r.style.display = '');
+      const info = document.getElementById('infoPagina');
+      if (info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
+    }}
+ 
+    function cambiarPagina(delta, rowClass) {{
+      paginaActual += delta;
+      renderTable(rowClass);
+    }}
+ 
+    window.onload = () => {{
+      const b = document.getElementById('txtBusca');
+      if (b) b.value = "";
+      if (document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+      if (document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+      if (document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+    }};
   </script>
 </head>
 <body>
