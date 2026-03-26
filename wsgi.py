@@ -248,24 +248,24 @@ def application(environ, start_response):
     # 1. API: GET PERMISOS (matriz)
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
-        from urllib.parse import parse_qs
-        params  = parse_qs(environ.get('QUERY_STRING', ''))
-        idp_raw = params.get('idp', [None])[0]
-        res = b'{"ok":false,"perms":[]}'
-        if idp_raw:
-            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-            try:
-                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
-                               can_edit as e, can_delete as d
-                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
-                perms = cur.fetchall()
-                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
-            except Exception as e:
-                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-            finally:
-                cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")])
-        return [res]
+        idp = query_params.get('idp')
+        cur.execute("SELECT * FROM permisos WHERE idPerfil = %s", (idp,))
+        return send_json({"ok": True, "perms": cur.fetchall()})
+
+    # Dentro de tu manejador de POST /api/crud:
+    if action == "save_permisos_matrix":
+        idp = data.get('idp')
+        perms = data.get('perms', [])
+        # 1. Limpiar permisos viejos del perfil
+        cur.execute("DELETE FROM permisos WHERE idPerfil = %s", (idp,))
+        # 2. Insertar los nuevos usando tus nombres de columna
+        for p in perms:
+            cur.execute("""
+                INSERT INTO permisos (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (idp, p['nom'], p['v'], p['c'], p['e'], p['d']))
+        conn.commit()
+        return send_json({"ok": True})
  
     # ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL
@@ -677,11 +677,13 @@ def application(environ, start_response):
         </script>"""
      
     # ----------------------------------------------------------
-    # 10. PERMISOS
+    # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY)
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
+        
+        # Módulos fijos de seguridad + Módulos dinámicos de la BD
         mods_fijos = [
             {'id': -1, 'nm': 'Perfiles',  'p': 'Seguridad'},
             {'id': -2, 'nm': 'Módulos',   'p': 'Seguridad'},
@@ -690,26 +692,30 @@ def application(environ, start_response):
         ]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
- 
+
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
-        rows   = "".join([f"""
-        <tr class='perm-row' data-visible='true'>
-          <td><b class='perm-name'>{m['nm']}</b><br><small style='color:#94a3b8;'>{m['p']}</small></td>
-          <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:auto; margin:0;'></td>
-          <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='a_{m["id"]}' style='width:auto; margin:0;'></td>
-          <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:auto; margin:0;'></td>
-          <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:auto; margin:0;'></td>
-        </tr>""" for m in todos_mods])
- 
+        
+        # Renderizado de filas con IDs únicos para cada checkbox
+        rows = ""
+        for m in todos_mods:
+            rows += f"""
+            <tr class='perm-row' data-visible='true' data-modname='{m['nm']}'>
+              <td><b class='perm-name'>{m['nm']}</b><br><small style='color:#94a3b8;'>{m['p']}</small></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:auto; margin:0;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='c_{m["id"]}' style='width:auto; margin:0;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:auto; margin:0;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:auto; margin:0;'></td>
+            </tr>"""
+
         content = f"""
         <div class='card'>
-          <h2 style="margin-top:0;">🛡️ Matriz de Permisos</h2>
-          <label>Selecciona un Perfil</label>
+          <h2 style="margin-top:0; color:var(--emerald);">🛡️ Matriz de Permisos</h2>
+          <label>Selecciona un Perfil para configurar</label>
           <select id='sel_perfil' onchange='cargarPermisos(this.value)'
-            style='border:2px solid var(--emerald); max-width:350px;'>
+            style='border:2px solid var(--emerald); max-width:350px; margin-bottom:10px;'>
             <option value=''>-- Seleccione un perfil --</option>{p_opts}
           </select>
- 
+
           <div id='area_permisos' style='display:none; margin-top:25px;'>
             <div class='toolbar'>
               <div style='display:flex; gap:10px;'>
@@ -720,7 +726,15 @@ def application(environ, start_response):
                 onkeyup="paginaActual=1; filtrar('.perm-row','.perm-name');" placeholder='🔍 Buscar módulo...'>
             </div>
             <table>
-              <thead><tr><th>MÓDULO</th><th>VER</th><th>AGREGAR</th><th>EDITAR</th><th>ELIMINAR</th></tr></thead>
+              <thead>
+                <tr>
+                    <th style="text-align:left;">MÓDULO</th>
+                    <th style="text-align:center;">VER</th>
+                    <th style="text-align:center;">CREAR</th>
+                    <th style="text-align:center;">EDITAR</th>
+                    <th style="text-align:center;">ELIMINAR</th>
+                </tr>
+              </thead>
               <tbody>{rows}</tbody>
             </table>
             <div class='paginador-ui'>
@@ -728,52 +742,65 @@ def application(environ, start_response):
               <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
               <button class='btn-blue' onclick="cambiarPagina(1,'.perm-row')">Siguiente ❯</button>
             </div>
-            <button class='btn-emerald' style='margin-top:20px; font-size:16px;' onclick='guardarPermisos()'>
-              💾 GUARDAR CONFIGURACIÓN
+            <button class='btn-emerald' style='margin-top:20px; font-size:16px; padding:15px;' onclick='guardarPermisos()'>
+              💾 GUARDAR CONFIGURACIÓN ACTUAL
             </button>
           </div>
         </div>
- 
+
         <script>
           async function cargarPermisos(idp) {{
             if (!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
+            
+            // Limpiar todo antes de cargar
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            
             const res  = await fetch('/api/get_permisos?idp=' + idp);
             const data = await res.json();
+            
             if (data.ok) {{
               data.perms.forEach(p => {{
-                const vEl = document.getElementById('v_' + p.idm);
-                const aEl = document.getElementById('a_' + p.idm);
-                const eEl = document.getElementById('e_' + p.idm);
-                const dEl = document.getElementById('d_' + p.idm);
-                if (vEl && p.v) vEl.checked = true;
-                if (aEl && p.a) aEl.checked = true;
-                if (eEl && p.e) eEl.checked = true;
-                if (dEl && p.d) dEl.checked = true;
+                // Buscamos la fila que tenga el nombre del módulo
+                const fila = document.querySelector(`tr[data-modname="${{p.nombreModulo}}"]`);
+                if (fila) {{
+                    const idm = fila.querySelector('.perm-check').dataset.mod;
+                    if(p.permisoVer) document.getElementById('v_' + idm).checked = true;
+                    if(p.permisoCrear) document.getElementById('c_' + idm).checked = true;
+                    if(p.permisoEditar) document.getElementById('e_' + idm).checked = true;
+                    if(p.permisoEliminar) document.getElementById('d_' + idm).checked = true;
+                }}
               }});
               document.getElementById('area_permisos').style.display = 'block';
               paginaActual = 1;
               filtrar('.perm-row', '.perm-name');
             }}
           }}
+
           function bulk(v) {{
             document.querySelectorAll('.perm-row').forEach(row => {{
               if (row.style.display !== 'none')
                 row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
             }});
           }}
+
           function guardarPermisos() {{
             const idp = document.getElementById('sel_perfil').value;
             if (!idp) return alert("Selecciona un perfil primero");
-            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
-            const matrix = ids.map(id => ({{
-              idm: parseInt(id),
-              v: document.getElementById('v_' + id).checked ? 1 : 0,
-              a: document.getElementById('a_' + id).checked ? 1 : 0,
-              e: document.getElementById('e_' + id).checked ? 1 : 0,
-              d: document.getElementById('d_' + id).checked ? 1 : 0
-            }}));
-            runCrud('save', 'permisos', 0, {{ idp, perms: matrix }});
+            
+            // Recopilamos los datos basándonos en las filas de la tabla
+            const matrix = [];
+            document.querySelectorAll('.perm-row').forEach(tr => {{
+                const idm = tr.querySelector('.perm-check').dataset.mod;
+                matrix.push({{
+                    nom: tr.dataset.modname,
+                    v: document.getElementById('v_' + idm).checked ? 1 : 0,
+                    c: document.getElementById('c_' + idm).checked ? 1 : 0,
+                    e: document.getElementById('e_' + idm).checked ? 1 : 0,
+                    d: document.getElementById('d_' + idm).checked ? 1 : 0
+                }});
+            }});
+
+            runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
           }}
         </script>"""
  
