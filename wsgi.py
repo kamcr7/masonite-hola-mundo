@@ -526,73 +526,6 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 8. PERFILES
-    # ----------------------------------------------------------
-    elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
-        perfiles = cur.fetchall()
-        rows = "".join([f"""
-        <tr class='p-row'>
-          <td>{i}</td>
-          <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
-          <td>
-            <button class='btn-blue' onclick='preEdit({p["id"]}, {{n:"{p["strNombrePerfil"]}"}}, "mEditP")'>Editar</button>
-            <button class='btn-red' onclick="runCrud('delete','perfiles',{p['id']})">Borrar</button>
-          </td>
-        </tr>""" for i, p in enumerate(perfiles, 1)])
-
-        content = f"""
-        <div class='card'>
-          <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
-          <div class='toolbar'>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-            <input type='text' id='txtBusca' class='search-input'
-              onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar...'>
-          </div>
-          <table>
-            <thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-          <div class='paginador-ui'>
-            <button class='btn-blue' onclick="cambiarPagina(-1,'.p-row')">❮ Anterior</button>
-            <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
-            <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
-          </div>
-        </div>
-
-        <div id='mNewP' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mNewP')">&times;</span>
-          <h3>Nuevo Perfil</h3>
-          <label>Nombre del Perfil (Solo letras)</label>
-          <input id='pn' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
-        </div></div>
-
-        <div id='mEditP' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mEditP')">&times;</span>
-          <h3>Editar Perfil</h3>
-          <input type='hidden' id='ed_id'>
-          <label>Nombre</label>
-          <input id='ed_n' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
-        </div></div>
-
-        <script>
-          function savePerfil() {{
-            const n = document.getElementById('pn').value.trim();
-            if (!n) return alert("⚠️ El nombre es obligatorio");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
-            runCrud('save','perfiles',0,{{n}});
-          }}
-          function updatePerfil() {{
-            const n = document.getElementById('ed_n').value.trim();
-            if (!n) return alert("⚠️ El nombre es obligatorio");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
-            runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
-          }}
-        </script>"""
-
-    # ----------------------------------------------------------
     # 9. MÓDULOS
     # ----------------------------------------------------------
     elif path == "/modulos":
@@ -631,8 +564,8 @@ def application(environ, start_response):
         <div id='mNewM' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mNewM')">&times;</span>
           <h3>Nuevo Módulo</h3>
-          <label>Nombre del Módulo (Solo letras)</label>
-          <input id='mn' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+          <label>Nombre del Módulo (Letras, Números y Puntos, máx 20)</label>
+          <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <label>Menú Padre</label>
           <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
           <button class='btn-emerald' onclick='saveMod()'>GUARDAR</button>
@@ -643,7 +576,7 @@ def application(environ, start_response):
           <h3>Editar Módulo</h3>
           <input type='hidden' id='ed_id'>
           <label>Nombre</label>
-          <input id='ed_n_mod' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+          <input id='ed_n_mod' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <label>Menú Padre</label>
           <select id='ed_p_mod'><option>Principal 1</option><option>Principal 2</option></select>
           <button class='btn-emerald' onclick='updateMod()'>ACTUALIZAR</button>
@@ -653,8 +586,8 @@ def application(environ, start_response):
           function saveMod() {{
             const n = document.getElementById('mn').value.trim();
             if (!n) return alert("⚠️ Nombre obligatorio");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            // Generar ruta automática (limpiando puntos para la URL)
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
             runCrud('save','modulos',0,{{ n, r, p: document.getElementById('mp').value }});
           }}
           function updateMod() {{
@@ -662,8 +595,7 @@ def application(environ, start_response):
             const n  = document.getElementById('ed_n_mod').value.trim();
             const p  = document.getElementById('ed_p_mod').value;
             if (!n) return alert("⚠️ Nombre obligatorio");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
             runCrud('update','modulos', id, {{ n, r, p }});
           }}
         </script>"""
