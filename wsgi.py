@@ -778,49 +778,77 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # VISTA DE MAQUETA DINÁMICA
+    # 11. VISTAS DE MAQUETAS RELACIONADAS
     # ----------------------------------------------------------
-    # Detecta rutas que empiezan con /principal o /modulo
     elif path.startswith("/principal") or path.startswith("/modulo"):
-        # Esto limpia el nombre para que se vea bien en el título
-        # Ej: /principal-1.1 -> PRINCIPAL 1.1
-        titulo = path.replace("/", "").replace("-", " ").upper()
+        # 1. Definimos los datos de las tablas según la ruta
+        vistas = {
+            "/principal-1.1": {
+                "titulo": "👥 Catálogo de Clientes",
+                "color": "#3b82f6",
+                "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ACCIONES"],
+                "filas": [
+                    ["001", "Corporativo Industrial S.A.", "CIN010101ABC", "Ing. Roberto M.", "active"],
+                    ["002", "Servicios Médicos Local", "SML020202HJK", "Dra. Elena G.", "active"]
+                ]
+            },
+            "/principal-1.2": {
+                "titulo": "📄 Emisión de Facturas",
+                "color": "#10b981",
+                "headers": ["FOLIO", "CLIENTE (RELACIONADO)", "MONTO", "ESTADO", "ACCIONES"],
+                "filas": [
+                    ["FAC-8801", "Corporativo Industrial S.A.", "$12,400.00", "active"],
+                    ["FAC-8802", "Servicios Médicos Local", "$3,150.00", "inactive"]
+                ]
+            },
+            "/principal-2.1": {
+                "titulo": "💰 Control de Pagos",
+                "color": "#f59e0b",
+                "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ACCIONES"],
+                "filas": [
+                    ["TRX-990", "FAC-8801", "25/03/2026", "Transferencia", "active"],
+                    ["TRX-991", "FAC-8802", "26/03/2026", "Efectivo", "inactive"]
+                ]
+            }
+        }
+
+        # 2. Obtenemos la configuración de la ruta actual (o una por defecto)
+        config = vistas.get(path, {
+            "titulo": "📦 Módulo General",
+            "color": "var(--emerald)",
+            "headers": ["DATO 1", "DATO 2", "DATO 3", "ESTADO", "ACCIONES"],
+            "filas": [["Ejemplo A", "Ejemplo B", "Ejemplo C", "active"]]
+        })
+
+        # 3. Construimos las cabeceras de la tabla
+        thead = "".join([f"<th>{h}</th>" for h in config["headers"]])
         
+        # 4. Construimos las filas de la tabla
+        tbody = ""
+        for f in config["filas"]:
+            # f[-1] siempre es el estatus para el pill
+            status_text = "Vigente" if f[-2] == "active" else "Pendiente"
+            tbody += f"""
+            <tr>
+                {"".join([f"<td>{str(col)}</td>" for col in f[:-1]])}
+                <td><span class='status-pill {f[-1]}'>{status_text}</span></td>
+                <td><button class='btn-blue'>Detalles</button></td>
+            </tr>"""
+
         content = f"""
         <div class='card'>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h2 style="margin:0; color:var(--emerald);">📄 Gestión: {titulo}</h2>
-                <button class='btn-emerald' style='width:auto'>+ Nuevo Registro</button>
+                <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
+                <div style="font-size:12px; color:#94a3b8;">Referencia: {path}</div>
             </div>
             <table>
-                <thead>
-                    <tr>
-                        <th>FOLIO</th>
-                        <th>CLIENTE / DETALLE</th>
-                        <th>MONTO</th>
-                        <th>ESTADO</th>
-                        <th>ACCIONES</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><b>#1001</b></td>
-                        <td>Empresa de Prueba S.A.</td>
-                        <td>$5,000.00</td>
-                        <td><span class='status-pill active'>Vigente</span></td>
-                        <td><button class='btn-blue'>Editar</button></td>
-                    </tr>
-                    <tr>
-                        <td><b>#1002</b></td>
-                        <td>Cliente Particular</td>
-                        <td>$1,200.00</td>
-                        <td><span class='status-pill inactive'>Cancelado</span></td>
-                        <td><button class='btn-blue'>Editar</button></td>
-                    </tr>
-                </tbody>
+                <thead><tr>{thead}</tr></thead>
+                <tbody>{tbody}</tbody>
             </table>
-        </div>
-        """
+            <p style="margin-top:15px; font-size:12px; color:#64748b;">
+                * Los datos de <b>{config['titulo']}</b> están vinculados mediante IDs de referencia.
+            </p>
+        </div>"""
         
     # ----------------------------------------------------------
     # Cierre de BD y respuesta
