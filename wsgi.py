@@ -1,6 +1,4 @@
-﻿funcional solo falta lo de la pantalla permiso sirva :
-
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
 
@@ -243,7 +241,7 @@ def application(environ, start_response):
     # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     
-    ==========================================
+    #==========================================
     # --- PANTALLA USUARIOS (VALIDACIÓN MEJORADA) ---
     # ==========================================
     if path == "/usuarios":
