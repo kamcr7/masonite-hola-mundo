@@ -202,7 +202,153 @@ def application(environ, start_response):
             content = f" <div class='card'> ... </div> "
 
         # JAVASCRIPT GLOBAL
-        content += """ <script> ... </script> """
+        content += """ <style>
+        .paginador-ui { display:flex; justify-content:center; align-items:center; gap:15px; margin-top:15px; padding-top:15px; border-top:1px solid var(--border); }
+        .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+    <script>
+        let paginaActual = 1;
+        const filasPorPagina = 5;
+        function filtrar(rowClass, nameClass) {
+            const val = document.getElementById('txtBusca').value.toUpperCase();
+            document.querySelectorAll(rowClass).forEach(row => {
+                const b = row.querySelector(nameClass);
+                const text = b ? b.innerText.toUpperCase() : "";
+                row.dataset.visible = text.includes(val) ? "true" : "false";
+            });
+            renderTable(rowClass);
+        }
+        function renderTable(rowClass) {
+            const filas = Array.from(document.querySelectorAll(rowClass));
+            const visibles = filas.filter(r => r.dataset.visible !== "false");
+            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+            if (paginaActual > total) paginaActual = total;        
+            filas.forEach(r => r.style.display = 'none');
+            visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
+            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
+        }
+        function cambiarPagina(delta, rowClass) {
+            paginaActual += delta;
+            renderTable(rowClass);
+        }
+        function validateAndSave() {
+            const u = document.getElementById('un').value.trim();
+            const p = document.getElementById('up').value;
+            const c = document.getElementById('uc').value.trim();
+            const t = document.getElementById('ut').value.trim();
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            const regexNumeros = /^[0-9]+$/;
+            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+            if(p.length < 5) return alert("La contraseña debe tener entre 5 y 8 caracteres");
+            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+            if(t.length !== 10 || !regexNumeros.test(t)) return alert("El teléfono debe tener exactamente 10 números");
+            runCrud('save', 'usuarios', 0, { u, p, c, t, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+            closeM('mNew');
+        }
+        function updateUser() {
+            const u = document.getElementById('ed_u').value.trim();
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            if(!u) return alert("El nombre es obligatorio");
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+            runCrud('update', 'usuarios', document.getElementById('ed_id').value, {
+                u, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value
+            });
+            closeM('mEdit');
+        }
+        function saveMod() {
+            const n = document.getElementById('mn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
+        }
+        function updateMod() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n_mod').value.trim();
+            const p = document.getElementById('ed_p_mod').value;
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('update', 'modulos', id, { n, r, p });
+        }        
+        function validarNombrePerfil(nombre) {
+            const regex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            if (!nombre) {
+                alert("El nombre es obligatorio");
+                return false;
+            }
+            if (nombre.length < 3) {
+                alert("El nombre debe tener al menos 3 caracteres");
+                return false;
+            }
+            if (!regex.test(nombre)) {
+                alert("El nombre solo puede contener letras (sin números ni símbolos)");
+                return false;
+            }
+            return true;
+        }
+        function savePerfil() {
+            const n = document.getElementById('pn').value.trim();
+            if(validarNombrePerfil(n)) {
+                runCrud('save', 'perfiles', 0, {n});
+                document.getElementById('pn').value = ""; // Limpiar tras guardar
+            }
+        }
+        function updatePerfil() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n').value.trim();
+            if(validarNombrePerfil(n)) {
+                runCrud('update', 'perfiles', id, {n});
+                if(typeof closeModals === 'function') closeModals();
+            }
+        }
+        async function cargarPermisos(idp) {
+            if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if(data.ok) {
+                data.perms.forEach(p => {
+                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                });
+                document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1;
+                filtrar('.perm-row', '.perm-name');
+            }
+        }
+        function bulk(v) {
+            document.querySelectorAll('.perm-row').forEach(row => {
+                if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+            });
+        }
+        function guardarPermisos() {
+            const idp = document.getElementById('sel_perfil').value;
+            const matrix = [];
+            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+            ids.forEach(id => {
+                matrix.push({
+                    idm: parseInt(id),
+                    v: document.getElementById('v_'+id).checked ? 1 : 0,
+                    a: document.getElementById('a_'+id).checked ? 1 : 0,
+                    e: document.getElementById('e_'+id).checked ? 1 : 0,
+                    d: document.getElementById('d_'+id).checked ? 1 : 0
+                });
+            });
+            runCrud('save', 'permisos', 0, {
+                idp: parseInt(idp), // Aseguramos que sea número
+                perms: matrix
+            });
+        }
+        window.onload = () => {
+            const b = document.getElementById('txtBusca');
+            if(b) b.value = "";
+            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+        };
+    </script>"""
 
         # RENDERIZADO FINAL
         final_body = render_layout("Clínica 2026", content, u_data)
