@@ -539,8 +539,8 @@ def application(environ, start_response):
             }}, 100);
         </script>
         """
-    # ==========================================
-    # --- JAVASCRIPT GLOBAL CORREGIDO ---
+   # ==========================================
+    # --- JAVASCRIPT GLOBAL FINAL ---
     # ==========================================
     content += """
     <style>
@@ -561,12 +561,17 @@ def application(environ, start_response):
         function renderTable(rowClass) {
             const filas = Array.from(document.querySelectorAll(rowClass));
             const visibles = filas.filter(r => r.dataset.visible !== "false");
-            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+            
+            // Usamos 5 directamente para evitar errores de variable no definida
+            const total = Math.ceil(visibles.length / 5) || 1;
             if (paginaActual > total) paginaActual = total;
+            if (paginaActual < 1) paginaActual = 1;
             
             filas.forEach(r => r.style.display = 'none');
             visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
-            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
+            
+            const info = document.getElementById('infoPagina');
+            if(info) info.innerText = `Página ${paginaActual} de ${total}`;
         }
 
         function cambiarPagina(delta, rowClass) {
@@ -574,18 +579,16 @@ def application(environ, start_response):
             renderTable(rowClass);
         }
 
-        // VALIDACIÓN USUARIOS
+        // --- FUNCIONES DE ACCIÓN (USUARIOS, MODULOS, PERFILES) ---
         function validateAndSave() {
             const u = document.getElementById('un').value.trim();
             const p = document.getElementById('up').value;
             const c = document.getElementById('uc').value.trim();
             const t = document.getElementById('ut').value.trim();
-            
             if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
             if(p.length < 5) return alert("La contraseña debe ser mayor a 5 caracteres");
             if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
             if(t.length !== 10) return alert("El teléfono debe tener 10 dígitos");
-
             runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
         }
 
@@ -595,7 +598,6 @@ def application(environ, start_response):
             });
         }
 
-        // MODULOS
         function saveMod() {
             const n = document.getElementById('mn').value.trim();
             if(!n) return alert("Nombre obligatorio");
@@ -612,7 +614,6 @@ def application(environ, start_response):
             runCrud('update', 'modulos', id, { n, r, p });
         }
 
-        // PERFILES
         function savePerfil() {
             const n = document.getElementById('pn').value.trim();
             if(!n) return alert("Nombre obligatorio");
@@ -622,7 +623,7 @@ def application(environ, start_response):
             runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
         }
 
-        // PERMISOS
+        // --- PERMISOS ---
         async function cargarPermisos(idp) {
             if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
@@ -630,14 +631,14 @@ def application(environ, start_response):
             const data = await res.json();
             if(data.ok) {
                 data.perms.forEach(p => {
-                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
-                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
-                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
-                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
+                    const v = document.getElementById('v_'+p.idm); if(v) v.checked = p.v;
+                    const a = document.getElementById('a_'+p.idm); if(a) a.checked = p.a;
+                    const e = document.getElementById('e_'+p.idm); if(e) e.checked = p.e;
+                    const d = document.getElementById('d_'+p.idm); if(d) d.checked = p.d;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
                 paginaActual = 1;
-                filtrar('.perm-row', '.perm-name');
+                renderTable('.perm-row');
             }
         }
 
@@ -663,20 +664,24 @@ def application(environ, start_response):
             runCrud('save', 'permisos', 0, { idp, perms: matrix });
         }
 
-        // Al entrar, limpiar buscador y renderizar
         window.onload = () => {
             const b = document.getElementById('txtBusca');
             if(b) b.value = "";
-            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
-            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
-            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
+            if(document.querySelector('.u-row')) renderTable('.u-row');
+            if(document.querySelector('.p-row')) renderTable('.p-row');
+            if(document.querySelector('.m-row')) renderTable('.m-row');
+            if(document.querySelector('.perm-row')) renderTable('.perm-row');
         };
     </script>
     """
 
-    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
-    if 'cur' in locals() and cur: cur.close()
-    if 'conn' in locals() and conn: conn.close()
+    # --- CIERRE FINAL SEGURO ---
+    if 'cur' in locals() and cur: 
+        try: cur.close()
+        except: pass
+    if 'conn' in locals() and conn: 
+        try: conn.close()
+        except: pass
     
-    start_response("200 OK", [("Content-Type", "text/html")])
-    return [render_layout("Clinica", content, u_data).encode()]
+    start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+    return [render_layout("Clinica", content, u_data).encode("utf-8")]
