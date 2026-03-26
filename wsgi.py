@@ -307,8 +307,8 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
-    # ----------------------------------------------------------
-    # 3. LOGIN
+# ----------------------------------------------------------
+    # 3. LOGIN (CORREGIDO CON ID PERFIL)
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
@@ -321,10 +321,18 @@ def application(environ, start_response):
                 "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
                 (usuario, hash_password(pwd))
             )
-            user = cur2.fetchone()
+            user_db = cur2.fetchone()
             cur2.close(); conn2.close()
-            if user:
-                token = jwt_encode({"u": user["strNombreUsuario"], "id": user["id"], "exp": time.time() + 86400})
+            
+            if user_db:
+                # AGREGAMOS idPerfil al TOKEN para que el Layout no falle
+                token = jwt_encode({
+                    "u": user_db["strNombreUsuario"], 
+                    "id": user_db["id"], 
+                    "idPerfil": user_db["idPerfil"], # <--- LÍNEA CLAVE
+                    "exp": time.time() + 86400
+                })
+                
                 start_response("303 See Other", [
                     ("Location", "/dashboard"),
                     ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
@@ -332,7 +340,7 @@ def application(environ, start_response):
                 return [b""]
             else:
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:15px;'>⚠️ Usuario o contraseña incorrectos</p>"
- 
+
         login_html = f"""
         <div style="min-height:80vh; display:flex; align-items:center; justify-content:center;">
           <div class="card" style="width:400px;">
@@ -351,8 +359,10 @@ def application(environ, start_response):
             </form>
           </div>
         </div>"""
+        
+        # Pasamos None al layout en login porque aún no hay sesión activa
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-        return [render_layout("Login - Clínica", login_html).encode("utf-8")]
+        return [render_layout("Login - Clínica", login_html, user=None).encode("utf-8")]
  
     # ----------------------------------------------------------
     # 4. LOGOUT
