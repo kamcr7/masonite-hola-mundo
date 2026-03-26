@@ -31,8 +31,6 @@ def conectar_bd():
     return mysql.connector.connect(host=res.hostname, port=res.port, user=res.username, password=res.password, database=res.path[1:], charset='utf8mb4')
 
 # =========================================================
-# DISEÑO MODIFICADO: INCLUYE PERMISOS Y MEJORAS VISUALES
-# =========================================================
 def render_layout(title, content, user=None):
     nav = ""
     if user:
@@ -75,54 +73,78 @@ def render_layout(title, content, user=None):
         table {{ width:100%; border-collapse:collapse; margin-top:20px; background:#0f172a; border-radius:12px; overflow:hidden; }}
         th {{ background:#1e293b; color:#94a3b8; font-size:12px; text-transform:uppercase; padding:15px; text-align:left; }}
         td {{ padding:15px; border-bottom:1px solid var(--border); font-size:14px; }}
-        .avatar-table {{ width:45px; height:45px; border-radius:50%; object-fit: cover; background:#334155; border: 1px solid var(--border); }}
         .status-pill {{ padding:4px 12px; border-radius:20px; font-size:11px; font-weight:bold; }}
         .active {{ background:#065f46; color:#34d399; }}
         .inactive {{ background:#7f1d1d; color:#f87171; }}
         input, select {{ background:#0f172a; border:1px solid var(--border); color:white; padding:12px; width:100%; margin-bottom:15px; border-radius:8px; }}
-        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; transition: 0.3s; }}
-        .btn-emerald:hover {{ background: #059669; }}
+        .btn-emerald {{ background:var(--emerald); color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:bold; transition: 0.3s; }}
         .btn-blue {{ color:#3b82f6; background:none; border:none; cursor:pointer; font-weight:bold; }}
         .btn-red {{ color:#ef4444; background:none; border:none; cursor:pointer; font-weight:bold; }}
-        .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
-        .modal-content {{ background:var(--card); width:500px; margin:5% auto; padding:35px; border-radius:20px; border: 1px solid var(--border); position:relative; }}
-        .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
-        
-        /* Estilos específicos para Permisos */
-        .grid-permisos {{ display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:15px; margin-top:15px; }}
-        .check-item {{ background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--border); display:flex; align-items:center; gap:10px; cursor:pointer; }}
-        .check-item input {{ width:auto; margin:0; cursor:pointer; }}
-        
-        .close-x {{ position:absolute; top:20px; right:25px; color:#94a3b8; cursor:pointer; font-size:24px; }}
-        .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
-        .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
+        .paginador-ui {{ margin-top:20px; display:flex; justify-content:center; align-items:center; gap:20px; }}
     </style>
     <script>
+        let paginaActual = 1;
+        const filasPorPagina = 5;
+
+        // Paginación Universal
+        function renderTable(rowClass) {{
+            const filas = Array.from(document.querySelectorAll(rowClass));
+            if(filas.length === 0) return;
+            const visibles = filas.filter(r => r.dataset.visible !== "false");
+            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+            
+            filas.forEach(r => r.style.display = 'none');
+            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina)
+                   .forEach(r => r.style.display = '');
+
+            const info = document.getElementById('infoPagina');
+            if(info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
+        }}
+
+        function cambiarPagina(dir, rowClass) {{
+            paginaActual += dir;
+            renderTable(rowClass);
+        }}
+
+        // Buscador
+        function filtrar(rowClass, nameClass) {{
+            const filtro = document.getElementById('txtBusca').value.toLowerCase();
+            document.querySelectorAll(rowClass).forEach(row => {{
+                const texto = row.innerText.toLowerCase();
+                row.dataset.visible = texto.includes(filtro);
+            }});
+            paginaActual = 1;
+            renderTable(rowClass);
+        }}
+
+        // Lógica de Permisos (CORREGIDA)
+        async function cargarPermisos(idp) {{
+            if(!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if(data.ok) {{
+                data.perms.forEach(p => {{
+                    if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e && document.getElementById('e_'+p.idm)) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
+                }});
+                document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1; 
+                renderTable('.perm-row');
+            }}
+        }}
+
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
-        async function runCrud(action, table, id, data={{}}) {{
-            const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
-            const j = await res.json();
-            if(j.ok) location.reload(); 
-            else alert("Error: " + (j.error || "Desconocido"));
-        }}
-        function preEdit(id, fields, mId='mEdit') {{
-            for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
-            document.getElementById('ed_id').value = id;
-            openM(mId);
-        }}
-        function handleImg(e, prevId) {{
-            const reader = new FileReader();
-            reader.onload = () => {{ 
-                const prev = document.getElementById(prevId);
-                prev.src = reader.result;
-                prev.style.display = 'block';
-            }};
-            reader.readAsDataURL(e.target.files[0]);
-        }}
+
+        window.onload = () => {{
+            if(document.querySelector('.static-row')) renderTable('.static-row');
+        }};
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
-
+    
 def application(environ, start_response):
     path = environ.get("PATH_INFO", "/"); method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ); content = ""
@@ -444,57 +466,47 @@ def application(environ, start_response):
         </div>
         """
         
-        # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
+# --- PANTALLAS CRUD ESTÁTICAS (DENTRO DE APPLICATION) ---
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
-        # Título dinámico basado en la ruta
-        titulos = {
-            "/principal1_1": "Gestión de Pacientes (Demo)",
-            "/principal1_2": "Control de Citas (Demo)",
-            "/principal2_1": "Inventario Farmacia (Demo)",
-            "/principal2_2": "Reportes Financieros (Demo)"
+        config = {
+            "/principal1_1": {"t": "Gestión de Pacientes", "c": ["ID", "Nombre", "Especialidad", "Estado"], "d": [
+                ["1", "Juan Pérez", "Cardiología", "Activo"], ["2", "María García", "Pediatría", "Activo"],
+                ["3", "Luis Torres", "General", "Inactivo"], ["4", "Ana Ruiz", "Dermatología", "Activo"],
+                ["5", "Pedro Sola", "Gastro", "Activo"], ["6", "Elena Cano", "General", "Activo"]
+            ]},
+            "/principal1_2": {"t": "Control de Citas", "c": ["ID", "Fecha", "Paciente", "Médico"], "d": [
+                ["101", "2026-03-25", "Juan Pérez", "Dr. House"], ["102", "2026-03-25", "Ana Ruiz", "Dr. Grey"]
+            ]},
+            "/principal2_1": {"t": "Inventario Farmacia", "c": ["Cod", "Producto", "Stock", "Vence"], "d": [
+                ["P-001", "Paracetamol", "500 u.", "2027-12"], ["P-002", "Ibuprofeno", "120 u.", "2026-08"]
+            ]},
+            "/principal2_2": {"t": "Reportes Financieros", "c": ["ID", "Mes", "Ingresos", "Egresos"], "d": [
+                ["R-1", "Enero 2026", "$15,000", "$8,400"], ["R-2", "Febrero 2026", "$18,200", "$9,100"]
+            ]}
         }
-        titulo = titulos.get(path, "Módulo Demo")
-        
-        # Datos por default según el módulo
-        datos_demo = ""
-        if "1_1" in path:
-            datos_demo = "<tr><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td></tr>"
-        elif "1_2" in path:
-            datos_demo = "<tr><td>101</td><td>2026-03-25</td><td>10:00 AM</td><td><span class='status-pill active'>Confirmada</span></td></tr>"
-        else:
-            datos_demo = "<tr><td>001</td><td>Producto ABC</td><td>50 unidades</td><td><span class='status-pill inactive'>Stock Bajo</span></td></tr>"
+        mod = config.get(path)
+        headers = "".join([f"<th>{h}</th>" for h in mod['c']]) + "<th>Acciones</th>"
+        rows = ""
+        for row in mod['d']:
+            cells = "".join([f"<td>{cell}</td>" for cell in row])
+            rows += f"<tr class='static-row' data-visible='true'>{cells}<td>" \
+                    f"<button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> " \
+                    f"<button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
 
         content = f"""
         <div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <h2>{titulo}</h2>
-                <button class='btn-emerald' style='width:auto;' onclick='alert("Función deshabilitada en Demo")'>+ Agregar Nuevo</button>
+            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
+                <h2>{mod['t']}</h2>
+                <button class='btn-emerald' style='width:auto' onclick='alert("Solo lectura")'>+ Agregar</button>
             </div>
-            
-            <table>
-                <thead>
-                    <tr><th>ID</th><th>Descripción / Nombre</th><th>Detalle</th><th>Estado</th><th>Acciones</th></tr>
-                </thead>
-                <tbody>
-                    {datos_demo}
-                    <tr>
-                        <td>2</td>
-                        <td>Registro de Ejemplo</td>
-                        <td>Información estática</td>
-                        <td><span class='status-pill active'>OK</span></td>
-                        <td>
-                            <button class='btn-blue' onclick='alert("Editar deshabilitado")'>✏️</button>
-                            <button class='btn-red' onclick='alert("Borrar deshabilitado")'>🗑️</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            
-            <p style='margin-top:20px; color:#94a3b8; font-style:italic;'>
-                * Nota: Los botones de esta pantalla son ilustrativos y no afectan la base de datos.
-            </p>
-        </div>
-        """
+            <input type="text" id="txtBusca" onkeyup="filtrar('.static-row', 'td')" placeholder="🔍 Buscar..." style="width:250px;">
+            <table><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table>
+            <div class="paginador-ui">
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.static-row')">❮ Ant.</button>
+                <span id="infoPagina"></span>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.static-row')">Sig. ❯</button>
+            </div>
+        </div>"""
 
     # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
