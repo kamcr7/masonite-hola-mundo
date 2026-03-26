@@ -310,120 +310,175 @@ def application(environ, start_response):
         return [res]
  
     # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (CON VALIDACIÓN DE PERMISOS REAL)
+
+    # 2. API: CRUD PRINCIPAL (MODIFICADO PARA TABLA PERMISOS)
+
     # ----------------------------------------------------------
+
     if path == "/api/crud" and method == "POST":
+
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
+
         p   = json.loads(raw)
-        
-        # Obtenemos el usuario de la sesión para saber su idPerfil
-        user_session = session.get('user')
-        if not user_session:
-            start_response("401 Unauthorized", [("Content-Type", "application/json")])
-            return [b'{"ok":false,"error":"Sesion expirada"}']
 
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary para leer permisos fácil
+        conn = conectar_bd(); cur = conn.cursor()
+
         try:
-            # --- BLOQUE DE SEGURIDAD: VALIDACIÓN DE PERMISOS ---
-            # Mapeamos el nombre de la tabla al nombre del módulo (ej: 'usuarios' -> 'Usuarios')
-            tabla_a_modulo = {
-                'usuarios': 'Usuarios',
-                'perfiles': 'Perfiles',
-                'modulos': 'Módulos',
-                'permisos': 'Permisos'
-            }
-            nom_mod = tabla_a_modulo.get(p['table'], p['table'])
-
-            # Consultamos los permisos de este usuario para este módulo
-            cur.execute("""SELECT permisoCrear, permisoEditar, permisoEliminar 
-                           FROM permisos WHERE idPerfil = %s AND nombreModulo = %s""", 
-                        (user_session['idPerfil'], nom_mod))
-            perm = cur.fetchone()
-
-            # Si no es un SuperAdmin (idPerfil=1 opcional) validamos estrictamente:
-            if user_session['idPerfil'] != 1:
-                if p['action'] == 'save' and p['table'] != 'permisos': # save_permisos_matrix tiene su lógica
-                    if not perm or not perm['permisoCrear']:
-                        raise Exception(f"No tienes permiso para AGREGAR en {nom_mod}")
-                
-                elif p['action'] == 'update':
-                    if not perm or not perm['permisoEditar']:
-                        raise Exception(f"No tienes permiso para EDITAR en {nom_mod}")
-                
-                elif p['action'] == 'delete':
-                    if not perm or not perm['permisoEliminar']:
-                        raise Exception(f"No tienes permiso para ELIMINAR en {nom_mod}")
-            # --------------------------------------------------
-
-            # Volvemos a cursor normal para el resto del CRUD si prefieres
-            cur.close(); cur = conn.cursor() 
 
             if p['action'] == 'delete':
+
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
+
+
+            # ACCIÓN ESPECIAL PARA LA MATRIZ DE PERMISOS
+
             elif p['action'] == 'save_permisos_matrix':
-                # Solo el admin debería poder guardar permisos
-                if user_session['idPerfil'] != 1: raise Exception("No autorizado")
+
                 id_p = p['data']['idp']
+
+                # 1. Limpiamos los permisos anteriores del perfil
+
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
+
+                # 2. Insertamos la nueva matriz con tus columnas de Railway
+
                 for per in p['data']['perms']:
+
                     cur.execute("""
-                        INSERT INTO permisos 
+
+                        INSERT INTO permisos
+
                         (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar)
+
                         VALUES (%s, %s, %s, %s, %s, %s)
+
                     """, (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
 
+
+
             elif p['action'] == 'save':
+
                 if p['table'] == 'usuarios':
+
                     u_nom = p['data']['u'].strip()
+
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
+
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
+
                     cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
+
                                 (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
 
+
+
                 elif p['table'] == 'perfiles':
+
                     nombre = p['data']['n'].strip()
+
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil)=LOWER(%s)", (nombre,))
+
                     if cur.fetchone(): raise Exception("Ese perfil ya existe")
+
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (nombre,))
 
+
+
                 elif p['table'] == 'modulos':
+
                     m_nom = p['data']['n'].strip()
+
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo)=LOWER(%s)", (m_nom,))
+
                     if cur.fetchone(): raise Exception("El módulo ya existe")
+
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
+
                                 (m_nom, p['data']['r'], p['data']['p']))
 
+
+
+                # Bloque antiguo de permisos actualizado por si acaso
+
+                elif p['table'] == 'permisos':
+
+                    id_p = p['data']['idp']
+
+                    cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
+
+                    for per in p['data']['perms']:
+
+                        cur.execute("""INSERT INTO permisos
+
+                            (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar)
+
+                            VALUES (%s,%s,%s,%s,%s,%s)""",
+
+                            (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
+
+
+
             elif p['action'] == 'update':
+
                 if p['table'] == 'usuarios':
+
                     u_nom = p['data']['u'].strip()
+
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s) AND id!=%s", (u_nom, p['id']))
+
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
+
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
+
                                 (u_nom, p['data']['idp'], p['data']['st'], p['id']))
 
+
+
                 elif p['table'] == 'perfiles':
+
                     nombre = p['data']['n'].strip()
+
                     cur.execute("SELECT id FROM perfiles WHERE LOWER(strNombrePerfil)=LOWER(%s) AND id!=%s", (nombre, p['id']))
+
                     if cur.fetchone(): raise Exception("Ya existe otro perfil con ese nombre")
+
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", (nombre, p['id']))
 
+
+
                 elif p['table'] == 'modulos':
+
                     m_nom = p['data']['n'].strip()
+
                     cur.execute("SELECT id FROM modulos WHERE LOWER(strNombreModulo)=LOWER(%s) AND id!=%s", (m_nom, p['id']))
+
                     if cur.fetchone(): raise Exception("Ya existe otro módulo con ese nombre")
+
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
+
                                 (m_nom, p['data']['r'], p['data']['p'], p['id']))
 
+
+
             conn.commit()
+
             res = b'{"ok":true}'
+
         except Exception as e:
+
             if conn: conn.rollback()
+
             res = json.dumps({"ok": False, "error": str(e)}).encode()
+
         finally:
+
             if cur: cur.close()
+
             if conn: conn.close()
+
         start_response("200 OK", [("Content-Type", "application/json")])
+
         return [res]
  
     # ----------------------------------------------------------
