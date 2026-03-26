@@ -695,8 +695,8 @@ def application(environ, start_response):
           }}
         </script>"""
      
-    # ----------------------------------------------------------
-    # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY)
+ # ----------------------------------------------------------
+    # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY) - LIGHT MODE
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
@@ -714,40 +714,48 @@ def application(environ, start_response):
 
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
-        # Renderizado de filas con IDs únicos para cada checkbox
         rows = ""
         for m in todos_mods:
             rows += f"""
             <tr class='perm-row' data-visible='true' data-modname='{m['nm']}'>
-              <td><b class='perm-name'>{m['nm']}</b><br><small style='color:#94a3b8;'>{m['p']}</small></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:auto; margin:0;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='c_{m["id"]}' style='width:auto; margin:0;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:auto; margin:0;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:auto; margin:0;'></td>
+              <td>
+                <b class='perm-name' style='color:var(--text);'>{m['nm']}</b><br>
+                <small style='color:var(--text-muted); font-size:11px; text-transform:uppercase;'>{m['p']}</small>
+              </td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='c_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
             </tr>"""
 
         content = f"""
         <div class='card'>
-          <h2 style="margin-top:0; color:var(--emerald);">🛡️ Matriz de Permisos</h2>
+          <h2 style="margin-top:0; color:var(--emerald); display:flex; align-items:center; gap:10px;">
+            <span style='font-size:24px;'>🛡️</span> Matriz de Permisos
+          </h2>
+          <p style='color:var(--text-muted); margin-bottom:20px;'>Configura los privilegios de acceso para cada rol del sistema.</p>
+          
           <label>Selecciona un Perfil para configurar</label>
           <select id='sel_perfil' onchange='cargarPermisos(this.value)'
-            style='border:2px solid var(--emerald); max-width:350px; margin-bottom:10px;'>
+            style='border:2px solid var(--emerald); max-width:400px; margin-bottom:10px; font-weight:bold;'>
             <option value=''>-- Seleccione un perfil --</option>{p_opts}
           </select>
 
           <div id='area_permisos' style='display:none; margin-top:25px;'>
-            <div class='toolbar'>
+            <div class='toolbar' style='background:#f1f5f9; padding:15px; border-radius:12px; border:1px solid var(--border);'>
               <div style='display:flex; gap:10px;'>
-                <button class='btn-blue' onclick='bulk(true)' style='width:auto'>☑ Todo</button>
-                <button class='btn-red'  onclick='bulk(false)' style='width:auto'>☐ Nada</button>
+                <button class='btn-emerald' onclick='bulk(true)' style='width:auto; padding:8px 15px; font-size:12px;'>☑ Marcar Todo</button>
+                <button class='btn-salir'  onclick='bulk(false)' style='width:auto; padding:8px 15px; font-size:12px;'>☐ Desmarcar Todo</button>
               </div>
-              <input type='text' id='txtBusca' class='search-input'
+              <input type='text' id='txtBusca' class='search-input' 
+                style='margin-bottom:0; background:white;'
                 onkeyup="paginaActual=1; filtrar('.perm-row','.perm-name');" placeholder='🔍 Buscar módulo...'>
             </div>
-            <table>
+
+            <table style='margin-bottom:20px;'>
               <thead>
                 <tr>
-                    <th style="text-align:left;">MÓDULO</th>
+                    <th style="text-align:left; width:40%;">MÓDULO</th>
                     <th style="text-align:center;">VER</th>
                     <th style="text-align:center;">CREAR</th>
                     <th style="text-align:center;">EDITAR</th>
@@ -756,13 +764,15 @@ def application(environ, start_response):
               </thead>
               <tbody>{rows}</tbody>
             </table>
-            <div class='paginador-ui'>
+
+            <div class='paginador-ui' style='margin-bottom:25px;'>
               <button class='btn-blue' onclick="cambiarPagina(-1,'.perm-row')">❮ Anterior</button>
-              <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
+              <span id='infoPagina' style='color:var(--text); font-weight:bold; background:#e2e8f0; padding:5px 15px; border-radius:20px; font-size:13px;'></span>
               <button class='btn-blue' onclick="cambiarPagina(1,'.perm-row')">Siguiente ❯</button>
             </div>
-            <button class='btn-emerald' style='margin-top:20px; font-size:16px; padding:15px;' onclick='guardarPermisos()'>
-              💾 GUARDAR CONFIGURACIÓN ACTUAL
+
+            <button class='btn-emerald' style='font-size:16px; padding:18px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);' onclick='guardarPermisos()'>
+              💾 GUARDAR CONFIGURACIÓN DE SEGURIDAD
             </button>
           </div>
         </div>
@@ -771,7 +781,7 @@ def application(environ, start_response):
           async function cargarPermisos(idp) {{
             if (!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
             
-            // Limpiar todo antes de cargar
+            // Limpiar checks
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
             
             const res  = await fetch('/api/get_permisos?idp=' + idp);
@@ -779,7 +789,7 @@ def application(environ, start_response):
             
             if (data.ok) {{
               data.perms.forEach(p => {{
-                // Buscamos la fila que tenga el nombre del módulo
+                // Buscamos la fila por el nombre del módulo guardado
                 const fila = document.querySelector(`tr[data-modname="${{p.nombreModulo}}"]`);
                 if (fila) {{
                     const idm = fila.querySelector('.perm-check').dataset.mod;
@@ -804,9 +814,8 @@ def application(environ, start_response):
 
           function guardarPermisos() {{
             const idp = document.getElementById('sel_perfil').value;
-            if (!idp) return alert("Selecciona un perfil primero");
+            if (!idp) return;
             
-            // Recopilamos los datos basándonos en las filas de la tabla
             const matrix = [];
             document.querySelectorAll('.perm-row').forEach(tr => {{
                 const idm = tr.querySelector('.perm-check').dataset.mod;
@@ -819,7 +828,9 @@ def application(environ, start_response):
                 }});
             }});
 
-            runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
+            if(confirm("¿Deseas actualizar los permisos para este perfil?")) {{
+                runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
+            }}
           }}
         </script>"""
  
