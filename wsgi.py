@@ -442,10 +442,10 @@ def application(environ, start_response):
             <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Borrar</button>
           </td>
         </tr>""" for u in usuarios])
- 
+
         cur.execute("SELECT * FROM perfiles")
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
- 
+
         content = f"""
         <div class='card'>
           <h2 style="margin-top:0;">👥 Gestión de Usuarios</h2>
@@ -464,50 +464,61 @@ def application(environ, start_response):
             <button class='btn-blue' onclick="cambiarPagina(1,'.u-row')">Siguiente ❯</button>
           </div>
         </div>
- 
-        <!-- Modal Nuevo -->
+
         <div id='mNew' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mNew')">&times;</span>
           <h3>Nuevo Usuario</h3>
           <div class='grid-2'>
-            <div><label>Nombre</label><input id='un' maxlength='15'></div>
-            <div><label>Pass (5-8 carac.)</label><input id='up' type='password' maxlength='8'></div>
-            <div><label>Correo (@gmail.com)</label><input id='uc' type='email'></div>
-            <div><label>Teléfono (10 dígitos)</label><input id='ut' maxlength='10'></div>
+            <div><label>Nombre (Solo letras)</label>
+                 <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
+            <div><label>Pass (5-8 carac.)</label>
+                 <input id='up' type='password' maxlength='8'></div>
+            <div><label>Correo (@gmail.com)</label>
+                 <input id='uc' type='email' placeholder='ejemplo@gmail.com'></div>
+            <div><label>Teléfono (10 dígitos)</label>
+                 <input id='ut' maxlength='10' onkeypress="return /^[0-9]+$/.test(event.key)"></div>
             <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
             <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
           </div>
           <button class='btn-emerald' onclick='validateAndSave()'>GUARDAR USUARIO</button>
         </div></div>
- 
-        <!-- Modal Editar -->
+
         <div id='mEdit' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mEdit')">&times;</span>
           <h3>Editar Usuario</h3>
           <input type='hidden' id='ed_id'>
           <div class='grid-2'>
-            <div><label>Usuario</label><input id='ed_u'></div>
+            <div><label>Usuario</label>
+                 <input id='ed_u' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
             <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
             <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
           </div>
           <button class='btn-emerald' onclick='updateUser()'>ACTUALIZAR</button>
         </div></div>
- 
+
         <script>
           function validateAndSave() {{
             const u = document.getElementById('un').value.trim();
             const p = document.getElementById('up').value;
             const c = document.getElementById('uc').value.trim();
             const t = document.getElementById('ut').value.trim();
-            if (!u||!p||!c||!t) return alert("Todos los campos son obligatorios");
-            if (p.length < 5) return alert("La contraseña debe tener al menos 5 caracteres");
-            if (!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
-            if (!/^\d{{10}}$/.test(t)) return alert("El teléfono debe tener exactamente 10 dígitos");
+            
+            if (!u||!p||!c||!t) return alert("⚠️ Todos los campos son obligatorios");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+            if (p.length < 5 || p.length > 8) return alert("⚠️ La contraseña debe tener entre 5 y 8 caracteres");
+            if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
+            if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
+            
             runCrud('save','usuarios',0,{{ u, p, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value }});
           }}
+          
           function updateUser() {{
+            const u = document.getElementById('ed_u').value.trim();
+            if (!u) return alert("⚠️ El nombre es obligatorio");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+
             runCrud('update','usuarios', document.getElementById('ed_id').value, {{
-              u: document.getElementById('ed_u').value,
+              u: u,
               idp: document.getElementById('ed_idp').value,
               st: document.getElementById('ed_st').value
             }});
@@ -529,7 +540,7 @@ def application(environ, start_response):
             <button class='btn-red' onclick="runCrud('delete','perfiles',{p['id']})">Borrar</button>
           </td>
         </tr>""" for i, p in enumerate(perfiles, 1)])
- 
+
         content = f"""
         <div class='card'>
           <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
@@ -548,37 +559,39 @@ def application(environ, start_response):
             <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
           </div>
         </div>
- 
+
         <div id='mNewP' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mNewP')">&times;</span>
           <h3>Nuevo Perfil</h3>
-          <label>Nombre</label>
-          <input id='pn' placeholder='Nombre del perfil...'>
+          <label>Nombre del Perfil (Solo letras)</label>
+          <input id='pn' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
         </div></div>
- 
+
         <div id='mEditP' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mEditP')">&times;</span>
           <h3>Editar Perfil</h3>
           <input type='hidden' id='ed_id'>
           <label>Nombre</label>
-          <input id='ed_n'>
+          <input id='ed_n' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
         </div></div>
- 
+
         <script>
           function savePerfil() {{
             const n = document.getElementById('pn').value.trim();
-            if (!n) return alert("Nombre obligatorio");
+            if (!n) return alert("⚠️ El nombre es obligatorio");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
             runCrud('save','perfiles',0,{{n}});
           }}
           function updatePerfil() {{
             const n = document.getElementById('ed_n').value.trim();
-            if (!n) return alert("Nombre obligatorio");
+            if (!n) return alert("⚠️ El nombre es obligatorio");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
             runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
           }}
         </script>"""
- 
+
     # ----------------------------------------------------------
     # 9. MÓDULOS
     # ----------------------------------------------------------
@@ -595,7 +608,7 @@ def application(environ, start_response):
             <button class='btn-red' onclick="runCrud('delete','modulos',{m['id']})">Borrar</button>
           </td>
         </tr>""" for m in modulos])
- 
+
         content = f"""
         <div class='card'>
           <h2 style="margin-top:0;">📦 Gestión de Módulos</h2>
@@ -614,30 +627,33 @@ def application(environ, start_response):
             <button class='btn-blue' onclick="cambiarPagina(1,'.m-row')">Siguiente ❯</button>
           </div>
         </div>
- 
+
         <div id='mNewM' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mNewM')">&times;</span>
           <h3>Nuevo Módulo</h3>
-          <label>Nombre</label><input id='mn'>
+          <label>Nombre del Módulo (Solo letras)</label>
+          <input id='mn' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <label>Menú Padre</label>
           <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
           <button class='btn-emerald' onclick='saveMod()'>GUARDAR</button>
         </div></div>
- 
+
         <div id='mEditM' class='modal'><div class='modal-content'>
           <span class='close-x' onclick="closeM('mEditM')">&times;</span>
           <h3>Editar Módulo</h3>
           <input type='hidden' id='ed_id'>
-          <label>Nombre</label><input id='ed_n_mod'>
+          <label>Nombre</label>
+          <input id='ed_n_mod' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
           <label>Menú Padre</label>
           <select id='ed_p_mod'><option>Principal 1</option><option>Principal 2</option></select>
           <button class='btn-emerald' onclick='updateMod()'>ACTUALIZAR</button>
         </div></div>
- 
+
         <script>
           function saveMod() {{
             const n = document.getElementById('mn').value.trim();
-            if (!n) return alert("Nombre obligatorio");
+            if (!n) return alert("⚠️ Nombre obligatorio");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
             const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
             runCrud('save','modulos',0,{{ n, r, p: document.getElementById('mp').value }});
           }}
@@ -645,7 +661,8 @@ def application(environ, start_response):
             const id = document.getElementById('ed_id').value;
             const n  = document.getElementById('ed_n_mod').value.trim();
             const p  = document.getElementById('ed_p_mod').value;
-            if (!n) return alert("Nombre obligatorio");
+            if (!n) return alert("⚠️ Nombre obligatorio");
+            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(n)) return alert("⚠️ Solo se permiten letras");
             const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
             runCrud('update','modulos', id, {{ n, r, p }});
           }}
