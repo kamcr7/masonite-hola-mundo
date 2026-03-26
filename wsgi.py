@@ -682,14 +682,15 @@ def application(environ, start_response):
 
         // Al entrar, limpiar buscador y renderizar
        window.onload = () => {
-    // Limpiar buscador si existe
-    const b = document.getElementById('txtBusca');
-    if(b) b.value = "";
-
-    // Renderizar según la pantalla activa
-    if(document.querySelector('.u-row')) renderTable('.u-row');
-    if(document.querySelector('.p-row')) renderTable('.p-row');
-    if(document.querySelector('.st-row')) renderTable('.st-row'); 
+    const buscador = document.getElementById('txtBusca');
+    if (buscador) {
+        buscador.value = ""; // Esto borra cualquier texto que el navegador haya puesto solo
+        if(document.querySelector('.st-row')) renderTable('.st-row');
+    }
+    
+    // Esto hace que la tabla se dibuje correctamente al inicio
+    if (document.querySelector('.u-row')) renderTable('.u-row');
+};
     </script>
     """
 
