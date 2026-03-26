@@ -241,8 +241,8 @@ def application(environ, start_response):
     # --- CONEXIÓN PARA RENDERIZADO DE PANTALLAS ---
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
- # ==========================================
-    # --- PANTALLA USUARIOS (CON VALIDACIÓN ESTRICTA) ---
+# ==========================================
+    # --- PANTALLA USUARIOS (VALIDACIÓN MEJORADA) ---
     # ==========================================
     if path == "/usuarios":
         cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil = p.id")
@@ -284,10 +284,14 @@ def application(environ, start_response):
             <span class='close-x' onclick="closeM('mNew')">&times;</span>
             <h3>Nuevo Usuario</h3>
             <div class='grid-2'>
-                <div><label>Nombre</label><input id='un' maxlength="15"></div>
+                <div><label>Nombre</label>
+                    <input id='un' maxlength="15" onkeypress="return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/i.test(event.key)">
+                </div>
                 <div><label>Pass (5-8 carac.)</label><input id='up' type='password' maxlength="8"></div>
-                <div><label>Correo (@gmail.com)</label><input id='uc' type='email'></div>
-                <div><label>Teléfono (10 dig)</label><input id='ut' maxlength="10"></div>
+                <div><label>Correo (@gmail.com)</label><input id='uc' type='email' maxlength="30"></div>
+                <div><label>Teléfono (10 dig)</label>
+                    <input id='ut' maxlength="10" onkeypress="return /^[0-9]+$/.test(event.key)">
+                </div>
                 <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
@@ -299,14 +303,15 @@ def application(environ, start_response):
             <h3>Editar Usuario</h3>
             <input type='hidden' id='ed_id'>
             <div class='grid-2'>
-                <div><label>Usuario</label><input id='ed_u'></div>
+                <div><label>Usuario</label>
+                    <input id='ed_u' maxlength="15" onkeypress="return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/i.test(event.key)">
+                </div>
                 <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
             </div>
             <button class='btn-emerald' onclick="updateUser()">ACTUALIZAR</button>
         </div></div>
         """
-
     # ==========================================
     # --- PANTALLA PERFILES CORREGIDA ---
     # ==========================================
@@ -456,6 +461,8 @@ def application(environ, start_response):
     # --- CRUDS ESTATICOS ---
     # ==========================================
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
+        
+        
         # Mapeo de títulos según la ruta
         titulos = {
             "/principal1_1": "Módulo Estático 1.1",
@@ -527,6 +534,7 @@ def application(environ, start_response):
             </div>
         </div>
         """
+        
        # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
@@ -565,25 +573,40 @@ def application(environ, start_response):
             renderTable(rowClass);
         }
 
-        // VALIDACIÓN USUARIOS
+        // --- VALIDACIÓN USUARIOS ---
         function validateAndSave() {
             const u = document.getElementById('un').value.trim();
             const p = document.getElementById('up').value;
             const c = document.getElementById('uc').value.trim();
             const t = document.getElementById('ut').value.trim();
             
-            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
-            if(p.length < 5) return alert("La contraseña debe ser mayor a 5 caracteres");
-            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
-            if(t.length !== 10) return alert("El teléfono debe tener 10 dígitos");
+            // Expresión para solo letras (incluye espacios y acentos)
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+            // Expresión para solo números
+            const regexNumeros = /^[0-9]+$/;
 
-            runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
+            
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+            if(p.length < 5) return alert("La contraseña debe tener entre 5 y 8 caracteres");
+            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+            if(t.length !== 10 || !regexNumeros.test(t)) return alert("El teléfono debe tener exactamente 10 números");
+
+            runCrud('save', 'usuarios', 0, { u, p, c, t, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+            closeM('mNew');
         }
 
         function updateUser() {
+            const u = document.getElementById('ed_u').value.trim();
+            const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+
+            if(!u) return alert("El nombre es obligatorio");
+            if(!regexLetras.test(u)) return alert("El nombre solo debe contener letras");
+
             runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
-                u: document.getElementById('ed_u').value, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
+                u, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
             });
+            closeM('mEdit');
         }
 
         // MODULOS
