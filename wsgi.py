@@ -495,49 +495,60 @@ def application(environ, start_response):
         
         # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
-        # Título dinámico basado en la ruta
-        titulos = {
-            "/principal1_1": "Gestión de Pacientes (Demo)",
-            "/principal1_2": "Control de Citas (Demo)",
-            "/principal2_1": "Inventario Farmacia (Demo)",
-            "/principal2_2": "Reportes Financieros (Demo)"
+        # 1. Configuración de títulos y columnas según la ruta
+        configs = {
+            "/principal1_1": {"t": "Gestión de Pacientes", "h": ["ID", "Nombre", "Especialidad", "Estado"]},
+            "/principal1_2": {"t": "Control de Citas", "h": ["ID", "Fecha", "Hora", "Estado"]},
+            "/principal2_1": {"t": "Inventario Farmacia", "h": ["Cod", "Producto", "Stock", "Estado"]},
+            "/principal2_2": {"t": "Reportes Financieros", "h": ["ID", "Mes", "Monto", "Estado"]}
         }
-        titulo = titulos.get(path, "Módulo Demo")
         
-        # Datos por default según el módulo
-        datos_demo = ""
-        if "1_1" in path:
-            datos_demo = "<tr><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td></tr>"
-        elif "1_2" in path:
-            datos_demo = "<tr><td>101</td><td>2026-03-25</td><td>10:00 AM</td><td><span class='status-pill active'>Confirmada</span></td></tr>"
-        else:
-            datos_demo = "<tr><td>001</td><td>Producto ABC</td><td>50 unidades</td><td><span class='status-pill inactive'>Stock Bajo</span></td></tr>"
+        conf = configs.get(path)
+        titulo_modulo = conf["t"]
+        headers_html = "".join([f"<th>{h}</th>" for h in conf["h"]]) + "<th>Acciones</th>"
 
-        # ... (todo tu código anterior de filas y headers igual)
+        # 2. Datos de ejemplo (filas)
+        if "1_1" in path:
+            rows_html = "<tr class='static-row' data-visible='true'><td>1</td><td>Juan Pérez</td><td>General</td><td><span class='status-pill active'>Activo</span></td>"
+        elif "1_2" in path:
+            rows_html = "<tr class='static-row' data-visible='true'><td>101</td><td>2026-03-25</td><td>10:00 AM</td><td><span class='status-pill active'>Confirmada</span></td>"
+        else:
+            rows_html = "<tr class='static-row' data-visible='true'><td>001</td><td>Producto ABC</td><td>50 u.</td><td><span class='status-pill inactive'>Stock Bajo</span></td>"
+        
+        # Añadir botones de acción a la fila
+        rows_html += "<td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
+
         content = f"""
         <div class='card'>
             <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
-                <h2>{mod['t']}</h2>
+                <h2>{titulo_modulo}</h2>
                 <button class='btn-emerald' style='width:auto' onclick='alert("Solo lectura")'>+ Agregar</button>
             </div>
             <input type="text" id="txtBusca" onkeyup="filtrar('.static-row', 'td')" placeholder="🔍 Buscar..." style="width:250px;">
-            <table><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table>
+            <table>
+                <thead><tr>{headers_html}</tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
             <div class="paginador-ui">
                 <button class="btn-blue" onclick="cambiarPagina(-1, '.static-row')">❮ Ant.</button>
-                <span id="infoPagina">Cargando...</span>
+                <span id="infoPagina"></span>
                 <button class="btn-blue" onclick="cambiarPagina(1, '.static-row')">Sig. ❯</button>
             </div>
         </div>
         <script>
-            // Forzar renderizado inmediato si el DOM ya está listo
+            // Forzar el renderizado de la tabla inmediatamente
             setTimeout(() => {{ 
-                if(typeof renderTable === 'function') renderTable('.static-row'); 
+                if(typeof renderTable === 'function') {{
+                    paginaActual = 1;
+                    renderTable('.static-row'); 
+                }}
             }}, 50);
         </script>
         """
-        # IMPORTANTE: No olvides retornar el layout al final de la ruta
-        return render_layout(mod['t'], content, u_data)(start_response)
-
+        # IMPORTANTE: Asegúrate de que 'u_data' sea la variable que contiene los datos del usuario logueado
+        response_body = render_layout(titulo_modulo, content, u_data)
+        start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')])
+        return [response_body.encode("utf-8")]
     # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
