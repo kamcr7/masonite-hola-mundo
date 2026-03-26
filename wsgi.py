@@ -87,39 +87,88 @@ def render_layout(title, content, user=None):
         .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
         .modal-content {{ background:var(--card); width:500px; margin:5% auto; padding:35px; border-radius:20px; border: 1px solid var(--border); position:relative; }}
         .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
-        
-        /* Estilos específicos para Permisos */
         .grid-permisos {{ display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:15px; margin-top:15px; }}
         .check-item {{ background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--border); display:flex; align-items:center; gap:10px; cursor:pointer; }}
         .check-item input {{ width:auto; margin:0; cursor:pointer; }}
-        
         .close-x {{ position:absolute; top:20px; right:25px; color:#94a3b8; cursor:pointer; font-size:24px; }}
         .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
+        .paginador-ui {{ margin-top:20px; display:flex; justify-content:center; align-items:center; gap:20px; }}
     </style>
     <script>
+        // Usamos var para evitar errores de redestinación si el script se carga dos veces
+        if (typeof paginaActual === 'undefined') {{ var paginaActual = 1; }}
+        var filasPorPagina = 5;
+
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
+
+        // Paginación Universal
+        function renderTable(rowClass) {{
+            const filas = Array.from(document.querySelectorAll(rowClass));
+            if(filas.length === 0) return;
+            const visibles = filas.filter(r => r.dataset.visible !== "false");
+            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
+            
+            filas.forEach(r => r.style.display = 'none');
+            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina)
+                   .forEach(r => r.style.display = '');
+
+            const info = document.getElementById('infoPagina');
+            if(info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
+        }}
+
+        function cambiarPagina(dir, rowClass) {{
+            paginaActual += dir;
+            renderTable(rowClass);
+        }}
+
+        // Buscador
+        function filtrar(rowClass, nameClass) {{
+            const filtro = document.getElementById('txtBusca').value.toLowerCase();
+            document.querySelectorAll(rowClass).forEach(row => {{
+                const texto = row.innerText.toLowerCase();
+                row.dataset.visible = texto.includes(filtro);
+            }});
+            paginaActual = 1;
+            renderTable(rowClass);
+        }}
+
+        // Lógica de Permisos
+        async function cargarPermisos(idp) {{
+            if(!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if(data.ok) {{
+                data.perms.forEach(p => {{
+                    if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e && document.getElementById('e_'+p.idm)) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
+                }});
+                document.getElementById('area_permisos').style.display = 'block';
+                paginaActual = 1; 
+                renderTable('.perm-row');
+            }}
+        }}
+
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
             const j = await res.json();
             if(j.ok) location.reload(); 
             else alert("Error: " + (j.error || "Desconocido"));
         }}
+
         function preEdit(id, fields, mId='mEdit') {{
             for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
             document.getElementById('ed_id').value = id;
             openM(mId);
         }}
-        function handleImg(e, prevId) {{
-            const reader = new FileReader();
-            reader.onload = () => {{ 
-                const prev = document.getElementById(prevId);
-                prev.src = reader.result;
-                prev.style.display = 'block';
-            }};
-            reader.readAsDataURL(e.target.files[0]);
-        }}
+
+        window.onload = () => {{
+            if(document.querySelector('.static-row')) renderTable('.static-row');
+        }};
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -464,37 +513,30 @@ def application(environ, start_response):
         else:
             datos_demo = "<tr><td>001</td><td>Producto ABC</td><td>50 unidades</td><td><span class='status-pill inactive'>Stock Bajo</span></td></tr>"
 
+        # ... (todo tu código anterior de filas y headers igual)
         content = f"""
         <div class='card'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <h2>{titulo}</h2>
-                <button class='btn-emerald' style='width:auto;' onclick='alert("Función deshabilitada en Demo")'>+ Agregar Nuevo</button>
+            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
+                <h2>{mod['t']}</h2>
+                <button class='btn-emerald' style='width:auto' onclick='alert("Solo lectura")'>+ Agregar</button>
             </div>
-            
-            <table>
-                <thead>
-                    <tr><th>ID</th><th>Descripción / Nombre</th><th>Detalle</th><th>Estado</th><th>Acciones</th></tr>
-                </thead>
-                <tbody>
-                    {datos_demo}
-                    <tr>
-                        <td>2</td>
-                        <td>Registro de Ejemplo</td>
-                        <td>Información estática</td>
-                        <td><span class='status-pill active'>OK</span></td>
-                        <td>
-                            <button class='btn-blue' onclick='alert("Editar deshabilitado")'>✏️</button>
-                            <button class='btn-red' onclick='alert("Borrar deshabilitado")'>🗑️</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            
-            <p style='margin-top:20px; color:#94a3b8; font-style:italic;'>
-                * Nota: Los botones de esta pantalla son ilustrativos y no afectan la base de datos.
-            </p>
+            <input type="text" id="txtBusca" onkeyup="filtrar('.static-row', 'td')" placeholder="🔍 Buscar..." style="width:250px;">
+            <table><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table>
+            <div class="paginador-ui">
+                <button class="btn-blue" onclick="cambiarPagina(-1, '.static-row')">❮ Ant.</button>
+                <span id="infoPagina">Cargando...</span>
+                <button class="btn-blue" onclick="cambiarPagina(1, '.static-row')">Sig. ❯</button>
+            </div>
         </div>
+        <script>
+            // Forzar renderizado inmediato si el DOM ya está listo
+            setTimeout(() => {{ 
+                if(typeof renderTable === 'function') renderTable('.static-row'); 
+            }}, 50);
+        </script>
         """
+        # IMPORTANTE: No olvides retornar el layout al final de la ruta
+        return render_layout(mod['t'], content, u_data)(start_response)
 
     # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
