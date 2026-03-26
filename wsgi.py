@@ -444,7 +444,7 @@ def application(environ, start_response):
         </div>
         """
 
-   # ==========================================
+    # ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
     content += """
@@ -470,15 +470,11 @@ def application(environ, start_response):
             const filas = Array.from(document.querySelectorAll(rowClass));
             const visibles = filas.filter(r => r.dataset.visible !== "false");
             const total = Math.ceil(visibles.length / filasPorPagina) || 1;
-            
             if (paginaActual > total) paginaActual = total;
-            if (paginaActual < 1) paginaActual = 1;
             
             filas.forEach(r => r.style.display = 'none');
-            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina).forEach(r => r.style.display = '');
-            
-            const info = document.getElementById('infoPagina');
-            if(info) info.innerText = `Página ${paginaActual} de ${total}`;
+            visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
+            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
         }
 
         function cambiarPagina(delta, rowClass) {
@@ -531,7 +527,7 @@ def application(environ, start_response):
             runCrud('save', 'perfiles', 0, {n});
         }
         function updatePerfil() {
-            runCrud('update', 'perfiles', document.getElementById('ed_id.value'), {n: document.getElementById('ed_n').value});
+            runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
         }
 
         // PERMISOS
@@ -542,14 +538,14 @@ def application(environ, start_response):
             const data = await res.json();
             if(data.ok) {
                 data.perms.forEach(p => {
-                    if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
-                    if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
-                    if(p.e && document.getElementById('e_'+p.idm)) document.getElementById('e_'+p.idm).checked = true;
-                    if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
+                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
                 paginaActual = 1;
-                renderTable('.perm-row');
+                filtrar('.perm-row', '.perm-name');
             }
         }
 
@@ -575,24 +571,20 @@ def application(environ, start_response):
             runCrud('save', 'permisos', 0, { idp, perms: matrix });
         }
 
+        // Al entrar, limpiar buscador y renderizar
         window.onload = () => {
             const b = document.getElementById('txtBusca');
             if(b) b.value = "";
-            if(document.querySelector('.u-row')) renderTable('.u-row');
-            if(document.querySelector('.p-row')) renderTable('.p-row');
-            if(document.querySelector('.m-row')) renderTable('.m-row');
-            if(document.querySelector('.static-row')) renderTable('.static-row');
+            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
         };
     </script>
     """
 
-    # --- CIERRE FINAL SEGURO ---
-    if 'cur' in locals() and cur is not None:
-        try: cur.close()
-        except: pass
-    if 'conn' in locals() and conn is not None:
-        try: conn.close()
-        except: pass
+    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
+    if 'cur' in locals() and cur: cur.close()
+    if 'conn' in locals() and conn: conn.close()
     
-    start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-    return [render_layout("Clinica", content, u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")])
+    return [render_layout("Clinica", content, u_data).encode()]
