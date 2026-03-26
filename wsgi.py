@@ -457,46 +457,56 @@ def application(environ, start_response):
         </div>
         """
         
+    
+        
+        
        # ==========================================
     # --- PANTALLAS DE CRUDS ESTÁTICOS ---
     # ==========================================
-   # ... después del bloque de usuarios ...
-    
     elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
-        # 1. Definir el título según el clic del usuario
+        # Mapeo de títulos según la ruta
         titulos = {
             "/principal1_1": "Principal 1.1",
             "/principal1_2": "Principal 1.2",
             "/principal2_1": "Principal 2.1",
             "/principal2_2": "Principal 2.2"
         }
-        titulo_modulo = titulos.get(path, "Módulo")
+        titulo_modulo = titulos.get(path, "Módulo Estático")
         
-        # 2. Construir el HTML estático (ID, Descripción, Estado)
-        # IMPORTANTE: Usamos content = f""" (sin el +) si es la primera asignación en este bloque
-        content = f"""
+        # HTML del CRUD estático (Simulando la misma estructura de Usuarios)
+        content += f"""
         <div class='card'>
-            <h2><i class='bx bx-cube'></i> Gestión {titulo_modulo} (Vista Estática)</h2>
+            <h2><i class='bx bx-cube'></i> Gestión {titulo_modulo} (Demo)</h2>
             <div style='display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;'>
-                <button class='btn-emerald' style='width:auto' onclick="alert('Demo')">+ NUEVO REGISTRO</button>
-                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.st-row', '.st-name');" placeholder="🔍 Buscar..." style="width:200px; margin:0;">
+                <button class='btn-emerald' style='width:auto' onclick="alert('Esta es una pantalla estática de ejemplo')">+ NUEVO REGISTRO</button>
+                <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.st-row', '.st-name');" placeholder="🔍 Buscar en demo..." style="width:200px; margin:0;">
             </div>
             <table>
                 <thead>
-                    <tr><th>ID</th><th>DESCRIPCIÓN</th><th>ESTADO</th><th>ACCIONES</th></tr>
+                    <tr>
+                        <th>ID</th>
+                        <th>DESCRIPCIÓN</th>
+                        <th>ESTADO</th>
+                        <th>ACCIONES</th>
+                    </tr>
                 </thead>
                 <tbody>
                     <tr class='st-row'>
-                        <td>101</td>
-                        <td><b class='st-name'>Dato de ejemplo A</b></td>
+                        <td>001</td>
+                        <td><b class='st-name'>Muestra de Datos A</b></td>
                         <td><span class='status-pill active'>Activo</span></td>
-                        <td><button class='btn-blue' onclick="alert('Demo')">Editar</button></td>
+                        <td>
+                            <button class='btn-blue' onclick="alert('Demo Editar')">Editar</button>
+                            <button class='btn-red' onclick="alert('Demo Borrar')">Borrar</button>
+                        </td>
                     </tr>
                     <tr class='st-row'>
-                        <td>102</td>
-                        <td><b class='st-name'>Dato de ejemplo B</b></td>
+                        <td>002</td>
+                        <td><b class='st-name'>Muestra de Datos B</b></td>
                         <td><span class='status-pill active'>Activo</span></td>
-                        <td><button class='btn-blue' onclick="alert('Demo')">Editar</button></td>
+                        <td>
+                            <button class='btn-blue' onclick="alert('Demo Editar')">Editar</button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -685,7 +695,6 @@ def application(environ, start_response):
     const buscador = document.getElementById('txtBusca');
     if (buscador) {
         buscador.value = ""; // Esto borra cualquier texto que el navegador haya puesto solo
-        if(document.querySelector('.st-row')) renderTable('.st-row');
     }
     
     // Esto hace que la tabla se dibuje correctamente al inicio
