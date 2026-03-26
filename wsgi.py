@@ -444,8 +444,8 @@ def application(environ, start_response):
         </div>
         """
 
-    # ==========================================
-    # --- JAVASCRIPT GLOBAL (SOLUCIÓN FINAL) ---
+       # ==========================================
+    # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
     content += """
     <style>
@@ -453,67 +453,114 @@ def application(environ, start_response):
         .paginador-ui button:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
     <script>
-        // Usamos var para permitir la re-declaración segura o verificamos existencia
-        if (typeof paginaActual === 'undefined') {
-            var paginaActual = 1;
+        let paginaActual = 1;
+        const filasPorPagina = 5;
+
+        function filtrar(rowClass, nameClass) {
+            const val = document.getElementById('txtBusca').value.toUpperCase();
+            document.querySelectorAll(rowClass).forEach(row => {
+                const b = row.querySelector(nameClass);
+                const text = b ? b.innerText.toUpperCase() : "";
+                row.dataset.visible = text.includes(val) ? "true" : "false";
+            });
+            renderTable(rowClass);
         }
-        var filasPorPagina = 5;
 
         function renderTable(rowClass) {
             const filas = Array.from(document.querySelectorAll(rowClass));
-            if(filas.length === 0) return;
-
             const visibles = filas.filter(r => r.dataset.visible !== "false");
             const total = Math.ceil(visibles.length / filasPorPagina) || 1;
-            
             if (paginaActual > total) paginaActual = total;
-            if (paginaActual < 1) paginaActual = 1;
             
             filas.forEach(r => r.style.display = 'none');
-            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina).forEach(r => r.style.display = '');
-            
-            const info = document.getElementById('infoPagina');
-            if(info) info.innerText = `Página ${paginaActual} de ${total}`;
+            visibles.slice((paginaActual-1)*5, paginaActual*5).forEach(r => r.style.display = '');
+            document.getElementById('infoPagina').innerText = `Página ${paginaActual} de ${total}`;
         }
 
-        // --- FUNCIONES DE PERMISOS (BOTONES TODO / NADA) ---
-        function bulk(v) {
-            // Selecciona todos los checks de la matriz, incluso los que no se ven por la paginación
-            document.querySelectorAll('.perm-check').forEach(checkbox => {
-                checkbox.checked = v;
+        function cambiarPagina(delta, rowClass) {
+            paginaActual += delta;
+            renderTable(rowClass);
+        }
+
+        // VALIDACIÓN USUARIOS
+        function validateAndSave() {
+            const u = document.getElementById('un').value.trim();
+            const p = document.getElementById('up').value;
+            const c = document.getElementById('uc').value.trim();
+            const t = document.getElementById('ut').value.trim();
+            
+            if(!u || !p || !c || !t) return alert("Todos los campos son obligatorios");
+            if(p.length < 5) return alert("La contraseña debe ser mayor a 5 caracteres");
+            if(!c.endsWith("@gmail.com")) return alert("El correo debe ser @gmail.com");
+            if(t.length !== 10) return alert("El teléfono debe tener 10 dígitos");
+
+            runCrud('save', 'usuarios', 0, { u, p, idp: document.getElementById('un_idp').value, st: document.getElementById('un_st').value });
+        }
+
+        function updateUser() {
+            runCrud('update', 'usuarios', document.getElementById('ed_id').value, { 
+                u: document.getElementById('ed_u').value, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value 
             });
         }
 
+        // MODULOS
+        function saveMod() {
+            const n = document.getElementById('mn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('save', 'modulos', 0, { n, r, p: document.getElementById('mp').value });
+        }
+
+        function updateMod() {
+            const id = document.getElementById('ed_id').value;
+            const n = document.getElementById('ed_n_mod').value.trim();
+            const p = document.getElementById('ed_p_mod').value;
+            if(!n) return alert("Nombre obligatorio");
+            const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+            runCrud('update', 'modulos', id, { n, r, p });
+        }
+
+        // PERFILES
+        function savePerfil() {
+            const n = document.getElementById('pn').value.trim();
+            if(!n) return alert("Nombre obligatorio");
+            runCrud('save', 'perfiles', 0, {n});
+        }
+        function updatePerfil() {
+            runCrud('update', 'perfiles', document.getElementById('ed_id').value, {n: document.getElementById('ed_n').value});
+        }
+
+        // PERMISOS
         async function cargarPermisos(idp) {
             if(!idp) { document.getElementById('area_permisos').style.display='none'; return; }
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
             const res = await fetch('/api/get_permisos?idp=' + idp);
             const data = await res.json();
             if(data.ok) {
-                // Limpiar todos antes de marcar
-                document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
-                
                 data.perms.forEach(p => {
-                    if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
-                    if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
-                    if(p.e && document.getElementById('e_'+p.idm)) document.getElementById('e_'+p.idm).checked = true;
-                    if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
+                    if(p.v) document.getElementById('v_'+p.idm).checked = true;
+                    if(p.a) document.getElementById('a_'+p.idm).checked = true;
+                    if(p.e) document.getElementById('e_'+p.idm).checked = true;
+                    if(p.d) document.getElementById('d_'+p.idm).checked = true;
                 });
                 document.getElementById('area_permisos').style.display = 'block';
-                paginaActual = 1; // Reiniciar página al cambiar de perfil
-                renderTable('.perm-row');
+                paginaActual = 1;
+                filtrar('.perm-row', '.perm-name');
             }
+        }
+
+        function bulk(v) {
+            document.querySelectorAll('.perm-row').forEach(row => {
+                if(row.style.display !== 'none') row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+            });
         }
 
         function guardarPermisos() {
             const idp = document.getElementById('sel_perfil').value;
-            if(!idp) return alert("Selecciona un perfil");
-            
-            const perms = [];
-            // Agrupamos los valores por módulo (dataset.mod)
-            const modIds = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
-            
-            modIds.forEach(id => {
-                perms.push({
+            const matrix = [];
+            const ids = [...new Set(Array.from(document.querySelectorAll('.perm-check')).map(c => c.dataset.mod))];
+            ids.forEach(id => {
+                matrix.push({
                     idm: parseInt(id),
                     v: document.getElementById('v_'+id).checked ? 1 : 0,
                     a: document.getElementById('a_'+id).checked ? 1 : 0,
@@ -521,24 +568,23 @@ def application(environ, start_response):
                     d: document.getElementById('d_'+id).checked ? 1 : 0
                 });
             });
-            runCrud('save', 'permisos', 0, { idp, perms });
+            runCrud('save', 'permisos', 0, { idp, perms: matrix });
         }
 
-        // Inicialización
+        // Al entrar, limpiar buscador y renderizar
         window.onload = () => {
-            // Detectar en qué pantalla estamos para paginar la tabla correcta
-            if(document.querySelector('.u-row')) renderTable('.u-row');
-            if(document.querySelector('.p-row')) renderTable('.p-row');
-            if(document.querySelector('.m-row')) renderTable('.m-row');
-            if(document.querySelector('.perm-row')) renderTable('.perm-row');
+            const b = document.getElementById('txtBusca');
+            if(b) b.value = "";
+            if(document.querySelector('.u-row')) filtrar('.u-row', '.u-name');
+            if(document.querySelector('.p-row')) filtrar('.p-row', '.p-name');
+            if(document.querySelector('.m-row')) filtrar('.m-row', '.m-name');
         };
     </script>
     """
 
-    # --- CIERRE SEGURO ---
+    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
     if 'cur' in locals() and cur: cur.close()
     if 'conn' in locals() and conn: conn.close()
     
-    t_final = titulo_modulo if 'titulo_modulo' in locals() else "Clinica"
-    start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-    return [render_layout(t_final, content, u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")])
+    return [render_layout("Clinica", content, u_data).encode()]
