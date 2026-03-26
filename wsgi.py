@@ -87,88 +87,39 @@ def render_layout(title, content, user=None):
         .modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:1000; }}
         .modal-content {{ background:var(--card); width:500px; margin:5% auto; padding:35px; border-radius:20px; border: 1px solid var(--border); position:relative; }}
         .grid-2 {{ display:grid; grid-template-columns: 1fr 1fr; gap:15px; }}
+        
+        /* Estilos específicos para Permisos */
         .grid-permisos {{ display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:15px; margin-top:15px; }}
         .check-item {{ background:#0f172a; padding:12px; border-radius:8px; border:1px solid var(--border); display:flex; align-items:center; gap:10px; cursor:pointer; }}
         .check-item input {{ width:auto; margin:0; cursor:pointer; }}
+        
         .close-x {{ position:absolute; top:20px; right:25px; color:#94a3b8; cursor:pointer; font-size:24px; }}
         .user-pill {{ color:var(--emerald); border:1px solid var(--border); padding:6px 16px; border-radius:25px; margin-right:15px; font-size:13px; font-weight:bold; }}
         .btn-salir {{ background:#ef4444; color:white; text-decoration:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:bold; }}
-        .paginador-ui {{ margin-top:20px; display:flex; justify-content:center; align-items:center; gap:20px; }}
     </style>
     <script>
-        // Usamos var para evitar errores de redestinación si el script se carga dos veces
-        if (typeof paginaActual === 'undefined') {{ var paginaActual = 1; }}
-        var filasPorPagina = 5;
-
         function openM(id) {{ document.getElementById(id).style.display='block'; }}
         function closeM(id) {{ document.getElementById(id).style.display='none'; }}
-
-        // Paginación Universal
-        function renderTable(rowClass) {{
-            const filas = Array.from(document.querySelectorAll(rowClass));
-            if(filas.length === 0) return;
-            const visibles = filas.filter(r => r.dataset.visible !== "false");
-            const total = Math.ceil(visibles.length / filasPorPagina) || 1;
-            
-            filas.forEach(r => r.style.display = 'none');
-            visibles.slice((paginaActual-1)*filasPorPagina, paginaActual*filasPorPagina)
-                   .forEach(r => r.style.display = '');
-
-            const info = document.getElementById('infoPagina');
-            if(info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
-        }}
-
-        function cambiarPagina(dir, rowClass) {{
-            paginaActual += dir;
-            renderTable(rowClass);
-        }}
-
-        // Buscador
-        function filtrar(rowClass, nameClass) {{
-            const filtro = document.getElementById('txtBusca').value.toLowerCase();
-            document.querySelectorAll(rowClass).forEach(row => {{
-                const texto = row.innerText.toLowerCase();
-                row.dataset.visible = texto.includes(filtro);
-            }});
-            paginaActual = 1;
-            renderTable(rowClass);
-        }}
-
-        // Lógica de Permisos
-        async function cargarPermisos(idp) {{
-            if(!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
-            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
-            const res = await fetch('/api/get_permisos?idp=' + idp);
-            const data = await res.json();
-            if(data.ok) {{
-                data.perms.forEach(p => {{
-                    if(p.v && document.getElementById('v_'+p.idm)) document.getElementById('v_'+p.idm).checked = true;
-                    if(p.a && document.getElementById('a_'+p.idm)) document.getElementById('a_'+p.idm).checked = true;
-                    if(p.e && document.getElementById('e_'+p.idm)) document.getElementById('e_'+p.idm).checked = true;
-                    if(p.d && document.getElementById('d_'+p.idm)) document.getElementById('d_'+p.idm).checked = true;
-                }});
-                document.getElementById('area_permisos').style.display = 'block';
-                paginaActual = 1; 
-                renderTable('.perm-row');
-            }}
-        }}
-
         async function runCrud(action, table, id, data={{}}) {{
             const res = await fetch('/api/crud', {{ method:'POST', body:JSON.stringify({{action, table, id, data}}) }});
             const j = await res.json();
             if(j.ok) location.reload(); 
             else alert("Error: " + (j.error || "Desconocido"));
         }}
-
         function preEdit(id, fields, mId='mEdit') {{
             for(let k in fields) {{ let el = document.getElementById('ed_'+k); if(el) el.value = fields[k]; }}
             document.getElementById('ed_id').value = id;
             openM(mId);
         }}
-
-        window.onload = () => {{
-            if(document.querySelector('.static-row')) renderTable('.static-row');
-        }};
+        function handleImg(e, prevId) {{
+            const reader = new FileReader();
+            reader.onload = () => {{ 
+                const prev = document.getElementById(prevId);
+                prev.src = reader.result;
+                prev.style.display = 'block';
+            }};
+            reader.readAsDataURL(e.target.files[0]);
+        }}
     </script>
     </head><body>{nav}<div class='container'>{content}</div></body></html>"""
 
@@ -492,71 +443,8 @@ def application(environ, start_response):
             </div>
         </div>
         """
-        
+
     # ==========================================
-    # --- PANTALLAS CRUD ESTÁTICAS (DEMO) ---
-    # ==========================================
-    elif path in ["/principal1_1", "/principal1_2", "/principal2_1", "/principal2_2"]:
-        configs = {
-            "/principal1_1": {"t": "Gestión de Pacientes", "h": ["ID", "Nombre", "Especialidad", "Estado"]},
-            "/principal1_2": {"t": "Control de Citas", "h": ["ID", "Fecha", "Hora", "Estado"]},
-            "/principal2_1": {"t": "Inventario Farmacia", "h": ["Cod", "Producto", "Stock", "Estado"]},
-            "/principal2_2": {"t": "Reportes Financieros", "h": ["ID", "Mes", "Monto", "Estado"]}
-        }
-        
-        conf = configs.get(path)
-        titulo_modulo = conf["t"]
-        headers_html = "".join([f"<th>{h}</th>" for h in conf["h"]]) + "<th>Acciones</th>"
-
-        # Generación de filas según el módulo
-        if "1_1" in path:
-            rows_html = """
-            <tr class='static-row' data-visible='true'><td>1</td><td class='search-key'>Juan Pérez</td><td>General</td><td><span class='badge'>Activo</span></td>
-            <tr class='static-row' data-visible='true'><td>2</td><td class='search-key'>María García</td><td>Pediatría</td><td><span class='badge'>Activo</span></td>"""
-        elif "1_2" in path:
-            rows_html = """
-            <tr class='static-row' data-visible='true'><td>101</td><td class='search-key'>2026-03-25</td><td>10:00 AM</td><td><span class='badge'>Confirmada</span></td>
-            <tr class='static-row' data-visible='true'><td>102</td><td class='search-key'>2026-03-26</td><td>11:30 AM</td><td><span class='badge'>Pendiente</span></td>"""
-        elif "2_1" in path:
-            rows_html = """
-            <tr class='static-row' data-visible='true'><td>001</td><td class='search-key'>Paracetamol</td><td>50 u.</td><td><span class='badge' style='background:orange'>Stock Bajo</span></td>
-            <tr class='static-row' data-visible='true'><td>002</td><td class='search-key'>Amoxicilina</td><td>200 u.</td><td><span class='badge'>OK</span></td>"""
-        else:
-            rows_html = """
-            <tr class='static-row' data-visible='true'><td>1</td><td class='search-key'>Enero 2026</td><td>$45,000</td><td><span class='badge'>Cerrado</span></td>
-            <tr class='static-row' data-visible='true'><td>2</td><td class='search-key'>Febrero 2026</td><td>$38,200</td><td><span class='badge'>Proceso</span></td>"""
-        
-        # Añadir botones de acción a todas las filas (clase corregida para el cierre de etiqueta)
-        rows_html = rows_html.replace("</td>", "</td><td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>", -1)
-        # Nota: La lógica anterior es un truco rápido, pero para mayor claridad:
-        final_rows = ""
-        for row in rows_html.split("</tr>"):
-            if "static-row" in row:
-                final_rows += row + "<td><button class='btn-blue' onclick='alert(\"Modo Lectura\")'>✏️</button> <button class='btn-red' onclick='alert(\"Modo Lectura\")'>🗑️</button></td></tr>"
-
-        content = f"""
-        <div class='card'>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h2>{titulo_modulo}</h2>
-                <button class="btn-emerald" onclick="alert('Nuevo Registro')">+ Añadir</button>
-            </div>
-            <input type="text" id="txtBusca" onkeyup="paginaActual=1; filtrar('.static-row', '.search-key')" placeholder="🔍 Buscar por nombre/fecha..." style="width:100%; max-width:300px; margin-bottom:15px;">
-            <table>
-                <thead><tr>{headers_html}</tr></thead>
-                <tbody>{final_rows}</tbody>
-            </table>
-            <div class="paginador-ui">
-                <button class="btn-blue" onclick="cambiarPagina(-1, '.static-row')">❮ Ant.</button>
-                <span id="infoPagina" style="font-weight:bold;"></span>
-                <button class="btn-blue" onclick="cambiarPagina(1, '.static-row')">Sig. ❯</button>
-            </div>
-        </div>
-        <script>
-            setTimeout(() => {{ if(typeof renderTable === 'function') renderTable('.static-row'); }}, 100);
-        </script>
-        """
-
-# ==========================================
     # --- JAVASCRIPT GLOBAL CORREGIDO ---
     # ==========================================
     content += """
@@ -694,13 +582,9 @@ def application(environ, start_response):
     </script>
     """
 
-    # --- CIERRE FINAL SEGURO ---
-    if 'cur' in locals() and cur: 
-        try: cur.close()
-        except: pass
-    if 'conn' in locals() and conn: 
-        try: conn.close()
-        except: pass
+    # --- CIERRE FINAL SEGURO (FUERA DE LOS IF/ELIF) ---
+    if 'cur' in locals() and cur: cur.close()
+    if 'conn' in locals() and conn: conn.close()
     
-    start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
-    return [render_layout("Clinica", content, u_data).encode("utf-8")]
+    start_response("200 OK", [("Content-Type", "text/html")])
+    return [render_layout("Clinica", content, u_data).encode()]
