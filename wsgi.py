@@ -518,105 +518,122 @@ def application(environ, start_response):
             </div>
         </div>"""
  
-    # ----------------------------------------------------------
-    # 7. USUARIOS
+# ----------------------------------------------------------
+    # 7. USUARIOS (CON CONTROL DE PERMISOS DINÁMICO)
     # ----------------------------------------------------------
     elif path == "/usuarios":
-        cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
-        usuarios = cur.fetchall()
-        rows = "".join([f"""
-        <tr class='u-row'>
-          <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
-          <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
-          <td>{u.get('strNombrePerfil','—')}</td>
-          <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
-          <td>
-            <button class='btn-blue' onclick='preEdit({u["id"]}, {{u:"{u["strNombreUsuario"]}", idp:{u["idPerfil"]}, st:"{u["strEstado"]}"}}, "mEdit")'>Editar</button>
-            <button class='btn-red' onclick="runCrud('delete','usuarios',{u['id']})">Borrar</button>
-          </td>
-        </tr>""" for u in usuarios])
+        id_p = u_data.get('pid')
+        # 1. Consultar permisos específicos para este módulo
+        cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
+                       FROM permisos WHERE idPerfil=%s AND nombreModulo='Usuarios'""", (id_p,))
+        p_user = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
-        cur.execute("SELECT * FROM perfiles")
-        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-
-        content = f"""
-        <div class='card'>
-          <h2 style="margin-top:0;">👥 Gestión de Usuarios</h2>
-          <div class='toolbar'>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNew')">+ NUEVO USUARIO</button>
-            <input type='text' id='txtBusca' class='search-input'
-              onkeyup="paginaActual=1; filtrar('.u-row','.u-name');" placeholder='🔍 Buscar...'>
-          </div>
-          <table>
-            <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-          <div class='paginador-ui'>
-            <button class='btn-blue' onclick="cambiarPagina(-1,'.u-row')">❮ Anterior</button>
-            <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
-            <button class='btn-blue' onclick="cambiarPagina(1,'.u-row')">Siguiente ❯</button>
-          </div>
-        </div>
-
-        <div id='mNew' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mNew')">&times;</span>
-          <h3>Nuevo Usuario</h3>
-          <div class='grid-2'>
-            <div><label>Nombre (Solo letras)</label>
-                 <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
-            <div><label>Pass (5-8 carac.)</label>
-                 <input id='up' type='password' maxlength='8'></div>
-            <div><label>Correo (@gmail.com)</label>
-                 <input id='uc' type='email' placeholder='ejemplo@gmail.com'></div>
-            <div><label>Teléfono (10 dígitos)</label>
-                 <input id='ut' maxlength='10' onkeypress="return /^[0-9]+$/.test(event.key)"></div>
-            <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
-            <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
-          </div>
-          <button class='btn-emerald' onclick='validateAndSave()'>GUARDAR USUARIO</button>
-        </div></div>
-
-        <div id='mEdit' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mEdit')">&times;</span>
-          <h3>Editar Usuario</h3>
-          <input type='hidden' id='ed_id'>
-          <div class='grid-2'>
-            <div><label>Usuario</label>
-                 <input id='ed_u' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
-            <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
-            <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
-          </div>
-          <button class='btn-emerald' onclick='updateUser()'>ACTUALIZAR</button>
-        </div></div>
-
-        <script>
-          function validateAndSave() {{
-            const u = document.getElementById('un').value.trim();
-            const p = document.getElementById('up').value;
-            const c = document.getElementById('uc').value.trim();
-            const t = document.getElementById('ut').value.trim();
+        # 2. Validar si tiene permiso de ver, si no, mostrar mensaje de error
+        if not p_user['permisoVer']:
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permisos para ver este módulo.</p></div>"
+        else:
+            cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
+            usuarios = cur.fetchall()
             
-            if (!u||!p||!c||!t) return alert("⚠️ Todos los campos son obligatorios");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
-            if (p.length < 5 || p.length > 8) return alert("⚠️ La contraseña debe tener entre 5 y 8 caracteres");
-            if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
-            if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
-            
-            runCrud('save','usuarios',0,{{ u, p, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value }});
-          }}
-          
-          function updateUser() {{
-            const u = document.getElementById('ed_u').value.trim();
-            if (!u) return alert("⚠️ El nombre es obligatorio");
-            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+            # 3. Generar filas de la tabla ocultando botones según permisoEditar y permisoEliminar
+            rows = ""
+            for u in usuarios:
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
+                btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
+                
+                rows += f"""
+                <tr class='u-row'>
+                  <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
+                  <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
+                  <td>{u.get('strNombrePerfil','—')}</td>
+                  <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
+                  <td>{btn_edit} {btn_del}</td>
+                </tr>"""
 
-            runCrud('update','usuarios', document.getElementById('ed_id').value, {{
-              u: u,
-              idp: document.getElementById('ed_idp').value,
-              st: document.getElementById('ed_st').value
-            }});
-          }}
-        </script>"""
+            cur.execute("SELECT * FROM perfiles")
+            p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
+
+            # 4. Mostrar botón "+ NUEVO USUARIO" solo si tiene permisoCrear
+            btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNew')\">+ NUEVO USUARIO</button>" if p_user['permisoCrear'] else ""
+
+            content = f"""
+            <div class='card'>
+              <h2 style="margin-top:0;">👥 Gestión de Usuarios</h2>
+              <div class='toolbar'>
+                {btn_nuevo_html}
+                <input type='text' id='txtBusca' class='search-input'
+                  onkeyup="paginaActual=1; filtrar('.u-row','.u-name');" placeholder='🔍 Buscar...'>
+              </div>
+              <table>
+                <thead><tr><th>IMG</th><th>USUARIO</th><th>PERFIL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+              </table>
+              <div class='paginador-ui'>
+                <button class='btn-blue' onclick="cambiarPagina(-1,'.u-row')">❮ Anterior</button>
+                <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
+                <button class='btn-blue' onclick="cambiarPagina(1,'.u-row')">Siguiente ❯</button>
+              </div>
+            </div>
+
+            <div id='mNew' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mNew')">&times;</span>
+              <h3>Nuevo Usuario</h3>
+              <div class='grid-2'>
+                <div><label>Nombre (Solo letras)</label>
+                     <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
+                <div><label>Pass (5-8 carac.)</label>
+                     <input id='up' type='password' maxlength='8'></div>
+                <div><label>Correo (@gmail.com)</label>
+                     <input id='uc' type='email' placeholder='ejemplo@gmail.com'></div>
+                <div><label>Teléfono (10 dígitos)</label>
+                     <input id='ut' maxlength='10' onkeypress="return /^[0-9]+$/.test(event.key)"></div>
+                <div><label>Perfil</label><select id='un_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='un_st'><option>Activo</option><option>Inactivo</option></select></div>
+              </div>
+              <button class='btn-emerald' onclick='validateAndSave()'>GUARDAR USUARIO</button>
+            </div></div>
+
+            <div id='mEdit' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mEdit')">&times;</span>
+              <h3>Editar Usuario</h3>
+              <input type='hidden' id='ed_id'>
+              <div class='grid-2'>
+                <div><label>Usuario</label>
+                     <input id='ed_u' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
+                <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
+                <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
+              </div>
+              <button class='btn-emerald' onclick='updateUser()'>ACTUALIZAR</button>
+            </div></div>
+
+            <script>
+              function validateAndSave() {{
+                const u = document.getElementById('un').value.trim();
+                const p = document.getElementById('up').value;
+                const c = document.getElementById('uc').value.trim();
+                const t = document.getElementById('ut').value.trim();
+                
+                if (!u||!p||!c||!t) return alert("⚠️ Todos los campos son obligatorios");
+                if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+                if (p.length < 5 || p.length > 8) return alert("⚠️ La contraseña debe tener entre 5 y 8 caracteres");
+                if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
+                if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
+                
+                runCrud('save','usuarios',0,{{ u, p, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value }});
+              }}
+              
+              function updateUser() {{
+                const u = document.getElementById('ed_u').value.trim();
+                if (!u) return alert("⚠️ El nombre es obligatorio");
+                if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+
+                runCrud('update','usuarios', document.getElementById('ed_id').value, {{
+                  u: u,
+                  idp: document.getElementById('ed_idp').value,
+                  st: document.getElementById('ed_st').value
+                }});
+              }}
+            </script>"""
  
     # ----------------------------------------------------------
     # 8. PERFILES
