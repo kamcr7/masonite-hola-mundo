@@ -640,24 +640,25 @@ def application(environ, start_response):
               }}
             </script>"""
  
-    # ----------------------------------------------------------
-    # 8. PERFILES (CON CONTROL DE PERMISOS)
+   # ----------------------------------------------------------
+    # 8. PERFILES (CORREGIDO: JS Y VALIDACIONES)
     # ----------------------------------------------------------
     elif path == "/perfiles":
         id_p = u_data.get('pid')
-        # Consultar permisos para el módulo Perfiles
-        cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Perfiles'", (id_p,))
+        # Consultar permisos usando fetchone con diccionario para consistencia
+        cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
+                       FROM permisos WHERE idPerfil=%s AND nombreModulo='Perfiles'""", (id_p,))
         p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
         if not p_acc['permisoVer']:
-            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permisos para este módulo.</p></div>"
         else:
             cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
             perfiles = cur.fetchall()
             
             rows = ""
             for i, p in enumerate(perfiles, 1):
-                # Botones condicionales
+                # Botones condicionales según permisos
                 btn_edit = f"<button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
                 
@@ -676,7 +677,7 @@ def application(environ, start_response):
               <div class='toolbar'>
                 {btn_nuevo_html}
                 <input type='text' id='txtBusca' class='search-input'
-                  onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar...'>
+                  onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar perfil...'>
               </div>
               <table>
                 <thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead>
@@ -693,29 +694,35 @@ def application(environ, start_response):
               <span class='close-x' onclick="closeM('mNewP')">&times;</span>
               <h3>Nuevo Perfil</h3>
               <label>Nombre del Perfil (Solo letras, máx 15)</label>
-              <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
+              <input id='pn' maxlength='15' placeholder='Ej: Administrador' 
+                     onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <button class='btn-emerald' style='width:100%; margin-top:15px;' onclick='savePerfil()'>GUARDAR PERFIL</button>
             </div></div>
 
             <div id='mEditP' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mEditP')">&times;</span>
               <h3>Editar Perfil</h3>
               <input type='hidden' id='ed_id'>
-              <label>Nombre</label>
-              <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
+              <label>Nombre del Perfil</label>
+              <input id='ed_n' maxlength='15' 
+                     onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <button class='btn-emerald' style='width:100%; margin-top:15px;' onclick='updatePerfil()'>ACTUALIZAR</button>
             </div></div>
 
             <script>
               function savePerfil() {{
                 const n = document.getElementById('pn').value.trim();
-                if (!n) return alert("⚠️ Nombre obligatorio");
-                runCrud('save','perfiles',0,{{n}});
+                if (!n) return alert("⚠️ El nombre es obligatorio");
+                // Corrección: Se envía como objeto {{ n: n }}
+                runCrud('save', 'perfiles', 0, {{ n: n }});
               }}
+
               function updatePerfil() {{
+                const id = document.getElementById('ed_id').value;
                 const n = document.getElementById('ed_n').value.trim();
-                if (!n) return alert("⚠️ Nombre obligatorio");
-                runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
+                if (!n) return alert("⚠️ El nombre es obligatorio");
+                // Corrección: Se envía como objeto {{ n: n }}
+                runCrud('update', 'perfiles', id, {{ n: n }});
               }}
             </script>"""
             
