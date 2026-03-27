@@ -1,7 +1,4 @@
-﻿
-Copiar
-
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
  
