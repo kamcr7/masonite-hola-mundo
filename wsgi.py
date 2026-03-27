@@ -53,7 +53,7 @@ def generar_navbar(id_perfil):
     cur.close(); conn.close()
     return menus
 # =========================================================
-# LAYOUT PRINCIPAL (DINÁMICO Y CORREGIDO)
+# LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -65,51 +65,50 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
         permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
         
-        # 2. Obtenemos todos los módulos registrados para construir los menús
+        # 2. Obtenemos todos los módulos para los submenús de Principal 1 y 2
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
 
-        # Función auxiliar para filtrar submenús dinámicamente
+        # Función auxiliar para filtrar submenús (Principal 1, Principal 2, etc.)
         def get_links(padre):
             links = []
             for m in all_mods:
-                # Comparamos el padre y verificamos si el nombre del módulo está en la lista de permitidos
+                # Solo agregamos el link si el padre coincide Y el usuario tiene permiso de ver ese módulo
                 if m['strMenuPadre'] == padre and m['strNombreModulo'].lower() in permitidos:
-                    # Si la ruta no existe, generamos una por defecto basada en el nombre
-                    ruta = m["strRuta"] if m["strRuta"] else f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
+                    ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
         
-        # 3. Construcción de Menús Dinámicos
-        # Seguridad (Ahora también es dinámico basado en la tabla modulos)
-        seg_links = get_links("Seguridad")
+        # 3. Construimos el menú de Seguridad dinámicamente
+        seg_items = [
+            ("Perfiles", "/perfiles", "👤"),
+            ("Módulos",  "/modulos",  "📦"),
+            ("Usuarios", "/usuarios", "👥"),
+            ("Permisos", "/permisos", "🔐")
+        ]
+        
+        seg_html = ""
+        for nom, rut, ico in seg_items:
+            if nom.lower() in permitidos:
+                seg_html += f'<a href="{rut}">{ico} {nom}</a>'
+
+        # Solo mostramos el botón "Seguridad" si tiene al menos un módulo permitido dentro
         dropdown_seguridad = f"""
         <div class="dropdown">
             <button class="dropbtn">Seguridad ▾</button>
             <div class="dropdown-content">
-                {seg_links}
+                {seg_html}
             </div>
-        </div>""" if seg_links else ""
+        </div>""" if seg_html else ""
 
-        # Principal 1
+        # Construimos Principal 1 y 2
         p1_links = get_links("Principal 1")
-        dropdown_p1 = f"""
-        <div class="dropdown">
-            <button class="dropbtn">Principal 1 ▾</button>
-            <div class="dropdown-content">
-                {p1_links}
-            </div>
-        </div>""" if p1_links else ""
+        dropdown_p1 = f"""<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button>
+                          <div class="dropdown-content">{p1_links}</div></div>""" if p1_links else ""
         
-        # Principal 2
         p2_links = get_links("Principal 2")
-        dropdown_p2 = f"""
-        <div class="dropdown">
-            <button class="dropbtn">Principal 2 ▾</button>
-            <div class="dropdown-content">
-                {p2_links}
-            </div>
-        </div>""" if p2_links else ""
+        dropdown_p2 = f"""<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button>
+                          <div class="dropdown-content">{p2_links}</div></div>""" if p2_links else ""
 
         nav = f"""
         <div class="top-nav">
@@ -146,6 +145,7 @@ def render_layout(title, content, user=None):
     * {{ box-sizing: border-box; }}
     body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }}
     
+    /* NAV CLARO */
     .top-nav {{ background: #ffffff; height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
     .nav-container {{ width: 100%; max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; padding: 0 20px; align-items: center; }}
     .logo {{ color: var(--emerald); font-weight: bold; font-size: 1.2rem; margin-right: 20px; }}
@@ -166,19 +166,24 @@ def render_layout(title, content, user=None):
     .btn-salir:hover {{ background: #dc2626; }}
     .nav-right {{ display: flex; align-items: center; }}
     
+    /* LAYOUT */
     .container {{ padding: 40px; max-width: 1200px; margin: 0 auto; }}
     .card {{ background: var(--card); padding: 30px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
     
+    /* TABLE CLARA */
     table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }}
     th {{ background: #f8fafc; color: var(--text-muted); font-size: 12px; text-transform: uppercase; padding: 15px; text-align: left; border-bottom: 1px solid var(--border); }}
     td {{ padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text); }}
     tr:last-child td {{ border-bottom: none; }}
     tr:hover {{ background: #fcfcfd; }}
+    .avatar-table {{ width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #f1f5f9; border: 1px solid var(--border); }}
     
+    /* PILLS */
     .status-pill {{ padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }}
     .active {{ background: #dcfce7; color: #166534; }}
     .inactive {{ background: #fee2e2; color: #991b1b; }}
     
+    /* FORMS CLAROS */
     input, select {{
       background: #ffffff; border: 1px solid var(--border); color: var(--text);
       padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px;
@@ -195,12 +200,23 @@ def render_layout(title, content, user=None):
     .btn-red {{ color: #dc2626; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
     .btn-red:hover {{ color: #991b1b; text-decoration: underline; }}
     
+    /* MODAL CLARO */
     .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 1000; overflow-y: auto; }}
     .modal-content {{ background: var(--card); width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }}
     .close-x {{ position: absolute; top: 20px; right: 25px; color: var(--text-muted); cursor: pointer; font-size: 24px; line-height: 1; }}
+    .close-x:hover {{ color: var(--text); }}
     
+    /* DASHBOARD CLARO */
+    .dash-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }}
+    .dash-card {{ background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 25px; text-decoration: none; text-align: center; transition: 0.2s; display: block; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+    .dash-card:hover {{ border-color: var(--emerald); transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }}
+    .dash-card .icon {{ font-size: 36px; margin-bottom: 10px; display: block; }}
+    .dash-card h3 {{ color: var(--emerald); margin: 0; font-size: 16px; }}
+    
+    /* SEARCH / TOOLBAR */
     .toolbar {{ display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; gap: 10px; }}
     .search-input {{ width: 220px; margin-bottom: 0; background: #f1f5f9; }}
+    
     .paginador-ui {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }}
   </style>
   <script>
