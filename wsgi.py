@@ -940,15 +940,16 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 11. VISTAS DE MAQUETAS (SEGURIDAD DINÁMICA APLICADA)
+    # 11. VISTAS DE MAQUETAS (Corrección de nombres para Permisos)
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
         id_p = u_data.get('pid')
         
-        # 1. Definimos los datos (mantenemos tu estructura)
+        # 1. Diccionario de vistas: 
+        # IMPORTANTE: "modulo_bd" debe ser IGUAL a como aparece en tu tabla de Permisos/Módulos
         vistas = {
             "/principal-1.1": {
-                "modulo_bd": "Catálogo de Clientes", # Debe coincidir con el nombre en la tabla 'modulos'
+                "modulo_bd": "Principal 1.1", # <--- Cambia esto si en tu BD se llama diferente
                 "titulo": "👥 Catálogo de Clientes",
                 "color": "#3b82f6",
                 "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ESTADO", "ACCIONES"],
@@ -958,7 +959,7 @@ def application(environ, start_response):
                 ]
             },
             "/principal-1.2": {
-                "modulo_bd": "Emisión de Facturas",
+                "modulo_bd": "Principal 1.2",
                 "titulo": "📄 Emisión de Facturas",
                 "color": "#10b981",
                 "headers": ["FOLIO", "CLIENTE (RELACIONADO)", "MONTO", "ESTADO", "ACCIONES"],
@@ -968,7 +969,7 @@ def application(environ, start_response):
                 ]
             },
             "/principal-2.1": {
-                "modulo_bd": "Control de Pagos",
+                "modulo_bd": "Principal 2.1",
                 "titulo": "💰 Control de Pagos",
                 "color": "#f59e0b",
                 "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ESTADO", "ACCIONES"],
@@ -979,7 +980,6 @@ def application(environ, start_response):
             }
         }
 
-        # 2. Obtenemos la configuración
         config = vistas.get(path, {
             "modulo_bd": "General",
             "titulo": "📦 Módulo General",
@@ -988,19 +988,37 @@ def application(environ, start_response):
             "filas": [["Ejemplo A", "Ejemplo B", "Ejemplo C", "active"]]
         })
 
-        # --- VALIDACIÓN DE PERMISOS PARA MAQUETAS ---
+        # 2. Intentamos buscar el permiso por nombre de módulo
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", 
                     (id_p, config["modulo_bd"]))
-        p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
+        p_acc = cur.fetchone()
 
+        # Si no lo encuentra por nombre, intentamos buscarlo por la RUTA en la tabla modulos
+        if not p_acc:
+            cur.execute("""SELECT p.permisoVer, p.permisoCrear, p.permisoEditar, p.permisoEliminar 
+                           FROM permisos p 
+                           JOIN modulos m ON p.nombreModulo = m.strNombreModulo 
+                           WHERE p.idPerfil=%s AND m.strRuta=%s""", (id_p, path))
+            p_acc = cur.fetchone()
+
+        # Valores por defecto si sigue sin encontrar nada
+        if not p_acc: 
+            p_acc = {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
+
+        # 3. Validación de visualización
         if not p_acc['permisoVer']:
-            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permiso para ver este módulo.</p></div>"
+            content = f"""
+            <div class='card' style='text-align:center; padding:50px;'>
+                <h1 style='color:#ff4d4d; font-size:50px; margin-bottom:10px;'>🚫</h1>
+                <h2 style='color:#333;'>Acceso Denegado</h2>
+                <p style='color:#666;'>No tienes permisos para ver el módulo <b>{config['modulo_bd']}</b>.</p>
+                <br>
+                <a href='/dashboard' class='btn-blue' style='text-decoration:none; padding:10px 20px;'>Volver al Inicio</a>
+            </div>"""
         else:
-            # 3. Construimos cabeceras
+            # 4. Construcción de Tabla
             thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
-            
-            # 4. Construimos filas
             tbody = ""
             for f in config["filas"]:
                 status_idx = config["headers"].index("ESTADO") if "ESTADO" in config["headers"] else -2
@@ -1010,7 +1028,7 @@ def application(environ, start_response):
                 cells_before = "".join([f"<td>{str(col)}</td>" for col in f[:status_idx]])
                 cells_after = "".join([f"<td>{str(col)}</td>" for col in f[status_idx+1:]])
 
-                # Ocultar botón Detalles si no tiene permiso de Editar (por ejemplo)
+                # Botón de detalles solo si puede EDITAR
                 btn_detalles = "<td><button class='btn-blue' style='padding:4px 8px; font-size:11px;'>Detalles</button></td>" if p_acc['permisoEditar'] else "<td>-</td>"
 
                 tbody += f"""
@@ -1021,7 +1039,7 @@ def application(environ, start_response):
                     {btn_detalles}
                 </tr>"""
 
-            # 5. Botón Nuevo condicional
+            # 5. Botón Nuevo solo si puede CREAR
             btn_nuevo_html = f"<button class='btn-emerald' style='width:auto;'>+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
 
             content = f"""
