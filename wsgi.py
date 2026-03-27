@@ -33,6 +33,25 @@ def conectar_bd():
         password=res.password, database=res.path[1:], charset='utf8mb4'
     )
  
+ # --- Línea 36 aproximadamente ---
+def generar_navbar(id_perfil):
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+    # Buscamos módulos donde el perfil tenga permisoVer = 1
+    cur.execute("""
+        SELECT m.* FROM modulos m 
+        JOIN permisos p ON m.strNombreModulo = p.nombreModulo 
+        WHERE p.idPerfil = %s AND p.permisoVer = 1
+    """, (id_perfil,))
+    permitidos = cur.fetchall()
+    
+    menus = {"Seguridad": "", "Principal 1": "", "Principal 2": ""}
+    for m in permitidos:
+        padre = m['strMenuPadre']
+        if padre in menus:
+            menus[padre] += f"<li><a class='dropdown-item' href='{m['strRuta']}'>📦 {m['strNombreModulo']}</a></li>"
+    
+    cur.close(); conn.close()
+    return menus
 # =========================================================
 # LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
@@ -720,32 +739,30 @@ def application(environ, start_response):
             </script>"""
             
     # ----------------------------------------------------------
-    # 9. MÓDULOS (CORREGIDO: RUTA AUTOMÁTICA Y MENÚS)
+    # 9. MÓDULOS (CORRECCIÓN DE GUARDADO PARA NAVBAR)
     # ----------------------------------------------------------
     elif path == "/modulos":
         id_p = u_data.get('pid')
-        # Buscamos 'Modulos' sin tilde para evitar errores de coincidencia en BD
         cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Modulos'", (id_p,))
         p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
         if not p_acc['permisoVer']:
-            content = "<div class='card'><h2 style='color:red; text-align:center;'>🚫 Acceso Denegado</h2><p style='text-align:center;'>No tienes permiso para gestionar módulos.</p></div>"
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
-            cur.execute("SELECT * FROM modulos ORDER BY strMenuPadre ASC, strNombreModulo ASC")
+            cur.execute("SELECT * FROM modulos ORDER BY id ASC")
             modulos = cur.fetchall()
             
             rows = ""
             for m in modulos:
-                # Ajuste de datos para el modal de edición
-                data_edit = f"{{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}"
-                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {data_edit}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
+                # Pasamos los datos al modal de edición
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
                 
                 rows += f"""
                 <tr class='m-row'>
                   <td><b class='m-name'>{m['strNombreModulo']}</b></td>
                   <td><code style='color:#94a3b8; font-size:12px;'>{m['strRuta']}</code></td>
-                  <td><span class='status-pill active' style='background:#e2e8f0; color:#475569;'>{m['strMenuPadre']}</span></td>
+                  <td>{m['strMenuPadre']}</td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
 
@@ -757,10 +774,10 @@ def application(environ, start_response):
               <div class='toolbar'>
                 {btn_nuevo_html}
                 <input type='text' id='txtBusca' class='search-input'
-                  onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar módulo...'>
+                  onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
               </div>
               <table>
-                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>MENÚ PADRE</th><th>ACCIONES</th></tr></thead>
+                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
               </table>
               <div class='paginador-ui'>
@@ -773,15 +790,15 @@ def application(environ, start_response):
             <div id='mNewM' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNewM')">&times;</span>
               <h3>Nuevo Módulo</h3>
-              <label>Nombre del Módulo (Máx 20)</label>
-              <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)" placeholder="Ej: Facturacion">
-              <label>Asignar a Menú:</label>
+              <label>Nombre del Módulo</label>
+              <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
               <select id='mp'>
                 <option>Seguridad</option>
                 <option>Principal 1</option>
                 <option>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:15px;" onclick='saveMod()'>GUARDAR MÓDULO</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR</button>
             </div></div>
 
             <div id='mEditM' class='modal'><div class='modal-content'>
@@ -789,46 +806,37 @@ def application(environ, start_response):
               <h3>Editar Módulo</h3>
               <input type='hidden' id='ed_id'>
               <label>Nombre</label>
-              <input id='ed_n_mod' maxlength='20' onkeypress="return /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <label>Cambiar de Menú:</label>
-              <select id='ed_p_mod'>
+              <input id='ed_n' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
+              <select id='ed_p'>
                 <option>Seguridad</option>
                 <option>Principal 1</option>
                 <option>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:15px;" onclick='updateMod()'>ACTUALIZAR CAMBIOS</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR</button>
             </div></div>
 
             <script>
-              function generateRoute(name) {{
-                // Crea una ruta limpia basada en el nombre: "Mi Modulo" -> "/mi-modulo"
-                return "/" + name.toLowerCase().trim()
-                              .replace(/\s+/g, '-')
-                              .replace(/[ñ]/g, 'n')
-                              .replace(/[á]/g, 'a')
-                              .replace(/[é]/g, 'e')
-                              .replace(/[í]/g, 'i')
-                              .replace(/[ó]/g, 'o')
-                              .replace(/[ú]/g, 'u');
-              }}
-
               function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
                 const p = document.getElementById('mp').value;
-                if (!n) return alert("⚠️ El nombre es obligatorio");
+                if (!n) return alert("⚠️ Nombre obligatorio");
                 
-                const r = generateRoute(n);
-                runCrud('save', 'modulos', 0, {{ n, r, p }});
+                // Generamos la ruta automáticamente para que el Navbar funcione
+                const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+                
+                // IMPORTANTE: Enviamos n, r, p para que coincida con el API
+                runCrud('save','modulos',0,{{ n: n, r: r, p: p }});
               }}
 
               function updateMod() {{
                 const id = document.getElementById('ed_id').value;
-                const n  = document.getElementById('ed_n_mod').value.trim();
-                const p  = document.getElementById('ed_p_mod').value;
-                if (!n) return alert("⚠️ El nombre es obligatorio");
+                const n  = document.getElementById('ed_n').value.trim();
+                const p  = document.getElementById('ed_p').value;
+                if (!n) return alert("⚠️ Nombre obligatorio");
                 
-                const r = generateRoute(n);
-                runCrud('update', 'modulos', id, {{ n, r, p }});
+                const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
+                runCrud('update','modulos', id, {{ n: n, r: r, p: p }});
               }}
             </script>"""
      
