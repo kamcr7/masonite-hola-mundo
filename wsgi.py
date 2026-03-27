@@ -42,30 +42,54 @@ def render_layout(title, content, user=None):
         id_p = user.get('pid')
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
-        # 1. Obtener nombres de módulos con permiso de VER
+        # 1. Obtenemos los módulos que tienen permiso de VER (permisoVer = 1)
         cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
         permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
         
-        # 2. Obtener estructura de módulos
+        # 2. Obtenemos todos los módulos para los submenús de Principal 1 y 2
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
 
+        # Función auxiliar para filtrar submenús (Principal 1, Principal 2, etc.)
         def get_links(padre):
             links = []
             for m in all_mods:
+                # Solo agregamos el link si el padre coincide Y el usuario tiene permiso de ver ese módulo
                 if m['strMenuPadre'] == padre and m['strNombreModulo'].lower() in permitidos:
                     ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
         
-        # 3. Filtrar el menú de Seguridad
-        seg_links = ""
-        for n, r, i in [("Perfiles","/perfiles","👤"), ("Módulos","/modulos","📦"), ("Usuarios","/usuarios","👥"), ("Permisos","/permisos","🔐")]:
-            if n.lower() in permitidos:
-                seg_links += f'<a href="{r}">{i} {n}</a>'
+        # 3. Construimos el menú de Seguridad dinámicamente
+        seg_items = [
+            ("Perfiles", "/perfiles", "👤"),
+            ("Módulos",  "/modulos",  "📦"),
+            ("Usuarios", "/usuarios", "👥"),
+            ("Permisos", "/permisos", "🔐")
+        ]
+        
+        seg_html = ""
+        for nom, rut, ico in seg_items:
+            if nom.lower() in permitidos:
+                seg_html += f'<a href="{rut}">{ico} {nom}</a>'
 
-        nav_seg = f"""<div class="dropdown"><button class="dropbtn">Seguridad ▾</button>
-                      <div class="dropdown-content">{seg_links}</div></div>""" if seg_links else ""
+        # Solo mostramos el botón "Seguridad" si tiene al menos un módulo permitido dentro
+        dropdown_seguridad = f"""
+        <div class="dropdown">
+            <button class="dropbtn">Seguridad ▾</button>
+            <div class="dropdown-content">
+                {seg_html}
+            </div>
+        </div>""" if seg_html else ""
+
+        # Construimos Principal 1 y 2
+        p1_links = get_links("Principal 1")
+        dropdown_p1 = f"""<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button>
+                          <div class="dropdown-content">{p1_links}</div></div>""" if p1_links else ""
+        
+        p2_links = get_links("Principal 2")
+        dropdown_p2 = f"""<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button>
+                          <div class="dropdown-content">{p2_links}</div></div>""" if p2_links else ""
 
         nav = f"""
         <div class="top-nav">
@@ -73,42 +97,9 @@ def render_layout(title, content, user=None):
             <div class="nav-left">
               <span class="logo">🏥 Clinica</span>
               <a href="/dashboard" class="nav-link">Inicio</a>
-              {nav_seg}
-              <div class="dropdown">
-                <button class="dropbtn">Principal 1 ▾</button>
-                <div class="dropdown-content">{get_links("Principal 1")}</div>
-              </div>
-            </div>
-            <div class="nav-right">
-              <span class="user-pill">{user['u']}</span>
-              <a href="/logout" class="btn-salir">Salir</a>
-            </div>
-          </div>
-        </div>"""
-            
-        nav = f"""
-        <div class="top-nav">
-          <div class="nav-container">
-            <div class="nav-left">
-              <span class="logo">🏥 Clinica</span>
-              <a href="/dashboard" class="nav-link">Inicio</a>
-              <div class="dropdown">
-                <button class="dropbtn">Seguridad ▾</button>
-                <div class="dropdown-content">
-                  <a href="/perfiles">👤 Perfiles</a>
-                  <a href="/modulos">📦 Módulos</a>
-                  <a href="/usuarios">👥 Usuarios</a>
-                  <a href="/permisos">🔐 Permisos</a>
-                </div>
-              </div>
-              <div class="dropdown">
-                <button class="dropbtn">Principal 1 ▾</button>
-                <div class="dropdown-content">{get_links("Principal 1")}</div>
-              </div>
-              <div class="dropdown">
-                <button class="dropbtn">Principal 2 ▾</button>
-                <div class="dropdown-content">{get_links("Principal 2")}</div>
-              </div>
+              {dropdown_seguridad}
+              {dropdown_p1}
+              {dropdown_p2}
             </div>
             <div class="nav-right">
               <span class="user-pill">{user['u']}</span>
