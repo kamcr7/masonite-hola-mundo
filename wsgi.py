@@ -636,145 +636,169 @@ def application(environ, start_response):
             </script>"""
  
     # ----------------------------------------------------------
-    # 8. PERFILES
+    # 8. PERFILES (CON CONTROL DE PERMISOS)
     # ----------------------------------------------------------
     elif path == "/perfiles":
-        cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
-        perfiles = cur.fetchall()
-        rows = "".join([f"""
-        <tr class='p-row'>
-          <td>{i}</td>
-          <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
-          <td>
-            <button class='btn-blue' onclick='preEdit({p["id"]}, {{n:"{p["strNombrePerfil"]}"}}, "mEditP")'>Editar</button>
-            <button class='btn-red' onclick="runCrud('delete','perfiles',{p['id']})">Borrar</button>
-          </td>
-        </tr>""" for i, p in enumerate(perfiles, 1)])
+        id_p = u_data.get('pid')
+        # Consultar permisos para el módulo Perfiles
+        cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Perfiles'", (id_p,))
+        p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
-        content = f"""
-        <div class='card'>
-          <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
-          <div class='toolbar'>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNewP')">+ NUEVO PERFIL</button>
-            <input type='text' id='txtBusca' class='search-input'
-              onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar...'>
-          </div>
-          <table>
-            <thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-          <div class='paginador-ui'>
-            <button class='btn-blue' onclick="cambiarPagina(-1,'.p-row')">❮ Anterior</button>
-            <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
-            <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
-          </div>
-        </div>
+        if not p_acc['permisoVer']:
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
+        else:
+            cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
+            perfiles = cur.fetchall()
+            
+            rows = ""
+            for i, p in enumerate(perfiles, 1):
+                # Botones condicionales
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>" if p_acc['permisoEditar'] else ""
+                btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
+                
+                rows += f"""
+                <tr class='p-row'>
+                  <td>{i}</td>
+                  <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
+                  <td>{btn_edit} {btn_del}</td>
+                </tr>"""
 
-        <div id='mNewP' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mNewP')">&times;</span>
-          <h3>Nuevo Perfil</h3>
-          <label>Nombre del Perfil (Solo letras, máx 15)</label>
-          <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
-        </div></div>
+            btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNewP')\">+ NUEVO PERFIL</button>" if p_acc['permisoCrear'] else ""
 
-        <div id='mEditP' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mEditP')">&times;</span>
-          <h3>Editar Perfil</h3>
-          <input type='hidden' id='ed_id'>
-          <label>Nombre</label>
-          <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
-        </div></div>
+            content = f"""
+            <div class='card'>
+              <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
+              <div class='toolbar'>
+                {btn_nuevo_html}
+                <input type='text' id='txtBusca' class='search-input'
+                  onkeyup="paginaActual=1; filtrar('.p-row','.p-name');" placeholder='🔍 Buscar...'>
+              </div>
+              <table>
+                <thead><tr><th>#</th><th>NOMBRE</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+              </table>
+              <div class='paginador-ui'>
+                <button class='btn-blue' onclick="cambiarPagina(-1,'.p-row')">❮ Anterior</button>
+                <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
+                <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
+              </div>
+            </div>
 
-        <script>
-          function savePerfil() {{
-            const n = document.getElementById('pn').value.trim();
-            if (!n) return alert("⚠️ Nombre obligatorio");
-            if (n.length > 15) return alert("⚠️ Máximo 15 caracteres");
-            runCrud('save','perfiles',0,{{n}});
-          }}
-          function updatePerfil() {{
-            const n = document.getElementById('ed_n').value.trim();
-            if (!n) return alert("⚠️ Nombre obligatorio");
-            runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
-          }}
-        </script>"""
-        
+            <div id='mNewP' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mNewP')">&times;</span>
+              <h3>Nuevo Perfil</h3>
+              <label>Nombre del Perfil (Solo letras, máx 15)</label>
+              <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
+            </div></div>
+
+            <div id='mEditP' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mEditP')">&times;</span>
+              <h3>Editar Perfil</h3>
+              <input type='hidden' id='ed_id'>
+              <label>Nombre</label>
+              <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
+            </div></div>
+
+            <script>
+              function savePerfil() {{
+                const n = document.getElementById('pn').value.trim();
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                runCrud('save','perfiles',0,{{n}});
+              }}
+              function updatePerfil() {{
+                const n = document.getElementById('ed_n').value.trim();
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
+              }}
+            </script>"""
+            
     # ----------------------------------------------------------
-    # 9. MÓDULOS
+    # 9. MÓDULOS (CON CONTROL DE PERMISOS)
     # ----------------------------------------------------------
     elif path == "/modulos":
-        cur.execute("SELECT * FROM modulos ORDER BY id ASC")
-        modulos = cur.fetchall()
-        rows = "".join([f"""
-        <tr class='m-row'>
-          <td><b class='m-name'>{m['strNombreModulo']}</b></td>
-          <td><code style='color:#94a3b8; font-size:12px;'>{m['strRuta']}</code></td>
-          <td>{m['strMenuPadre']}</td>
-          <td>
-            <button class='btn-blue' onclick='preEdit({m["id"]}, {{n:"{m["strNombreModulo"]}", p:"{m["strMenuPadre"]}"}}, "mEditM")'>Editar</button>
-            <button class='btn-red' onclick="runCrud('delete','modulos',{m['id']})">Borrar</button>
-          </td>
-        </tr>""" for m in modulos])
+        id_p = u_data.get('pid')
+        cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Módulos'", (id_p,))
+        p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
-        content = f"""
-        <div class='card'>
-          <h2 style="margin-top:0;">📦 Gestión de Módulos</h2>
-          <div class='toolbar'>
-            <button class='btn-emerald' style='width:auto' onclick="openM('mNewM')">+ NUEVO MÓDULO</button>
-            <input type='text' id='txtBusca' class='search-input'
-              onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
-          </div>
-          <table>
-            <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-          <div class='paginador-ui'>
-            <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
-            <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
-            <button class='btn-blue' onclick="cambiarPagina(1,'.m-row')">Siguiente ❯</button>
-          </div>
-        </div>
+        if not p_acc['permisoVer']:
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
+        else:
+            cur.execute("SELECT * FROM modulos ORDER BY id ASC")
+            modulos = cur.fetchall()
+            
+            rows = ""
+            for m in modulos:
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
+                btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
+                
+                rows += f"""
+                <tr class='m-row'>
+                  <td><b class='m-name'>{m['strNombreModulo']}</b></td>
+                  <td><code style='color:#94a3b8; font-size:12px;'>{m['strRuta']}</code></td>
+                  <td>{m['strMenuPadre']}</td>
+                  <td>{btn_edit} {btn_del}</td>
+                </tr>"""
 
-        <div id='mNewM' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mNewM')">&times;</span>
-          <h3>Nuevo Módulo</h3>
-          <label>Nombre del Módulo</label>
-          <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <label>Menú Padre</label>
-          <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
-          <button class='btn-emerald' onclick='saveMod()'>GUARDAR</button>
-        </div></div>
+            btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNewM')\">+ NUEVO MÓDULO</button>" if p_acc['permisoCrear'] else ""
 
-        <div id='mEditM' class='modal'><div class='modal-content'>
-          <span class='close-x' onclick="closeM('mEditM')">&times;</span>
-          <h3>Editar Módulo</h3>
-          <input type='hidden' id='ed_id'>
-          <label>Nombre</label>
-          <input id='ed_n_mod' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-          <label>Menú Padre</label>
-          <select id='ed_p_mod'><option>Principal 1</option><option>Principal 2</option></select>
-          <button class='btn-emerald' onclick='updateMod()'>ACTUALIZAR</button>
-        </div></div>
+            content = f"""
+            <div class='card'>
+              <h2 style="margin-top:0;">📦 Gestión de Módulos</h2>
+              <div class='toolbar'>
+                {btn_nuevo_html}
+                <input type='text' id='txtBusca' class='search-input'
+                  onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
+              </div>
+              <table>
+                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
+                <tbody>{rows}</tbody>
+              </table>
+              <div class='paginador-ui'>
+                <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
+                <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
+                <button class='btn-blue' onclick="cambiarPagina(1,'.m-row')">Siguiente ❯</button>
+              </div>
+            </div>
 
-        <script>
-          function saveMod() {{
-            const n = document.getElementById('mn').value.trim();
-            if (!n) return alert("⚠️ Nombre obligatorio");
-            // Generar ruta automática (limpiando puntos para la URL)
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
-            runCrud('save','modulos',0,{{ n, r, p: document.getElementById('mp').value }});
-          }}
-          function updateMod() {{
-            const id = document.getElementById('ed_id').value;
-            const n  = document.getElementById('ed_n_mod').value.trim();
-            const p  = document.getElementById('ed_p_mod').value;
-            if (!n) return alert("⚠️ Nombre obligatorio");
-            const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
-            runCrud('update','modulos', id, {{ n, r, p }});
-          }}
-        </script>"""
+            <div id='mNewM' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mNewM')">&times;</span>
+              <h3>Nuevo Módulo</h3>
+              <label>Nombre del Módulo</label>
+              <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
+              <select id='mp'><option>Principal 1</option><option>Principal 2</option></select>
+              <button class='btn-emerald' onclick='saveMod()'>GUARDAR</button>
+            </div></div>
+
+            <div id='mEditM' class='modal'><div class='modal-content'>
+              <span class='close-x' onclick="closeM('mEditM')">&times;</span>
+              <h3>Editar Módulo</h3>
+              <input type='hidden' id='ed_id'>
+              <label>Nombre</label>
+              <input id='ed_n_mod' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
+              <select id='ed_p_mod'><option>Principal 1</option><option>Principal 2</option></select>
+              <button class='btn-emerald' onclick='updateMod()'>ACTUALIZAR</button>
+            </div></div>
+
+            <script>
+              function saveMod() {{
+                const n = document.getElementById('mn').value.trim();
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
+                runCrud('save','modulos',0,{{ n, r, p: document.getElementById('mp').value }});
+              }}
+              function updateMod() {{
+                const id = document.getElementById('ed_id').value;
+                const n  = document.getElementById('ed_n_mod').value.trim();
+                const p  = document.getElementById('ed_p_mod').value;
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                const r = "/" + n.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '');
+                runCrud('update','modulos', id, {{ n, r, p }});
+              }}
+            </script>"""
      
  # ----------------------------------------------------------
     # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY) - LIGHT MODE
