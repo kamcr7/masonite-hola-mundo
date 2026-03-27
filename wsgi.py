@@ -361,7 +361,7 @@ def application(environ, start_response):
         return [res]
  
     # ----------------------------------------------------------
-    # 3. LOGIN
+    # 3. LOGIN (CORREGIDO PARA PERMISOS)
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
@@ -369,15 +369,26 @@ def application(environ, start_response):
             form    = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
+            
             conn2   = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
             cur2.execute(
                 "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
                 (usuario, hash_password(pwd))
             )
-            user = cur2.fetchone()
+            user_row = cur2.fetchone()
             cur2.close(); conn2.close()
-            if user:
-                token = jwt_encode({"u": user["strNombreUsuario"], "id": user["id"], "exp": time.time() + 86400})
+            
+            if user_row:
+                # AQUÍ ESTÁ EL CAMBIO: Guardamos "pid" para que el sistema sepa qué permisos tiene el usuario
+                token_data = {
+                    "u": user_row["strNombreUsuario"], 
+                    "id": user_row["id"], 
+                    "pid": user_row["idPerfil"], # <--- ESTO ES LO QUE FALTABA
+                    "exp": time.time() + 86400
+                }
+                
+                token = jwt_encode(token_data)
+                
                 start_response("303 See Other", [
                     ("Location", "/dashboard"),
                     ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
@@ -385,7 +396,7 @@ def application(environ, start_response):
                 return [b""]
             else:
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:15px;'>⚠️ Usuario o contraseña incorrectos</p>"
- 
+
         login_html = f"""
         <div style="min-height:80vh; display:flex; align-items:center; justify-content:center;">
           <div class="card" style="width:400px;">
