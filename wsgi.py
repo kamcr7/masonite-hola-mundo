@@ -519,33 +519,31 @@ def application(environ, start_response):
         </div>"""
  
 # ----------------------------------------------------------
-    # 7. USUARIOS (CON FOTO Y PERMISOS)
+    # 7. USUARIOS (CON CONTROL DE PERMISOS DINÁMICO)
     # ----------------------------------------------------------
     elif path == "/usuarios":
         id_p = u_data.get('pid')
-        # 1. Consultar permisos específicos
+        # 1. Consultar permisos específicos para este módulo
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo='Usuarios'""", (id_p,))
         p_user = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
+        # 2. Validar si tiene permiso de ver, si no, mostrar mensaje de error
         if not p_user['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permisos para ver este módulo.</p></div>"
         else:
             cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
             usuarios = cur.fetchall()
             
-            # 2. Generar filas con lógica de Foto de Perfil
+            # 3. Generar filas de la tabla ocultando botones según permisoEditar y permisoEliminar
             rows = ""
             for u in usuarios:
-                # Si existe strFoto se usa, si no, el avatar por iniciales
-                foto_src = u.get('strFoto') if u.get('strFoto') else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
-                
                 btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
                 
                 rows += f"""
                 <tr class='u-row'>
-                  <td><img src='{foto_src}' class='avatar-table' style='width:35px; height:35px; border-radius:50%; object-fit:cover;'></td>
+                  <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
                   <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
                   <td>{u.get('strNombrePerfil','—')}</td>
                   <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
@@ -554,6 +552,8 @@ def application(environ, start_response):
 
             cur.execute("SELECT * FROM perfiles")
             p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
+
+            # 4. Mostrar botón "+ NUEVO USUARIO" solo si tiene permisoCrear
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNew')\">+ NUEVO USUARIO</button>" if p_user['permisoCrear'] else ""
 
             content = f"""
@@ -578,17 +578,8 @@ def application(environ, start_response):
             <div id='mNew' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNew')">&times;</span>
               <h3>Nuevo Usuario</h3>
-              
-              <div style="text-align:center; margin-bottom:15px;">
-                <img id="imgPre" src="https://ui-avatars.com/api/?name=U&background=random" 
-                     style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid var(--emerald);">
-                <br>
-                <label for="u_foto" class="btn-blue" style="display:inline-block; padding:4px 8px; font-size:11px; cursor:pointer; margin-top:5px;">📸 Subir Foto</label>
-                <input type="file" id="u_foto" accept="image/*" style="display:none" onchange="previewImg(this)">
-              </div>
-
               <div class='grid-2'>
-                <div><label>Nombre</label>
+                <div><label>Nombre (Solo letras)</label>
                      <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
                 <div><label>Pass (5-8 carac.)</label>
                      <input id='up' type='password' maxlength='8'></div>
@@ -616,19 +607,6 @@ def application(environ, start_response):
             </div></div>
 
             <script>
-              let base64Foto = "";
-              
-              function previewImg(input) {{
-                if (input.files && input.files[0]) {{
-                  const reader = new FileReader();
-                  reader.onload = function(e) {{
-                    document.getElementById('imgPre').src = e.target.result;
-                    base64Foto = e.target.result;
-                  }};
-                  reader.readAsDataURL(input.files[0]);
-                }}
-              }}
-
               function validateAndSave() {{
                 const u = document.getElementById('un').value.trim();
                 const p = document.getElementById('up').value;
@@ -641,12 +619,7 @@ def application(environ, start_response):
                 if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
                 if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
                 
-                runCrud('save','usuarios',0,{{ 
-                  u, p, c, t,
-                  idp: document.getElementById('un_idp').value, 
-                  st: document.getElementById('un_st').value,
-                  img: base64Foto 
-                }});
+                runCrud('save','usuarios',0,{{ u, p, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value }});
               }}
               
               function updateUser() {{
