@@ -304,7 +304,7 @@ def application(environ, start_response):
         return [res]
  
 # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (CORREGIDO PARA TU TABLA USUARIOS)
+    # 2. API: CRUD PRINCIPAL (REPARADO PARA PERFILES Y MÓDULOS)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
@@ -312,51 +312,55 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
         
         try:
-            # --- VALIDACIÓN DE PERMISOS (Se mantiene igual) ---
+            # --- VALIDACIÓN DE PERMISOS ---
             if p['action'] != 'save_permisos_matrix':
                 id_p = u_data.get('pid')
-                mapa_permisos = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
-                columna = mapa_permisos.get(p['action'])
-                if columna:
-                    nom_modulo = p['table'].capitalize()
-                    cur.execute(f"SELECT {columna} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_modulo))
-                    permiso_row = cur.fetchone()
-                    if not permiso_row or not permiso_row[columna]:
-                        raise Exception(f"No tienes permiso para {p['action']} en {nom_modulo}")
+                mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
+                col = mapa.get(p['action'])
+                if col:
+                    nom_mod = p['table'].capitalize()
+                    cur.execute(f"SELECT {col} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_mod))
+                    p_row = cur.fetchone()
+                    if not p_row or not p_row[col]: raise Exception(f"Sin permiso para {p['action']}")
 
-            # --- LÓGICA DE ACCIONES ---
+            # --- ACCIONES ---
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
-                    # Verificar si existe
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
-                    if cur.fetchone(): raise Exception("El nombre de usuario ya está registrado")
-                    
-                    # INSERT: Usamos strPwd (según tu captura) y los campos nuevos
-                    cur.execute("""
-                        INSERT INTO usuarios 
+                    if cur.fetchone(): raise Exception("El usuario ya existe")
+                    cur.execute("""INSERT INTO usuarios 
                         (strNombreUsuario, strPwd, strCorreo, strTelefono, idPerfil, strEstado, strFoto) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        u_nom, 
-                        hash_password(p['data']['p']), 
-                        p['data'].get('c', ''), 
-                        p['data'].get('t', ''), 
-                        p['data']['idp'], 
-                        p['data']['st'],
-                        p['data'].get('img', '')
-                    ))
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                        (u_nom, hash_password(p['data']['p']), p['data'].get('c',''), 
+                         p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
 
                 elif p['table'] == 'perfiles':
-                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data']['n'].strip(),))
+                    # Usamos .get('n') porque Perfiles envía 'n' como nombre
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
+
+                elif p['table'] == 'modulos':
+                    # Modulos envía 'n', 'r', 'p'
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
+                                (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
 
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                 (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
+
+                elif p['table'] == 'perfiles':
+                    # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", 
+                                (p['data'].get('n', '').strip(), p['id']))
+
+                elif p['table'] == 'modulos':
+                    # Reparado: ahora busca 'n', 'r' y 'p'
+                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
+                                (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
 
             elif p['action'] == 'save_permisos_matrix':
                 id_p = p['data']['idp']
