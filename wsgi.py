@@ -660,7 +660,7 @@ def application(environ, start_response):
             </script>"""
  
     # ----------------------------------------------------------
-    # 8. PERFILES (CON CONTROL DE PERMISOS)
+    # 8. PERFILES (CON CONTROL DE DUPLICADOS)
     # ----------------------------------------------------------
     elif path == "/perfiles":
         id_p = u_data.get('pid')
@@ -673,6 +673,9 @@ def application(environ, start_response):
         else:
             cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
             perfiles = cur.fetchall()
+            
+            # Extraemos los nombres para la validación en JS (convertidos a minúsculas para comparar mejor)
+            nombres_existentes = [p['strNombrePerfil'].strip().lower() for p in perfiles]
             
             rows = ""
             for i, p in enumerate(perfiles, 1):
@@ -711,9 +714,9 @@ def application(environ, start_response):
             <div id='mNewP' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNewP')">&times;</span>
               <h3>Nuevo Perfil</h3>
-              <label>Nombre del Perfil (Solo letras, máx 15)</label>
+              <label>Nombre del Perfil (Letras, máx 15)</label>
               <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <button class='btn-emerald' onclick='savePerfil()'>GUARDAR</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='savePerfil()'>GUARDAR PERFIL</button>
             </div></div>
 
             <div id='mEditP' class='modal'><div class='modal-content'>
@@ -722,19 +725,39 @@ def application(environ, start_response):
               <input type='hidden' id='ed_id'>
               <label>Nombre</label>
               <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <button class='btn-emerald' onclick='updatePerfil()'>ACTUALIZAR</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updatePerfil()'>ACTUALIZAR PERFIL</button>
             </div></div>
 
             <script>
+              // Pasamos la lista de nombres desde Python a JavaScript
+              const perfilesExistentes = {nombres_existentes};
+
               function savePerfil() {{
                 const n = document.getElementById('pn').value.trim();
-                if (!n) return alert("⚠️ Nombre obligatorio");
+                if (!n) return alert("⚠️ El nombre es obligatorio");
+                
+                // Validación de duplicados
+                if (perfilesExistentes.includes(n.toLowerCase())) {{
+                    return alert("❌ Error: Ya existe un perfil con el nombre '" + n + "'");
+                }}
+                
                 runCrud('save','perfiles',0,{{n}});
               }}
+
               function updatePerfil() {{
+                const id = document.getElementById('ed_id').value;
                 const n = document.getElementById('ed_n').value.trim();
-                if (!n) return alert("⚠️ Nombre obligatorio");
-                runCrud('update','perfiles', document.getElementById('ed_id').value, {{n}});
+                if (!n) return alert("⚠️ El nombre es obligatorio");
+
+                // Para editar, verificamos que el nombre no exista en OTROS registros
+                // (permitimos que guarde si el nombre es el mismo que ya tenía el registro actual)
+                const nombreOriginal = document.querySelector('.p-row button[onclick*="'+id+'"]').parentElement.parentElement.querySelector('.p-name').innerText.trim().toLowerCase();
+                
+                if (n.toLowerCase() !== nombreOriginal && perfilesExistentes.includes(n.toLowerCase())) {{
+                    return alert("❌ Error: Ya existe otro perfil con el nombre '" + n + "'");
+                }}
+
+                runCrud('update','perfiles', id, {{n}});
               }}
             </script>"""
             
