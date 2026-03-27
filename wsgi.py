@@ -940,42 +940,31 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 11. VISTAS DE MAQUETAS (Corrección de nombres para Permisos)
+    # 11. VISTAS DE MAQUETAS CON ACCIONES FUNCIONALES
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
         id_p = u_data.get('pid')
         
-        # 1. Diccionario de vistas: 
-        # IMPORTANTE: "modulo_bd" debe ser IGUAL a como aparece en tu tabla de Permisos/Módulos
+        # 1. Configuración de Maquetas
         vistas = {
             "/principal-1.1": {
-                "modulo_bd": "Principal 1.1", # <--- Cambia esto si en tu BD se llama diferente
+                "modulo_bd": "Principal 1.1",
                 "titulo": "👥 Catálogo de Clientes",
                 "color": "#3b82f6",
                 "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ESTADO", "ACCIONES"],
                 "filas": [
-                    ["001", "Corporativo Industrial S.A.", "CIN010101ABC", "Ing. Roberto M.", "active"],
-                    ["002", "Servicios Médicos Local", "SML020202HJK", "Dra. Elena G.", "active"]
+                    {"id": 1, "data": ["001", "Corporativo Industrial S.A.", "CIN010101ABC", "Ing. Roberto M.", "active"]},
+                    {"id": 2, "data": ["002", "Servicios Médicos Local", "SML020202HJK", "Dra. Elena G.", "active"]}
                 ]
             },
             "/principal-1.2": {
                 "modulo_bd": "Principal 1.2",
                 "titulo": "📄 Emisión de Facturas",
                 "color": "#10b981",
-                "headers": ["FOLIO", "CLIENTE (RELACIONADO)", "MONTO", "ESTADO", "ACCIONES"],
+                "headers": ["FOLIO", "CLIENTE", "MONTO", "ESTADO", "ACCIONES"],
                 "filas": [
-                    ["FAC-8801", "Corporativo Industrial S.A.", "$12,400.00", "active"],
-                    ["FAC-8802", "Servicios Médicos Local", "$3,150.00", "inactive"]
-                ]
-            },
-            "/principal-2.1": {
-                "modulo_bd": "Principal 2.1",
-                "titulo": "💰 Control de Pagos",
-                "color": "#f59e0b",
-                "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ESTADO", "ACCIONES"],
-                "filas": [
-                    ["TRX-990", "FAC-8801", "25/03/2026", "Transferencia", "active"],
-                    ["TRX-991", "FAC-8802", "26/03/2026", "Efectivo", "inactive"]
+                    {"id": 101, "data": ["FAC-8801", "Corp. Industrial", "$12,400.00", "active"]},
+                    {"id": 102, "data": ["FAC-8802", "Serv. Médicos", "$3,150.00", "inactive"]}
                 ]
             }
         }
@@ -984,69 +973,58 @@ def application(environ, start_response):
             "modulo_bd": "General",
             "titulo": "📦 Módulo General",
             "color": "var(--emerald)",
-            "headers": ["DATO 1", "DATO 2", "DATO 3", "ESTADO", "ACCIONES"],
-            "filas": [["Ejemplo A", "Ejemplo B", "Ejemplo C", "active"]]
+            "headers": ["DATO 1", "DATO 2", "ESTADO", "ACCIONES"],
+            "filas": [{"id": 0, "data": ["Ejemplo A", "Ejemplo B", "active"]}]
         })
 
-        # 2. Intentamos buscar el permiso por nombre de módulo
+        # 2. Consulta de Permisos (Doble validación: Nombre o Ruta)
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
-                       FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", 
-                    (id_p, config["modulo_bd"]))
+                       FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", (id_p, config["modulo_bd"]))
         p_acc = cur.fetchone()
-
-        # Si no lo encuentra por nombre, intentamos buscarlo por la RUTA en la tabla modulos
+        
         if not p_acc:
             cur.execute("""SELECT p.permisoVer, p.permisoCrear, p.permisoEditar, p.permisoEliminar 
-                           FROM permisos p 
-                           JOIN modulos m ON p.nombreModulo = m.strNombreModulo 
+                           FROM permisos p JOIN modulos m ON p.nombreModulo = m.strNombreModulo 
                            WHERE p.idPerfil=%s AND m.strRuta=%s""", (id_p, path))
-            p_acc = cur.fetchone()
+            p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
-        # Valores por defecto si sigue sin encontrar nada
-        if not p_acc: 
-            p_acc = {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
-
-        # 3. Validación de visualización
         if not p_acc['permisoVer']:
-            content = f"""
-            <div class='card' style='text-align:center; padding:50px;'>
-                <h1 style='color:#ff4d4d; font-size:50px; margin-bottom:10px;'>🚫</h1>
-                <h2 style='color:#333;'>Acceso Denegado</h2>
-                <p style='color:#666;'>No tienes permisos para ver el módulo <b>{config['modulo_bd']}</b>.</p>
-                <br>
-                <a href='/dashboard' class='btn-blue' style='text-decoration:none; padding:10px 20px;'>Volver al Inicio</a>
-            </div>"""
+            content = "<div class='card' style='text-align:center; padding:50px;'><h2>🚫 Acceso Denegado</h2><a href='/dashboard' class='btn-blue'>Volver</a></div>"
         else:
-            # 4. Construcción de Tabla
+            # 3. Renderizado de Filas con Botones de Acción
             thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
             tbody = ""
-            for f in config["filas"]:
-                status_idx = config["headers"].index("ESTADO") if "ESTADO" in config["headers"] else -2
-                status_val = f[status_idx]
-                status_text = "Vigente" if status_val == "active" else "Pendiente"
+            
+            for item in config["filas"]:
+                f = item["data"]
+                item_id = item["id"]
                 
-                cells_before = "".join([f"<td>{str(col)}</td>" for col in f[:status_idx]])
-                cells_after = "".join([f"<td>{str(col)}</td>" for col in f[status_idx+1:]])
-
-                # Botón de detalles solo si puede EDITAR
-                btn_detalles = "<td><button class='btn-blue' style='padding:4px 8px; font-size:11px;'>Detalles</button></td>" if p_acc['permisoEditar'] else "<td>-</td>"
-
+                # Lógica de Estado
+                status_val = f[-1] # El último elemento antes de 'ACCIONES'
+                status_pill = f"<td><span class='status-pill {status_val}'>{'Vigente' if status_val=='active' else 'Pendiente'}</span></td>"
+                
+                # Celdas de datos (todas menos el estado)
+                cells = "".join([f"<td>{str(col)}</td>" for col in f[:-1]])
+                
+                # BOTONES DE ACCIÓN (Condicionados)
+                btn_edit = f"<button class='btn-blue' onclick=\"alert('Editar ID: {item_id}')\" style='padding:4px 8px; margin-right:5px;'>Editar</button>" if p_acc['permisoEditar'] else ""
+                btn_del = f"<button class='btn-red' onclick=\"runCrud('delete','{config['modulo_bd']}',{item_id})\" style='padding:4px 8px;'>Borrar</button>" if p_acc['permisoEliminar'] else ""
+                
                 tbody += f"""
                 <tr>
-                    {cells_before}
-                    <td><span class='status-pill {status_val}'>{status_text}</span></td>
-                    {cells_after}
-                    {btn_detalles}
+                    {cells}
+                    {status_pill}
+                    <td>{btn_edit} {btn_del} {'' if (btn_edit or btn_del) else '-'}</td>
                 </tr>"""
 
-            # 5. Botón Nuevo solo si puede CREAR
-            btn_nuevo_html = f"<button class='btn-emerald' style='width:auto;'>+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
+            # 4. Botón Nuevo Condicional
+            btn_nuevo = f"<button class='btn-emerald' style='width:auto' onclick=\"alert('Nuevo registro en {config['modulo_bd']}')\">+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
 
             content = f"""
             <div class='card'>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
                     <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
-                    {btn_nuevo_html}
+                    {btn_nuevo}
                 </div>
                 <table>
                     <thead><tr>{thead}</tr></thead>
