@@ -979,13 +979,13 @@ def application(environ, start_response):
           }}
         </script>"""
  
-    # ----------------------------------------------------------
-    # 11. VISTAS DE MAQUETAS CON ACCIONES FUNCIONALES
+  # ----------------------------------------------------------
+    # 11. VISTAS DE MAQUETAS (PRINCIPAL 1 Y 2)
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
         id_p = u_data.get('pid')
         
-        # 1. Configuración de Maquetas
+        # 1. Diccionario extendido con todas las pantallas estáticas
         vistas = {
             "/principal-1.1": {
                 "modulo_bd": "Principal 1.1",
@@ -1006,18 +1006,39 @@ def application(environ, start_response):
                     {"id": 101, "data": ["FAC-8801", "Corp. Industrial", "$12,400.00", "active"]},
                     {"id": 102, "data": ["FAC-8802", "Serv. Médicos", "$3,150.00", "inactive"]}
                 ]
+            },
+            "/principal-2.1": {
+                "modulo_bd": "Principal 2.1",
+                "titulo": "📦 Inventario de Farmacia",
+                "color": "#f59e0b",
+                "headers": ["SKU", "PRODUCTO", "STOCK", "PRECIO", "ESTADO", "ACCIONES"],
+                "filas": [
+                    {"id": 501, "data": ["MED-01", "Paracetamol 500mg", "150", "$45.00", "active"]},
+                    {"id": 502, "data": ["MED-02", "Amoxicilina Caps", "0", "$120.00", "inactive"]}
+                ]
+            },
+            "/principal-2.2": {
+                "modulo_bd": "Principal 2.2",
+                "titulo": "📋 Órdenes de Servicio",
+                "color": "#8b5cf6",
+                "headers": ["ID", "PACIENTE", "SERVICIO", "FECHA", "ESTADO", "ACCIONES"],
+                "filas": [
+                    {"id": 901, "data": ["ORD-10", "Juan Pérez", "Consulta General", "2026-03-25", "active"]},
+                    {"id": 902, "data": ["ORD-11", "Ana Gómez", "Laboratorio", "2026-03-26", "active"]}
+                ]
             }
         }
 
+        # Obtenemos la configuración según el path, o una genérica si no existe
         config = vistas.get(path, {
-            "modulo_bd": "General",
-            "titulo": "📦 Módulo General",
-            "color": "var(--emerald)",
-            "headers": ["DATO 1", "DATO 2", "ESTADO", "ACCIONES"],
-            "filas": [{"id": 0, "data": ["Ejemplo A", "Ejemplo B", "active"]}]
+            "modulo_bd": "Módulo Desconocido",
+            "titulo": "📦 Contenido en Desarrollo",
+            "color": "var(--text-muted)",
+            "headers": ["COLUMNA 1", "COLUMNA 2", "ESTADO", "ACCIONES"],
+            "filas": []
         })
 
-        # 2. Consulta de Permisos (Doble validación: Nombre o Ruta)
+        # 2. Validación de Permisos (Doble vía: por nombre exacto o por ruta)
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", (id_p, config["modulo_bd"]))
         p_acc = cur.fetchone()
@@ -1028,48 +1049,52 @@ def application(environ, start_response):
                            WHERE p.idPerfil=%s AND m.strRuta=%s""", (id_p, path))
             p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
+        # 3. Lógica de renderizado (Solo si tiene permisoVer)
         if not p_acc['permisoVer']:
-            content = "<div class='card' style='text-align:center; padding:50px;'><h2>🚫 Acceso Denegado</h2><a href='/dashboard' class='btn-blue'>Volver</a></div>"
+            content = f"""
+            <div class='card' style='text-align:center; padding:50px;'>
+                <h1 style='font-size:60px; margin:0;'>🚫</h1>
+                <h2>Acceso Denegado a {config['modulo_bd']}</h2>
+                <p>No tienes privilegios suficientes para ver este módulo.</p>
+                <a href='/dashboard' class='btn-blue' style='display:inline-block; margin-top:20px;'>Volver al Inicio</a>
+            </div>"""
         else:
-            # 3. Renderizado de Filas con Botones de Acción
             thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
             tbody = ""
             
-            for item in config["filas"]:
-                f = item["data"]
-                item_id = item["id"]
-                
-                # Lógica de Estado
-                status_val = f[-1] # El último elemento antes de 'ACCIONES'
-                status_pill = f"<td><span class='status-pill {status_val}'>{'Vigente' if status_val=='active' else 'Pendiente'}</span></td>"
-                
-                # Celdas de datos (todas menos el estado)
-                cells = "".join([f"<td>{str(col)}</td>" for col in f[:-1]])
-                
-                # BOTONES DE ACCIÓN (Condicionados)
-                btn_edit = f"<button class='btn-blue' onclick=\"alert('Editar ID: {item_id}')\" style='padding:4px 8px; margin-right:5px;'>Editar</button>" if p_acc['permisoEditar'] else ""
-                btn_del = f"<button class='btn-red' onclick=\"runCrud('delete','{config['modulo_bd']}',{item_id})\" style='padding:4px 8px;'>Borrar</button>" if p_acc['permisoEliminar'] else ""
-                
-                tbody += f"""
-                <tr>
-                    {cells}
-                    {status_pill}
-                    <td>{btn_edit} {btn_del} {'' if (btn_edit or btn_del) else '-'}</td>
-                </tr>"""
+            if not config["filas"]:
+                tbody = f"<tr><td colspan='{len(config['headers'])}' style='text-align:center; padding:30px; color:gray;'>No hay registros disponibles en esta sección.</td></tr>"
+            else:
+                for item in config["filas"]:
+                    f = item["data"]
+                    item_id = item["id"]
+                    
+                    # El último elemento de la lista 'data' siempre es el estado para el pill
+                    status_val = f[-1] 
+                    data_cells = "".join([f"<td>{str(col)}</td>" for col in f[:-1]])
+                    
+                    status_pill = f"<td><span class='status-pill {status_val}'>{'Activo' if status_val=='active' else 'Inactivo'}</span></td>"
+                    
+                    # Botones dinámicos según permisos de la tabla 'permisos'
+                    btn_edit = f"<button class='btn-blue' onclick=\"alert('Editando ID: {item_id}')\" style='padding:4px 8px; font-size:11px;'>Editar</button>" if p_acc['permisoEditar'] else ""
+                    btn_del = f"<button class='btn-red' onclick=\"runCrud('delete','{config['modulo_bd']}',{item_id})\" style='padding:4px 8px; font-size:11px;'>Borrar</button>" if p_acc['permisoEliminar'] else ""
+                    
+                    tbody += f"<tr>{data_cells}{status_pill}<td>{btn_edit} {btn_del}</td></tr>"
 
-            # 4. Botón Nuevo Condicional
             btn_nuevo = f"<button class='btn-emerald' style='width:auto' onclick=\"alert('Nuevo registro en {config['modulo_bd']}')\">+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
 
             content = f"""
             <div class='card'>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
-                    <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:10px;">
+                    <h2 style="margin:0; color:{config['color']}; border-left:5px solid {config['color']}; padding-left:15px;">{config['titulo']}</h2>
                     {btn_nuevo}
                 </div>
-                <table>
-                    <thead><tr>{thead}</tr></thead>
-                    <tbody>{tbody}</tbody>
-                </table>
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead><tr>{thead}</tr></thead>
+                        <tbody>{tbody}</tbody>
+                    </table>
+                </div>
             </div>"""
         
     # ----------------------------------------------------------
