@@ -940,12 +940,15 @@ def application(environ, start_response):
         </script>"""
  
     # ----------------------------------------------------------
-    # 11.VISTAS DE MAQUETAS RELACIONADAS PÚLIDAS (Visual Fixed)
+    # 11. VISTAS DE MAQUETAS (SEGURIDAD DINÁMICA APLICADA)
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
-        # 1. Definimos los datos de las tablas según la ruta (sin cambios aquí)
+        id_p = u_data.get('pid')
+        
+        # 1. Definimos los datos (mantenemos tu estructura)
         vistas = {
             "/principal-1.1": {
+                "modulo_bd": "Catálogo de Clientes", # Debe coincidir con el nombre en la tabla 'modulos'
                 "titulo": "👥 Catálogo de Clientes",
                 "color": "#3b82f6",
                 "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ESTADO", "ACCIONES"],
@@ -955,6 +958,7 @@ def application(environ, start_response):
                 ]
             },
             "/principal-1.2": {
+                "modulo_bd": "Emisión de Facturas",
                 "titulo": "📄 Emisión de Facturas",
                 "color": "#10b981",
                 "headers": ["FOLIO", "CLIENTE (RELACIONADO)", "MONTO", "ESTADO", "ACCIONES"],
@@ -964,6 +968,7 @@ def application(environ, start_response):
                 ]
             },
             "/principal-2.1": {
+                "modulo_bd": "Control de Pagos",
                 "titulo": "💰 Control de Pagos",
                 "color": "#f59e0b",
                 "headers": ["TRANSACCIÓN", "FACTURA REF.", "FECHA PAGO", "MÉTODO", "ESTADO", "ACCIONES"],
@@ -974,49 +979,61 @@ def application(environ, start_response):
             }
         }
 
-        # 2. Obtenemos la configuración de la ruta actual (o una por defecto)
+        # 2. Obtenemos la configuración
         config = vistas.get(path, {
+            "modulo_bd": "General",
             "titulo": "📦 Módulo General",
             "color": "var(--emerald)",
             "headers": ["DATO 1", "DATO 2", "DATO 3", "ESTADO", "ACCIONES"],
             "filas": [["Ejemplo A", "Ejemplo B", "Ejemplo C", "active"]]
         })
 
-        # 3. Construimos las cabeceras de la tabla (Alineación a la izquierda)
-        thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
-        
-        # 4. Construimos las filas de la tabla
-        tbody = ""
-        for f in config["filas"]:
-            # Identificamos el penúltimo elemento como el estado
-            # status_idx = -2 si la tabla tiene headers definidos en el diccionario.
-            status_idx = config["headers"].index("ESTADO") if "ESTADO" in config["headers"] else -2
-            status_val = f[status_idx]
-            status_text = "Vigente" if status_val == "active" else "Pendiente"
+        # --- VALIDACIÓN DE PERMISOS PARA MAQUETAS ---
+        cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
+                       FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", 
+                    (id_p, config["modulo_bd"]))
+        p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
+
+        if not p_acc['permisoVer']:
+            content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permiso para ver este módulo.</p></div>"
+        else:
+            # 3. Construimos cabeceras
+            thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
             
-            # Construimos las celdas de datos antes del estado
-            cells_before = "".join([f"<td>{str(col)}</td>" for col in f[:status_idx]])
-            # Construimos las celdas de datos después del estado (si las hay)
-            cells_after = "".join([f"<td>{str(col)}</td>" for col in f[status_idx+1:]])
+            # 4. Construimos filas
+            tbody = ""
+            for f in config["filas"]:
+                status_idx = config["headers"].index("ESTADO") if "ESTADO" in config["headers"] else -2
+                status_val = f[status_idx]
+                status_text = "Vigente" if status_val == "active" else "Pendiente"
+                
+                cells_before = "".join([f"<td>{str(col)}</td>" for col in f[:status_idx]])
+                cells_after = "".join([f"<td>{str(col)}</td>" for col in f[status_idx+1:]])
 
-            tbody += f"""
-            <tr>
-                {cells_before}
-                <td><span class='status-pill {status_val}'>{status_text}</span></td>
-                {cells_after}
-                <td><button style='background:none; border:none; color:#94a3b8; cursor:pointer; font-size:13px; font-weight:bold; padding:0;'>Detalles</button></td>
-            </tr>"""
+                # Ocultar botón Detalles si no tiene permiso de Editar (por ejemplo)
+                btn_detalles = "<td><button class='btn-blue' style='padding:4px 8px; font-size:11px;'>Detalles</button></td>" if p_acc['permisoEditar'] else "<td>-</td>"
 
-        content = f"""
-        <div class='card'>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
-                <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
-                <button class='btn-emerald' style='width:auto;'>+ NUEVO REGISTRO</button>
-            </div>
-            <table>
-                <thead><tr>{thead}</tr></thead>
-                <tbody>{tbody}</tbody>
-            </table>
+                tbody += f"""
+                <tr>
+                    {cells_before}
+                    <td><span class='status-pill {status_val}'>{status_text}</span></td>
+                    {cells_after}
+                    {btn_detalles}
+                </tr>"""
+
+            # 5. Botón Nuevo condicional
+            btn_nuevo_html = f"<button class='btn-emerald' style='width:auto;'>+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
+
+            content = f"""
+            <div class='card'>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
+                    <h2 style="margin:0; color:{config['color']};">{config['titulo']}</h2>
+                    {btn_nuevo_html}
+                </div>
+                <table>
+                    <thead><tr>{thead}</tr></thead>
+                    <tbody>{tbody}</tbody>
+                </table>
             </div>"""
         
     # ----------------------------------------------------------
