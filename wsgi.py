@@ -303,52 +303,47 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
- # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (ACTUALIZADO CON FOTO)
+  # ----------------------------------------------------------
+    # 2. API: CRUD PRINCIPAL (SEGURIDAD APLICADA)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary=True para facilitar la lectura
         
         try:
-            # --- INICIO VALIDACIÓN DE PERMISOS (Sin cambios) ---
+            # --- INICIO VALIDACIÓN DE PERMISOS ---
+            # Solo validamos si no es la acción de guardar la matriz de permisos
             if p['action'] != 'save_permisos_matrix':
                 id_p = u_data.get('pid')
+                # Mapeamos la acción al nombre de la columna en la BD
                 mapa_permisos = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
                 columna = mapa_permisos.get(p['action'])
+                
                 if columna:
+                    # Convertimos el nombre de la tabla al nombre del módulo (ej: 'usuarios' -> 'Usuarios')
                     nom_modulo = p['table'].capitalize()
+                    
                     cur.execute(f"SELECT {columna} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_modulo))
                     permiso_row = cur.fetchone()
+                    
+                    # Si no hay registro o el permiso es 0, lanzamos error y se detiene el proceso
                     if not permiso_row or not permiso_row[columna]:
                         raise Exception(f"No tienes permiso para {p['action']} en el módulo {nom_modulo}")
             # --- FIN VALIDACIÓN DE PERMISOS ---
 
+            # Ahora procedemos con tu lógica original (cambiamos cur a modo normal si prefieres, 
+            # pero funciona igual con dictionary=True)
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
-                    # Validar duplicados
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
-                    
-                    # INSERT con los nuevos campos: Correo, Teléfono y Foto (Base64)
-                    cur.execute("""
-                        INSERT INTO usuarios 
-                        (strNombreUsuario, strPwd, strCorreo, strTelefono, idPerfil, strEstado, strFoto) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        u_nom, 
-                        hash_password(p['data']['p']), 
-                        p['data'].get('c', ''), 
-                        p['data'].get('t', ''), 
-                        p['data']['idp'], 
-                        p['data']['st'],
-                        p['data'].get('img', '') # Aquí se guarda el Base64
-                    ))
+                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
+                                (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
 
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
@@ -378,8 +373,6 @@ def application(environ, start_response):
                     u_nom = p['data']['u'].strip()
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s) AND id!=%s", (u_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
-                    
-                    # El update mantiene los datos básicos (puedes agregar strFoto aquí si decides permitir editarla)
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                 (u_nom, p['data']['idp'], p['data']['st'], p['id']))
 
