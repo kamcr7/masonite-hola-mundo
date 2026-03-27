@@ -303,47 +303,52 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
-  # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (SEGURIDAD APLICADA)
+ # ----------------------------------------------------------
+    # 2. API: CRUD PRINCIPAL (ACTUALIZADO CON FOTO)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary=True para facilitar la lectura
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
         
         try:
-            # --- INICIO VALIDACIÓN DE PERMISOS ---
-            # Solo validamos si no es la acción de guardar la matriz de permisos
+            # --- INICIO VALIDACIÓN DE PERMISOS (Sin cambios) ---
             if p['action'] != 'save_permisos_matrix':
                 id_p = u_data.get('pid')
-                # Mapeamos la acción al nombre de la columna en la BD
                 mapa_permisos = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
                 columna = mapa_permisos.get(p['action'])
-                
                 if columna:
-                    # Convertimos el nombre de la tabla al nombre del módulo (ej: 'usuarios' -> 'Usuarios')
                     nom_modulo = p['table'].capitalize()
-                    
                     cur.execute(f"SELECT {columna} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_modulo))
                     permiso_row = cur.fetchone()
-                    
-                    # Si no hay registro o el permiso es 0, lanzamos error y se detiene el proceso
                     if not permiso_row or not permiso_row[columna]:
                         raise Exception(f"No tienes permiso para {p['action']} en el módulo {nom_modulo}")
             # --- FIN VALIDACIÓN DE PERMISOS ---
 
-            # Ahora procedemos con tu lógica original (cambiamos cur a modo normal si prefieres, 
-            # pero funciona igual con dictionary=True)
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
+                    # Validar duplicados
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
                     if cur.fetchone(): raise Exception("El nombre de usuario ya existe")
-                    cur.execute("INSERT INTO usuarios (strNombreUsuario, strPwd, idPerfil, strEstado) VALUES (%s,%s,%s,%s)",
-                                (u_nom, hash_password(p['data']['p']), p['data']['idp'], p['data']['st']))
+                    
+                    # INSERT con los nuevos campos: Correo, Teléfono y Foto (Base64)
+                    cur.execute("""
+                        INSERT INTO usuarios 
+                        (strNombreUsuario, strPwd, strCorreo, strTelefono, idPerfil, strEstado, strFoto) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        u_nom, 
+                        hash_password(p['data']['p']), 
+                        p['data'].get('c', ''), 
+                        p['data'].get('t', ''), 
+                        p['data']['idp'], 
+                        p['data']['st'],
+                        p['data'].get('img', '') # Aquí se guarda el Base64
+                    ))
 
                 elif p['table'] == 'perfiles':
                     nombre = p['data']['n'].strip()
@@ -373,6 +378,8 @@ def application(environ, start_response):
                     u_nom = p['data']['u'].strip()
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s) AND id!=%s", (u_nom, p['id']))
                     if cur.fetchone(): raise Exception("Ya existe otro usuario con ese nombre")
+                    
+                    # El update mantiene los datos básicos (puedes agregar strFoto aquí si decides permitir editarla)
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                 (u_nom, p['data']['idp'], p['data']['st'], p['id']))
 
@@ -519,31 +526,33 @@ def application(environ, start_response):
         </div>"""
  
 # ----------------------------------------------------------
-    # 7. USUARIOS (CON CONTROL DE PERMISOS DINÁMICO)
+    # 7. USUARIOS (CON FOTO Y PERMISOS)
     # ----------------------------------------------------------
     elif path == "/usuarios":
         id_p = u_data.get('pid')
-        # 1. Consultar permisos específicos para este módulo
+        # 1. Consultar permisos específicos
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo='Usuarios'""", (id_p,))
         p_user = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
 
-        # 2. Validar si tiene permiso de ver, si no, mostrar mensaje de error
         if not p_user['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permisos para ver este módulo.</p></div>"
         else:
             cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
             usuarios = cur.fetchall()
             
-            # 3. Generar filas de la tabla ocultando botones según permisoEditar y permisoEliminar
+            # 2. Generar filas con lógica de Foto de Perfil
             rows = ""
             for u in usuarios:
+                # Si existe strFoto se usa, si no, el avatar por iniciales
+                foto_src = u.get('strFoto') if u.get('strFoto') else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
+                
                 btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
                 
                 rows += f"""
                 <tr class='u-row'>
-                  <td><img src='https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random' class='avatar-table'></td>
+                  <td><img src='{foto_src}' class='avatar-table' style='width:35px; height:35px; border-radius:50%; object-fit:cover;'></td>
                   <td><b class='u-name'>{u['strNombreUsuario']}</b></td>
                   <td>{u.get('strNombrePerfil','—')}</td>
                   <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
@@ -552,8 +561,6 @@ def application(environ, start_response):
 
             cur.execute("SELECT * FROM perfiles")
             p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
-
-            # 4. Mostrar botón "+ NUEVO USUARIO" solo si tiene permisoCrear
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNew')\">+ NUEVO USUARIO</button>" if p_user['permisoCrear'] else ""
 
             content = f"""
@@ -578,8 +585,17 @@ def application(environ, start_response):
             <div id='mNew' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNew')">&times;</span>
               <h3>Nuevo Usuario</h3>
+              
+              <div style="text-align:center; margin-bottom:15px;">
+                <img id="imgPre" src="https://ui-avatars.com/api/?name=U&background=random" 
+                     style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid var(--emerald);">
+                <br>
+                <label for="u_foto" class="btn-blue" style="display:inline-block; padding:4px 8px; font-size:11px; cursor:pointer; margin-top:5px;">📸 Subir Foto</label>
+                <input type="file" id="u_foto" accept="image/*" style="display:none" onchange="previewImg(this)">
+              </div>
+
               <div class='grid-2'>
-                <div><label>Nombre (Solo letras)</label>
+                <div><label>Nombre</label>
                      <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
                 <div><label>Pass (5-8 carac.)</label>
                      <input id='up' type='password' maxlength='8'></div>
@@ -607,6 +623,19 @@ def application(environ, start_response):
             </div></div>
 
             <script>
+              let base64Foto = "";
+              
+              function previewImg(input) {{
+                if (input.files && input.files[0]) {{
+                  const reader = new FileReader();
+                  reader.onload = function(e) {{
+                    document.getElementById('imgPre').src = e.target.result;
+                    base64Foto = e.target.result;
+                  }};
+                  reader.readAsDataURL(input.files[0]);
+                }}
+              }}
+
               function validateAndSave() {{
                 const u = document.getElementById('un').value.trim();
                 const p = document.getElementById('up').value;
@@ -619,7 +648,12 @@ def application(environ, start_response):
                 if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
                 if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
                 
-                runCrud('save','usuarios',0,{{ u, p, idp:document.getElementById('un_idp').value, st:document.getElementById('un_st').value }});
+                runCrud('save','usuarios',0,{{ 
+                  u, p, c, t,
+                  idp: document.getElementById('un_idp').value, 
+                  st: document.getElementById('un_st').value,
+                  img: base64Foto 
+                }});
               }}
               
               function updateUser() {{
