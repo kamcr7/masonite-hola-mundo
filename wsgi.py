@@ -39,21 +39,52 @@ def conectar_bd():
 def render_layout(title, content, user=None):
     nav = ""
     if user:
+        id_p = user.get('pid')
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+        
+        # 1. Obtener nombres de módulos con permiso de VER
+        cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
+        permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
+        
+        # 2. Obtener estructura de módulos
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
+
         def get_links(padre):
             links = []
             for m in all_mods:
-                if m['strMenuPadre'] == padre:
-                    # Si la ruta está vacía en la BD, creamos una basada en el nombre
-                    ruta = m["strRuta"]
-                    if not ruta or ruta.strip() == "":
-                        nombre_slug = m["strNombreModulo"].lower().replace(" ", "-")
-                        ruta = f"/{nombre_slug}"
-                    
+                if m['strMenuPadre'] == padre and m['strNombreModulo'].lower() in permitidos:
+                    ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
+        
+        # 3. Filtrar el menú de Seguridad
+        seg_links = ""
+        for n, r, i in [("Perfiles","/perfiles","👤"), ("Módulos","/modulos","📦"), ("Usuarios","/usuarios","👥"), ("Permisos","/permisos","🔐")]:
+            if n.lower() in permitidos:
+                seg_links += f'<a href="{r}">{i} {n}</a>'
+
+        nav_seg = f"""<div class="dropdown"><button class="dropbtn">Seguridad ▾</button>
+                      <div class="dropdown-content">{seg_links}</div></div>""" if seg_links else ""
+
+        nav = f"""
+        <div class="top-nav">
+          <div class="nav-container">
+            <div class="nav-left">
+              <span class="logo">🏥 Clinica</span>
+              <a href="/dashboard" class="nav-link">Inicio</a>
+              {nav_seg}
+              <div class="dropdown">
+                <button class="dropbtn">Principal 1 ▾</button>
+                <div class="dropdown-content">{get_links("Principal 1")}</div>
+              </div>
+            </div>
+            <div class="nav-right">
+              <span class="user-pill">{user['u']}</span>
+              <a href="/logout" class="btn-salir">Salir</a>
+            </div>
+          </div>
+        </div>"""
             
         nav = f"""
         <div class="top-nav">
@@ -282,13 +313,36 @@ def application(environ, start_response):
         return [res]
  
   # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (CORREGIDO PARA PERMISOS)
+    # 2. API: CRUD PRINCIPAL (SEGURIDAD APLICADA)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
-        conn = conectar_bd(); cur = conn.cursor()
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True) # Usamos dictionary=True para facilitar la lectura
+        
         try:
+            # --- INICIO VALIDACIÓN DE PERMISOS ---
+            # Solo validamos si no es la acción de guardar la matriz de permisos
+            if p['action'] != 'save_permisos_matrix':
+                id_p = u_data.get('pid')
+                # Mapeamos la acción al nombre de la columna en la BD
+                mapa_permisos = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
+                columna = mapa_permisos.get(p['action'])
+                
+                if columna:
+                    # Convertimos el nombre de la tabla al nombre del módulo (ej: 'usuarios' -> 'Usuarios')
+                    nom_modulo = p['table'].capitalize()
+                    
+                    cur.execute(f"SELECT {columna} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_modulo))
+                    permiso_row = cur.fetchone()
+                    
+                    # Si no hay registro o el permiso es 0, lanzamos error y se detiene el proceso
+                    if not permiso_row or not permiso_row[columna]:
+                        raise Exception(f"No tienes permiso para {p['action']} en el módulo {nom_modulo}")
+            # --- FIN VALIDACIÓN DE PERMISOS ---
+
+            # Ahora procedemos con tu lógica original (cambiamos cur a modo normal si prefieres, 
+            # pero funciona igual con dictionary=True)
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
@@ -313,14 +367,10 @@ def application(environ, start_response):
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (m_nom, p['data']['r'], p['data']['p']))
 
-            # NUEVA LÓGICA DE PERMISOS CORREGIDA
             elif p['action'] == 'save_permisos_matrix':
                 id_p = p['data']['idp']
-                # Limpiar permisos previos del perfil
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
-                # Insertar la nueva matriz
                 for per in p['data']['perms']:
-                    # Solo insertamos si tiene al menos un permiso activo
                     if per['v'] or per['c'] or per['e'] or per['d']:
                         cur.execute("""INSERT INTO permisos 
                             (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) 
@@ -441,28 +491,40 @@ def application(environ, start_response):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     content = ""
  
-    # ----------------------------------------------------------
-    # 6. DASHBOARD
+# ----------------------------------------------------------
+    # 6. DASHBOARD (CON FILTRADO DE ACCESOS)
     # ----------------------------------------------------------
     if path in ("/", "/dashboard"):
+        id_p = u_data.get('pid')
+        cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
+        permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
+
+        cards = ""
+        # Definimos las opciones que queremos mostrar en el Dashboard
+        opciones = [
+            ("Usuarios", "/usuarios", "👥"),
+            ("Perfiles", "/perfiles", "👤"),
+            ("Módulos",  "/modulos",  "📦"),
+            ("Permisos", "/permisos", "🔐")
+        ]
+        
+        for nom, rut, ico in opciones:
+            if nom.lower() in permitidos:
+                cards += f"""
+                <a href='{rut}' style='text-decoration:none;'>
+                    <div class='dash-card'>
+                        <span class='icon'>{ico}</span>
+                        <h3>{nom}</h3>
+                    </div>
+                </a>"""
+
         content = f"""
-        <div class="card">
-          <h2 style="margin-top:0;">🏠 Bienvenido, {u_data['u']}</h2>
-          <p style="color:#94a3b8;">Selecciona una sección del menú para comenzar.</p>
-          <div class="dash-grid">
-            <a href="/usuarios" class="dash-card">
-              <div class="icon">👥</div><h3>Usuarios</h3>
-            </a>
-            <a href="/perfiles" class="dash-card">
-              <div class="icon">👤</div><h3>Perfiles</h3>
-            </a>
-            <a href="/modulos" class="dash-card">
-              <div class="icon">📦</div><h3>Módulos</h3>
-            </a>
-            <a href="/permisos" class="dash-card">
-              <div class="icon">🔐</div><h3>Permisos</h3>
-            </a>
-          </div>
+        <div class='card'>
+            <h2 style="margin-top:0;">🏠 Bienvenido, {u_data['u']}</h2>
+            <p style='color:var(--text-muted);'>Selecciona una sección del menú para comenzar.</p>
+            <div class='dash-grid'>
+                {cards if cards else "<p>No tienes módulos asignados. Contacta al administrador.</p>"}
+            </div>
         </div>"""
  
     # ----------------------------------------------------------
