@@ -33,25 +33,6 @@ def conectar_bd():
         password=res.password, database=res.path[1:], charset='utf8mb4'
     )
  
- # --- Línea 36 aproximadamente ---
-def generar_navbar(id_perfil):
-    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-    # Buscamos módulos donde el perfil tenga permisoVer = 1
-    cur.execute("""
-        SELECT m.* FROM modulos m 
-        JOIN permisos p ON m.strNombreModulo = p.nombreModulo 
-        WHERE p.idPerfil = %s AND p.permisoVer = 1
-    """, (id_perfil,))
-    permitidos = cur.fetchall()
-    
-    menus = {"Seguridad": "", "Principal 1": "", "Principal 2": ""}
-    for m in permitidos:
-        padre = m['strMenuPadre']
-        if padre in menus:
-            menus[padre] += f"<li><a class='dropdown-item' href='{m['strRuta']}'>📦 {m['strNombreModulo']}</a></li>"
-    
-    cur.close(); conn.close()
-    return menus
 # =========================================================
 # LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
