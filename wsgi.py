@@ -53,7 +53,7 @@ def generar_navbar(id_perfil):
     cur.close(); conn.close()
     return menus
 # =========================================================
-# LAYOUT PRINCIPAL (TOTALMENTE DINÁMICO)
+# LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -65,51 +65,50 @@ def render_layout(title, content, user=None):
         cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
         permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
         
-        # 2. Obtenemos todos los módulos de la base de datos
+        # 2. Obtenemos todos los módulos para los submenús de Principal 1 y 2
         cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
 
-        # Función auxiliar para filtrar submenús dinámicamente
-        # Esto hace que cualquier módulo nuevo aparezca bajo su padre automáticamente
+        # Función auxiliar para filtrar submenús (Principal 1, Principal 2, etc.)
         def get_links(padre):
             links = []
             for m in all_mods:
-                # Comprobamos si el módulo pertenece al padre y si el usuario tiene permiso
+                # Solo agregamos el link si el padre coincide Y el usuario tiene permiso de ver ese módulo
                 if m['strMenuPadre'] == padre and m['strNombreModulo'].lower() in permitidos:
                     ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
                     links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
             return "".join(links)
         
-        # 3. Construimos los dropdowns dinámicos
-        # Ahora "Seguridad" también es dinámico: leerá lo que esté en la tabla modulos con padre 'Seguridad'
-        seg_links = get_links("Seguridad")
+        # 3. Construimos el menú de Seguridad dinámicamente
+        seg_items = [
+            ("Perfiles", "/perfiles", "👤"),
+            ("Módulos",  "/modulos",  "📦"),
+            ("Usuarios", "/usuarios", "👥"),
+            ("Permisos", "/permisos", "🔐")
+        ]
+        
+        seg_html = ""
+        for nom, rut, ico in seg_items:
+            if nom.lower() in permitidos:
+                seg_html += f'<a href="{rut}">{ico} {nom}</a>'
+
+        # Solo mostramos el botón "Seguridad" si tiene al menos un módulo permitido dentro
         dropdown_seguridad = f"""
         <div class="dropdown">
             <button class="dropbtn">Seguridad ▾</button>
             <div class="dropdown-content">
-                {seg_links}
+                {seg_html}
             </div>
-        </div>""" if seg_links else ""
+        </div>""" if seg_html else ""
 
-        # Principal 1 (Aquí aparecerá 'Venta' si su padre es 'Principal 1')
+        # Construimos Principal 1 y 2
         p1_links = get_links("Principal 1")
-        dropdown_p1 = f"""
-        <div class="dropdown">
-            <button class="dropbtn">Principal 1 ▾</button>
-            <div class="dropdown-content">
-                {p1_links}
-            </div>
-        </div>""" if p1_links else ""
+        dropdown_p1 = f"""<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button>
+                          <div class="dropdown-content">{p1_links}</div></div>""" if p1_links else ""
         
-        # Principal 2
         p2_links = get_links("Principal 2")
-        dropdown_p2 = f"""
-        <div class="dropdown">
-            <button class="dropbtn">Principal 2 ▾</button>
-            <div class="dropdown-content">
-                {p2_links}
-            </div>
-        </div>""" if p2_links else ""
+        dropdown_p2 = f"""<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button>
+                          <div class="dropdown-content">{p2_links}</div></div>""" if p2_links else ""
 
         nav = f"""
         <div class="top-nav">
@@ -177,13 +176,14 @@ def render_layout(title, content, user=None):
     td {{ padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text); }}
     tr:last-child td {{ border-bottom: none; }}
     tr:hover {{ background: #fcfcfd; }}
+    .avatar-table {{ width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #f1f5f9; border: 1px solid var(--border); }}
     
     /* PILLS */
     .status-pill {{ padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }}
     .active {{ background: #dcfce7; color: #166534; }}
     .inactive {{ background: #fee2e2; color: #991b1b; }}
     
-    /* FORMS */
+    /* FORMS CLAROS */
     input, select {{
       background: #ffffff; border: 1px solid var(--border); color: var(--text);
       padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px;
@@ -200,18 +200,29 @@ def render_layout(title, content, user=None):
     .btn-red {{ color: #dc2626; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
     .btn-red:hover {{ color: #991b1b; text-decoration: underline; }}
     
+    /* MODAL CLARO */
     .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 1000; overflow-y: auto; }}
     .modal-content {{ background: var(--card); width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }}
     .close-x {{ position: absolute; top: 20px; right: 25px; color: var(--text-muted); cursor: pointer; font-size: 24px; line-height: 1; }}
+    .close-x:hover {{ color: var(--text); }}
     
+    /* DASHBOARD CLARO */
+    .dash-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }}
+    .dash-card {{ background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 25px; text-decoration: none; text-align: center; transition: 0.2s; display: block; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+    .dash-card:hover {{ border-color: var(--emerald); transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }}
+    .dash-card .icon {{ font-size: 36px; margin-bottom: 10px; display: block; }}
+    .dash-card h3 {{ color: var(--emerald); margin: 0; font-size: 16px; }}
+    
+    /* SEARCH / TOOLBAR */
     .toolbar {{ display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; gap: 10px; }}
     .search-input {{ width: 220px; margin-bottom: 0; background: #f1f5f9; }}
+    
     .paginador-ui {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }}
   </style>
   <script>
     function openM(id) {{ document.getElementById(id).style.display = 'block'; }}
     function closeM(id) {{ document.getElementById(id).style.display = 'none'; }}
-
+ 
     async function runCrud(action, table, id, data={{}}) {{
       const res = await fetch('/api/crud', {{
         method: 'POST',
@@ -222,7 +233,7 @@ def render_layout(title, content, user=None):
       if (j.ok) location.reload();
       else alert("Error: " + (j.error || "Desconocido"));
     }}
-
+ 
     function preEdit(id, fields, mId='mEdit') {{
       for (let k in fields) {{
         let el = document.getElementById('ed_' + k);
@@ -231,10 +242,10 @@ def render_layout(title, content, user=None):
       document.getElementById('ed_id').value = id;
       openM(mId);
     }}
-
+ 
     let paginaActual = 1;
     const filasPorPagina = 5;
-
+ 
     function filtrar(rowClass, nameClass) {{
       const val = (document.getElementById('txtBusca') || {{}}).value || "";
       document.querySelectorAll(rowClass).forEach(row => {{
@@ -244,7 +255,7 @@ def render_layout(title, content, user=None):
       }});
       renderTable(rowClass);
     }}
-
+ 
     function renderTable(rowClass) {{
       const filas = Array.from(document.querySelectorAll(rowClass));
       const visibles = filas.filter(r => r.dataset.visible !== "false");
@@ -256,12 +267,12 @@ def render_layout(title, content, user=None):
       const info = document.getElementById('infoPagina');
       if (info) info.innerText = `Página ${{paginaActual}} de ${{total}}`;
     }}
-
+ 
     function cambiarPagina(delta, rowClass) {{
       paginaActual += delta;
       renderTable(rowClass);
     }}
-
+ 
     window.onload = () => {{
       const b = document.getElementById('txtBusca');
       if (b) b.value = "";
