@@ -534,10 +534,10 @@ def application(environ, start_response):
     content = ""
  
 ## ----------------------------------------------------------
-    # 6. DASHBOARD (ESTILO CORPORATIVO - BIENVENIDA)
+    # 6. DASHBOARD (ESTILO CORPORATIVO - VERDE ESMERALDA)
     # ----------------------------------------------------------
     if path in ("/", "/dashboard"):
-        # Extraemos el nombre del usuario para personalizar
+        # Extraemos el nombre del usuario para personalizar la bienvenida
         nombre_usuario = u_data.get('u', 'Usuario')
 
         content = f"""
@@ -547,56 +547,75 @@ def application(environ, start_response):
                 justify-content: center;
                 align-items: center;
                 min-height: 60vh;
+                padding: 20px;
             }}
+            /* RECUADRO GIGANTE EN VERDE ESMERALDA */
             .welcome-card-hero {{
-                background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+                /* Degradado de Verde Esmeralda (oscuro a claro) */
+                background: linear-gradient(135deg, #047857 0%, #10b981 100%);
                 color: white;
                 border-radius: 24px;
                 padding: 80px 40px;
                 text-align: center;
                 width: 100%;
                 max-width: 900px;
-                box-shadow: 0 25px 50px -12px rgba(30, 64, 175, 0.25);
+                box-shadow: 0 25px 50px -12px rgba(4, 120, 87, 0.25);
                 border: 1px solid rgba(255, 255, 255, 0.1);
-            }}
-            .welcome-card-hero h1 {{
-                font-size: 3.5rem;
-                font-weight: 800;
-                margin: 0 0 20px 0;
-                text-transform: uppercase;
-                letter-spacing: -1px;
-                line-height: 1.1;
-            }}
-            .welcome-card-hero p {{
-                font-size: 1.3rem;
-                opacity: 0.9;
-                max-width: 650px;
-                margin: 0 auto;
-                line-height: 1.6;
-                font-weight: 300;
             }}
             .welcome-badge {{
                 display: inline-block;
                 background: rgba(255, 255, 255, 0.2);
                 padding: 8px 20px;
                 border-radius: 50px;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 margin-bottom: 30px;
                 backdrop-filter: blur(5px);
+                color: white;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }}
+            .welcome-card-hero h1 {{
+                font-size: 3.2rem;
+                font-weight: 800;
+                margin: 0 0 20px 0;
+                text-transform: uppercase;
+                letter-spacing: -1px;
+                line-height: 1.1;
+                color: white;
+            }}
+            .welcome-card-hero p {{
+                font-size: 1.25rem;
+                opacity: 0.95;
+                max-width: 650px;
+                margin: 0 auto;
+                line-height: 1.6;
+                font-weight: 300;
+                color: #ecfdf5; /* Verde muy clarito para el texto secundario */
+            }}
+            .status-line {{
+                margin-top: 50px; 
+                opacity: 0.8; 
+                font-size: 11px; 
+                letter-spacing: 2px; 
+                color: #d1fae5;
+                text-transform: uppercase;
             }}
         </style>
 
         <div class="welcome-wrapper">
             <div class="welcome-card-hero">
                 <div class="welcome-badge">SISTEMA DE GESTIÓN CLÍNICA v2.0</div>
+                
                 <h1>BIENVENIDO AL SISTEMA DE ADMINISTRACIÓN</h1>
+                
                 <p>
                     Hola <strong>{nombre_usuario}</strong>, has ingresado al panel de control central. 
                     Desde aquí podrás gestionar usuarios, configurar la seguridad y supervisar 
                     la estructura modular de la institución con total eficiencia.
                 </p>
-                <div style="margin-top: 40px; opacity: 0.7; font-size: 12px; letter-spacing: 2px;">
+                
+                <div class="status-line">
                     ESTADO DEL SISTEMA: OPERATIVO
                 </div>
             </div>
