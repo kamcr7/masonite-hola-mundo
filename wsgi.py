@@ -533,41 +533,75 @@ def application(environ, start_response):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     content = ""
  
-# ----------------------------------------------------------
-    # 6. DASHBOARD (CON FILTRADO DE ACCESOS)
+## ----------------------------------------------------------
+    # 6. DASHBOARD (ESTILO CORPORATIVO - BIENVENIDA)
     # ----------------------------------------------------------
     if path in ("/", "/dashboard"):
-        id_p = u_data.get('pid')
-        cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
-        permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
-
-        cards = ""
-        # Definimos las opciones que queremos mostrar en el Dashboard
-        opciones = [
-            ("Usuarios", "/usuarios", "👥"),
-            ("Perfiles", "/perfiles", "👤"),
-            ("Módulos",  "/modulos",  "📦"),
-            ("Permisos", "/permisos", "🔐")
-        ]
-        
-        for nom, rut, ico in opciones:
-            if nom.lower() in permitidos:
-                cards += f"""
-                <a href='{rut}' style='text-decoration:none;'>
-                    <div class='dash-card'>
-                        <span class='icon'>{ico}</span>
-                        <h3>{nom}</h3>
-                    </div>
-                </a>"""
+        # Extraemos el nombre del usuario para personalizar
+        nombre_usuario = u_data.get('u', 'Usuario')
 
         content = f"""
-        <div class='card'>
-            <h2 style="margin-top:0;">🏠 Bienvenido, {u_data['u']}</h2>
-            <p style='color:var(--text-muted);'>Selecciona una sección del menú para comenzar.</p>
-            <div class='dash-grid'>
-                {cards if cards else "<p>No tienes módulos asignados. Contacta al administrador.</p>"}
+        <style>
+            .welcome-wrapper {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 60vh;
+            }}
+            .welcome-card-hero {{
+                background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+                color: white;
+                border-radius: 24px;
+                padding: 80px 40px;
+                text-align: center;
+                width: 100%;
+                max-width: 900px;
+                box-shadow: 0 25px 50px -12px rgba(30, 64, 175, 0.25);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }}
+            .welcome-card-hero h1 {{
+                font-size: 3.5rem;
+                font-weight: 800;
+                margin: 0 0 20px 0;
+                text-transform: uppercase;
+                letter-spacing: -1px;
+                line-height: 1.1;
+            }}
+            .welcome-card-hero p {{
+                font-size: 1.3rem;
+                opacity: 0.9;
+                max-width: 650px;
+                margin: 0 auto;
+                line-height: 1.6;
+                font-weight: 300;
+            }}
+            .welcome-badge {{
+                display: inline-block;
+                background: rgba(255, 255, 255, 0.2);
+                padding: 8px 20px;
+                border-radius: 50px;
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 30px;
+                backdrop-filter: blur(5px);
+            }}
+        </style>
+
+        <div class="welcome-wrapper">
+            <div class="welcome-card-hero">
+                <div class="welcome-badge">SISTEMA DE GESTIÓN CLÍNICA v2.0</div>
+                <h1>BIENVENIDO AL SISTEMA DE ADMINISTRACIÓN</h1>
+                <p>
+                    Hola <strong>{nombre_usuario}</strong>, has ingresado al panel de control central. 
+                    Desde aquí podrás gestionar usuarios, configurar la seguridad y supervisar 
+                    la estructura modular de la institución con total eficiencia.
+                </p>
+                <div style="margin-top: 40px; opacity: 0.7; font-size: 12px; letter-spacing: 2px;">
+                    ESTADO DEL SISTEMA: OPERATIVO
+                </div>
             </div>
-        </div>"""
+        </div>
+        """
  
 # ----------------------------------------------------------
     # 7. USUARIOS (CON FOTO Y RESTRICCIONES DE FORMULARIO)
