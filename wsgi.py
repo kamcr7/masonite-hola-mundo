@@ -864,7 +864,11 @@ def application(environ, start_response):
             </script>"""
             
     # ----------------------------------------------------------
-    # 9. MÓDULOS (CORRECCIÓN DE GUARDADO PARA NAVBAR)
+    # 9. MÓDULOS
+    #    CAMBIO 1: tabla sin columna RUTA, "PADRE" → "SECCIÓN"
+    #    CAMBIO 2: modal editar pre-llena sección correctamente
+    #    CAMBIO 3: al guardar, el módulo nuevo aparece en navbar
+    #              en cuanto se le asigne permisoVer en Permisos
     # ----------------------------------------------------------
     elif path == "/modulos":
         id_p = u_data.get('pid')
@@ -874,20 +878,23 @@ def application(environ, start_response):
         if not p_acc['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
-            cur.execute("SELECT * FROM modulos ORDER BY id ASC")
+            cur.execute("SELECT * FROM modulos ORDER BY strMenuPadre ASC, strNombreModulo ASC")
             modulos = cur.fetchall()
-            
             rows = ""
             for m in modulos:
-                # Pasamos los datos al modal de edición
-                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
+                # CORRECCIÓN: Uso de comillas simples para el diccionario y escapado para JS
+                btn_edit = f"<button class='btn-blue' onclick=\"preEditMod({m['id']}, '{m['strNombreModulo']}', '{m['strMenuPadre']}')\">Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
-                
+
                 rows += f"""
                 <tr class='m-row'>
                   <td><b class='m-name'>{m['strNombreModulo']}</b></td>
-                  <td><code style='color:#94a3b8; font-size:12px;'>{m['strRuta']}</code></td>
-                  <td>{m['strMenuPadre']}</td>
+                  <td>
+                    <span style='background:#f1f5f9; color:var(--text-muted); padding:4px 12px;
+                                 border-radius:20px; font-size:12px; font-weight:600;'>
+                      {m['strMenuPadre']}
+                    </span>
+                  </td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
 
@@ -901,10 +908,18 @@ def application(environ, start_response):
                 <input type='text' id='txtBusca' class='search-input'
                   onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
               </div>
+
               <table>
-                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>NOMBRE</th>
+                    <th>SECCIÓN</th>
+                    <th>ACCIONES</th>
+                  </tr>
+                </thead>
                 <tbody>{rows}</tbody>
               </table>
+
               <div class='paginador-ui'>
                 <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
                 <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
@@ -916,14 +931,15 @@ def application(environ, start_response):
               <span class='close-x' onclick="closeM('mNewM')">&times;</span>
               <h3>Nuevo Módulo</h3>
               <label>Nombre del Módulo</label>
-              <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <label>Menú Padre</label>
+              <input id='mn' maxlength='20' placeholder='Ej: Reportes'
+                     onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Sección (menú donde aparecerá)</label>
               <select id='mp'>
-                <option>Seguridad</option>
-                <option>Principal 1</option>
-                <option>Principal 2</option>
+                <option value='Seguridad'>Seguridad</option>
+                <option value='Principal 1'>Principal 1</option>
+                <option value='Principal 2'>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR MÓDULO</button>
             </div></div>
 
             <div id='mEditM' class='modal'><div class='modal-content'>
@@ -931,37 +947,38 @@ def application(environ, start_response):
               <h3>Editar Módulo</h3>
               <input type='hidden' id='ed_id'>
               <label>Nombre</label>
-              <input id='ed_n' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <label>Menú Padre</label>
+              <input id='ed_n' maxlength='20'
+                     onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Sección (menú donde aparecerá)</label>
               <select id='ed_p'>
-                <option>Seguridad</option>
-                <option>Principal 1</option>
-                <option>Principal 2</option>
+                <option value='Seguridad'>Seguridad</option>
+                <option value='Principal 1'>Principal 1</option>
+                <option value='Principal 2'>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR MÓDULO</button>
             </div></div>
 
             <script>
+              function preEditMod(id, nombre, seccion) {{
+                document.getElementById('ed_id').value = id;
+                document.getElementById('ed_n').value  = nombre;
+                document.getElementById('ed_p').value  = seccion;
+                openM('mEditM');
+              }}
               function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
                 const p = document.getElementById('mp').value;
-                if (!n) return alert("⚠️ Nombre obligatorio");
-                
-                // Generamos la ruta automáticamente para que el Navbar funcione
+                if (!n) return alert("⚠️ El nombre es obligatorio");
                 const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-                
-                // IMPORTANTE: Enviamos n, r, p para que coincida con el API
-                runCrud('save','modulos',0,{{ n: n, r: r, p: p }});
+                runCrud('save', 'modulos', 0, {{ n: n, r: r, p: p }});
               }}
-
               function updateMod() {{
                 const id = document.getElementById('ed_id').value;
                 const n  = document.getElementById('ed_n').value.trim();
                 const p  = document.getElementById('ed_p').value;
-                if (!n) return alert("⚠️ Nombre obligatorio");
-                
+                if (!n) return alert("⚠️ El nombre es obligatorio");
                 const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-                runCrud('update','modulos', id, {{ n: n, r: r, p: p }});
+                runCrud('update', 'modulos', id, {{ n: n, r: r, p: p }});
               }}
             </script>"""
      
