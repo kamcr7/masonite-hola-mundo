@@ -1,7 +1,4 @@
-﻿
-Copiar
-
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import hashlib, json, hmac, time, urllib.parse, cgi, mysql.connector, os, base64
 from http import cookies
  
@@ -773,7 +770,7 @@ def application(environ, start_response):
         id_p = u_data.get('pid')
         cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Modulos'", (id_p,))
         p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
- 
+
         if not p_acc['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
@@ -781,11 +778,10 @@ def application(environ, start_response):
             modulos = cur.fetchall()
             rows = ""
             for m in modulos:
-                # Función JS dedicada para pre-llenar nombre Y sección en el modal
-                btn_edit = f"<button class='btn-blue' onclick='preEditMod({m[\"id\"]}, \"{m[\"strNombreModulo\"]}\", \"{m[\"strMenuPadre\"]}\")'>Editar</button>" if p_acc['permisoEditar'] else ""
+                # CORRECCIÓN: Uso de comillas simples para el diccionario y escapado para JS
+                btn_edit = f"<button class='btn-blue' onclick=\"preEditMod({m['id']}, '{m['strNombreModulo']}', '{m['strMenuPadre']}')\">Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
- 
-                # ── Solo NOMBRE, SECCIÓN (con pill), ACCIONES ──
+
                 rows += f"""
                 <tr class='m-row'>
                   <td><b class='m-name'>{m['strNombreModulo']}</b></td>
@@ -797,9 +793,9 @@ def application(environ, start_response):
                   </td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
- 
+
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNewM')\">+ NUEVO MÓDULO</button>" if p_acc['permisoCrear'] else ""
- 
+
             content = f"""
             <div class='card'>
               <h2 style="margin-top:0;">📦 Gestión de Módulos</h2>
@@ -808,7 +804,7 @@ def application(environ, start_response):
                 <input type='text' id='txtBusca' class='search-input'
                   onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
               </div>
- 
+
               <table>
                 <thead>
                   <tr>
@@ -819,15 +815,14 @@ def application(environ, start_response):
                 </thead>
                 <tbody>{rows}</tbody>
               </table>
- 
+
               <div class='paginador-ui'>
                 <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
                 <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
                 <button class='btn-blue' onclick="cambiarPagina(1,'.m-row')">Siguiente ❯</button>
               </div>
             </div>
- 
-            <!-- Modal: Nuevo Módulo -->
+
             <div id='mNewM' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNewM')">&times;</span>
               <h3>Nuevo Módulo</h3>
@@ -842,8 +837,7 @@ def application(environ, start_response):
               </select>
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR MÓDULO</button>
             </div></div>
- 
-            <!-- Modal: Editar Módulo -->
+
             <div id='mEditM' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mEditM')">&times;</span>
               <h3>Editar Módulo</h3>
@@ -859,9 +853,8 @@ def application(environ, start_response):
               </select>
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR MÓDULO</button>
             </div></div>
- 
+
             <script>
-              // Pre-llena nombre Y sección en el modal de edición
               function preEditMod(id, nombre, seccion) {{
                 document.getElementById('ed_id').value = id;
                 document.getElementById('ed_n').value  = nombre;
