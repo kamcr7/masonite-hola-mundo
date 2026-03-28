@@ -864,11 +864,7 @@ def application(environ, start_response):
             </script>"""
             
     # ----------------------------------------------------------
-    # 9. MÓDULOS
-    #    CAMBIO 1: tabla sin columna RUTA, "PADRE" → "SECCIÓN"
-    #    CAMBIO 2: modal editar pre-llena sección correctamente
-    #    CAMBIO 3: al guardar, el módulo nuevo aparece en navbar
-    #              en cuanto se le asigne permisoVer en Permisos
+    # 9. MÓDULOS (CORRECCIÓN DE GUARDADO PARA NAVBAR)
     # ----------------------------------------------------------
     elif path == "/modulos":
         id_p = u_data.get('pid')
@@ -878,14 +874,16 @@ def application(environ, start_response):
         if not p_acc['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
-            cur.execute("SELECT * FROM modulos ORDER BY strMenuPadre ASC, strNombreModulo ASC")
+            cur.execute("SELECT * FROM modulos ORDER BY id ASC")
             modulos = cur.fetchall()
+            
             rows = ""
             for m in modulos:
-                # CORRECCIÓN: Uso de comillas simples para el diccionario y escapado para JS
-                btn_edit = f"<button class='btn-blue' onclick=\"preEditMod({m['id']}, '{m['strNombreModulo']}', '{m['strMenuPadre']}')\">Editar</button>" if p_acc['permisoEditar'] else ""
+                # Pasamos los datos al modal de edición
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
-
+                
+                # ── Solo NOMBRE, SECCIÓN (con pill), ACCIONES ──
                 rows += f"""
                 <tr class='m-row'>
                   <td><b class='m-name'>{m['strNombreModulo']}</b></td>
@@ -897,9 +895,9 @@ def application(environ, start_response):
                   </td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
-
+ 
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNewM')\">+ NUEVO MÓDULO</button>" if p_acc['permisoCrear'] else ""
-
+ 
             content = f"""
             <div class='card'>
               <h2 style="margin-top:0;">📦 Gestión de Módulos</h2>
@@ -908,7 +906,7 @@ def application(environ, start_response):
                 <input type='text' id='txtBusca' class='search-input'
                   onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
               </div>
-
+ 
               <table>
                 <thead>
                   <tr>
@@ -919,14 +917,15 @@ def application(environ, start_response):
                 </thead>
                 <tbody>{rows}</tbody>
               </table>
-
+ 
               <div class='paginador-ui'>
                 <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
                 <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
                 <button class='btn-blue' onclick="cambiarPagina(1,'.m-row')">Siguiente ❯</button>
               </div>
             </div>
-
+ 
+            <!-- Modal: Nuevo Módulo -->
             <div id='mNewM' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNewM')">&times;</span>
               <h3>Nuevo Módulo</h3>
@@ -941,7 +940,8 @@ def application(environ, start_response):
               </select>
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR MÓDULO</button>
             </div></div>
-
+ 
+            <!-- Modal: Editar Módulo -->
             <div id='mEditM' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mEditM')">&times;</span>
               <h3>Editar Módulo</h3>
@@ -957,8 +957,9 @@ def application(environ, start_response):
               </select>
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR MÓDULO</button>
             </div></div>
-
+ 
             <script>
+              // Pre-llena nombre Y sección en el modal de edición
               function preEditMod(id, nombre, seccion) {{
                 document.getElementById('ed_id').value = id;
                 document.getElementById('ed_n').value  = nombre;
@@ -981,6 +982,136 @@ def application(environ, start_response):
                 runCrud('update', 'modulos', id, {{ n: n, r: r, p: p }});
               }}
             </script>"""
+ 
+    # ----------------------------------------------------------
+    # 10. PERMISOS (matriz)
+    # ----------------------------------------------------------
+    elif path == "/permisos":
+        cur.execute("SELECT id, strNombrePerfil FROM perfiles")
+        perfiles = cur.fetchall()
+        
+        mods_fijos = [
+            {'id': -1, 'nm': 'Perfiles',  'p': 'Seguridad'},
+            {'id': -2, 'nm': 'Módulos',   'p': 'Seguridad'},
+            {'id': -3, 'nm': 'Usuarios',  'p': 'Seguridad'},
+            {'id': -4, 'nm': 'Permisos',  'p': 'Seguridad'},
+        ]
+        cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
+        todos_mods = mods_fijos + cur.fetchall()
+ 
+        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
+        
+        rows = ""
+        for m in todos_mods:
+            rows += f"""
+            <tr class='perm-row' data-visible='true' data-modname='{m['nm']}'>
+              <td>
+                <b class='perm-name' style='color:var(--text);'>{m['nm']}</b><br>
+                <small style='color:var(--text-muted); font-size:11px; text-transform:uppercase;'>{m['p']}</small>
+              </td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='c_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
+            </tr>"""
+ 
+        content = f"""
+        <div class='card'>
+          <h2 style="margin-top:0; color:var(--emerald); display:flex; align-items:center; gap:10px;">
+            <span style='font-size:24px;'>🛡️</span> Matriz de Permisos
+          </h2>
+          <p style='color:var(--text-muted); margin-bottom:20px;'>Configura los privilegios de acceso para cada rol del sistema.</p>
+          
+          <label>Selecciona un Perfil para configurar</label>
+          <select id='sel_perfil' onchange='cargarPermisos(this.value)'
+            style='border:2px solid var(--emerald); max-width:400px; margin-bottom:10px; font-weight:bold;'>
+            <option value=''>-- Seleccione un perfil --</option>{p_opts}
+          </select>
+ 
+          <div id='area_permisos' style='display:none; margin-top:25px;'>
+            <div class='toolbar' style='background:#f1f5f9; padding:15px; border-radius:12px; border:1px solid var(--border);'>
+              <div style='display:flex; gap:10px;'>
+                <button class='btn-emerald' onclick='bulk(true)' style='width:auto; padding:8px 15px; font-size:12px;'>☑ Marcar Todo</button>
+                <button class='btn-salir'  onclick='bulk(false)' style='width:auto; padding:8px 15px; font-size:12px;'>☐ Desmarcar Todo</button>
+              </div>
+              <input type='text' id='txtBusca' class='search-input' 
+                style='margin-bottom:0; background:white;'
+                onkeyup="paginaActual=1; filtrar('.perm-row','.perm-name');" placeholder='🔍 Buscar módulo...'>
+            </div>
+ 
+            <table style='margin-bottom:20px;'>
+              <thead>
+                <tr>
+                    <th style="text-align:left; width:40%;">MÓDULO</th>
+                    <th style="text-align:center;">VER</th>
+                    <th style="text-align:center;">CREAR</th>
+                    <th style="text-align:center;">EDITAR</th>
+                    <th style="text-align:center;">ELIMINAR</th>
+                </tr>
+              </thead>
+              <tbody>{rows}</tbody>
+            </table>
+ 
+            <div class='paginador-ui' style='margin-bottom:25px;'>
+              <button class='btn-blue' onclick="cambiarPagina(-1,'.perm-row')">❮ Anterior</button>
+              <span id='infoPagina' style='color:var(--text); font-weight:bold; background:#e2e8f0; padding:5px 15px; border-radius:20px; font-size:13px;'></span>
+              <button class='btn-blue' onclick="cambiarPagina(1,'.perm-row')">Siguiente ❯</button>
+            </div>
+ 
+            <button class='btn-emerald' style='font-size:16px; padding:18px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);' onclick='guardarPermisos()'>
+              💾 GUARDAR CONFIGURACIÓN DE SEGURIDAD
+            </button>
+          </div>
+        </div>
+ 
+        <script>
+          async function cargarPermisos(idp) {{
+            if (!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
+            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            const res  = await fetch('/api/get_permisos?idp=' + idp);
+            const data = await res.json();
+            if (data.ok) {{
+              data.perms.forEach(p => {{
+                const fila = document.querySelector(`tr[data-modname="${{p.nombreModulo}}"]`);
+                if (fila) {{
+                    const idm = fila.querySelector('.perm-check').dataset.mod;
+                    if(p.permisoVer)      document.getElementById('v_' + idm).checked = true;
+                    if(p.permisoCrear)    document.getElementById('c_' + idm).checked = true;
+                    if(p.permisoEditar)   document.getElementById('e_' + idm).checked = true;
+                    if(p.permisoEliminar) document.getElementById('d_' + idm).checked = true;
+                }}
+              }});
+              document.getElementById('area_permisos').style.display = 'block';
+              paginaActual = 1;
+              filtrar('.perm-row', '.perm-name');
+            }}
+          }}
+          function bulk(v) {{
+            document.querySelectorAll('.perm-row').forEach(row => {{
+              if (row.style.display !== 'none')
+                row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
+            }});
+          }}
+          function guardarPermisos() {{
+            const idp = document.getElementById('sel_perfil').value;
+            if (!idp) return;
+            const matrix = [];
+            document.querySelectorAll('.perm-row').forEach(tr => {{
+                const idm = tr.querySelector('.perm-check').dataset.mod;
+                matrix.push({{
+                    nom: tr.dataset.modname,
+                    v: document.getElementById('v_' + idm).checked ? 1 : 0,
+                    c: document.getElementById('c_' + idm).checked ? 1 : 0,
+                    e: document.getElementById('e_' + idm).checked ? 1 : 0,
+                    d: document.getElementById('d_' + idm).checked ? 1 : 0
+                }});
+            }});
+            if(confirm("¿Deseas actualizar los permisos para este perfil?")) {{
+                runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
+            }}
+          }}
+        </script>"""
+ 
      
  # ----------------------------------------------------------
     # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY) - LIGHT MODE
