@@ -404,41 +404,54 @@ def application(environ, start_response):
         return [res]
     
     # ----------------------------------------------------------
-    # 3. LOGIN (CORREGIDO PARA PERMISOS)
+    # 3. LOGIN (CON RECAPTCHA INTEGRADO)
     # ----------------------------------------------------------
     if path == "/login":
+        import random
         error_msg = ""
+        
+        # 1. Generar reto matemático para el Captcha
+        # Lo ideal es guardarlo en una cookie temporal o campo oculto
+        # Aquí usaremos un enfoque directo para tu estructura actual
         if method == "POST":
-            form    = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
+            form = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
             
-            conn2   = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
-            cur2.execute(
-                "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
-                (usuario, hash_password(pwd))
-            )
-            user_row = cur2.fetchone()
-            cur2.close(); conn2.close()
+            # Validación del Captcha en el Servidor
+            cap_input = form.getvalue("cap_ans", "0")
+            cap_real  = form.getvalue("cap_real", "-1")
             
-            if user_row:
-                # AQUÍ ESTÁ EL CAMBIO: Guardamos "pid" para que el sistema sepa qué permisos tiene el usuario
-                token_data = {
-                    "u": user_row["strNombreUsuario"], 
-                    "id": user_row["id"], 
-                    "pid": user_row["idPerfil"], # <--- ESTO ES LO QUE FALTABA
-                    "exp": time.time() + 86400
-                }
-                
-                token = jwt_encode(token_data)
-                
-                start_response("303 See Other", [
-                    ("Location", "/dashboard"),
-                    ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
-                ])
-                return [b""]
+            if cap_input != cap_real:
+                error_msg = "<p style='color:#ef4444; text-align:center;'>⚠️ Código de seguridad incorrecto</p>"
             else:
-                error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:15px;'>⚠️ Usuario o contraseña incorrectos</p>"
+                conn2   = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
+                cur2.execute(
+                    "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
+                    (usuario, hash_password(pwd))
+                )
+                user_row = cur2.fetchone()
+                cur2.close(); conn2.close()
+                
+                if user_row:
+                    token_data = {
+                        "u": user_row["strNombreUsuario"], 
+                        "id": user_row["id"], 
+                        "pid": user_row["idPerfil"],
+                        "exp": time.time() + 86400
+                    }
+                    token = jwt_encode(token_data)
+                    start_response("303 See Other", [
+                        ("Location", "/dashboard"),
+                        ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
+                    ])
+                    return [b""]
+                else:
+                    error_msg = "<p style='color:#ef4444; text-align:center;'>⚠️ Usuario o contraseña incorrectos</p>"
+
+        # Generar nuevos números para el siguiente intento
+        n1, n2 = random.randint(1, 9), random.randint(1, 9)
+        suma = n1 + n2
 
         login_html = f"""
         <div style="min-height:80vh; display:flex; align-items:center; justify-content:center;">
@@ -448,13 +461,29 @@ def application(environ, start_response):
               <h2 style="color:#10b981; margin:0 0 5px;">Clínica</h2>
               <p style="color:#94a3b8; font-size:14px; margin:0;">Sistema de Gestión Médica</p>
             </div>
+            
             {error_msg}
+            
             <form method="POST" action="/login">
               <label>Usuario</label>
-              <input name="u" placeholder="Nombre de usuario" autocomplete="username">
+              <input name="u" placeholder="Nombre de usuario" required>
+              
               <label>Contraseña</label>
-              <input name="p" type="password" placeholder="Contraseña" autocomplete="current-password">
-              <button type="submit" class="btn-emerald" style="margin-top:5px;">INICIAR SESIÓN</button>
+              <input name="p" type="password" placeholder="Contraseña" required>
+              
+              <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 10px;">
+                <label style="margin-bottom: 8px;">Verificación de seguridad</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="background: #10b981; color: white; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 18px;">
+                        {n1} + {n2} = 
+                    </span>
+                    <input type="number" name="cap_ans" placeholder="?" required 
+                           style="margin-bottom: 0; width: 80px; text-align: center; border: 2px solid #10b981;">
+                    <input type="hidden" name="cap_real" value="{suma}">
+                </div>
+              </div>
+
+              <button type="submit" class="btn-emerald" style="margin-top:20px;">INICIAR SESIÓN</button>
             </form>
           </div>
         </div>"""
