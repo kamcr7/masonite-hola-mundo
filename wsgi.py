@@ -404,89 +404,104 @@ def application(environ, start_response):
         return [res]
     
     # ----------------------------------------------------------
-    # 3. LOGIN (CON RECAPTCHA INTEGRADO)
+    # 3. LOGIN (DISEÑO RECAPTCHA V2)
     # ----------------------------------------------------------
     if path == "/login":
-        import random
         error_msg = ""
-        
-        # 1. Generar reto matemático para el Captcha
-        # Lo ideal es guardarlo en una cookie temporal o campo oculto
-        # Aquí usaremos un enfoque directo para tu estructura actual
         if method == "POST":
             form = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
-            
-            # Validación del Captcha en el Servidor
-            cap_input = form.getvalue("cap_ans", "0")
-            cap_real  = form.getvalue("cap_real", "-1")
-            
-            if cap_input != cap_real:
-                error_msg = "<p style='color:#ef4444; text-align:center;'>⚠️ Código de seguridad incorrecto</p>"
+            captcha_val = form.getvalue("captcha_status", "0")
+
+            if captcha_val != "1":
+                error_msg = "<p style='color:#ef4444; text-align:center;'>⚠️ Por favor, marca la casilla de verificación.</p>"
             else:
-                conn2   = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
-                cur2.execute(
-                    "SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
-                    (usuario, hash_password(pwd))
-                )
+                conn2 = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
+                cur2.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
+                            (usuario, hash_password(pwd)))
                 user_row = cur2.fetchone()
                 cur2.close(); conn2.close()
                 
                 if user_row:
-                    token_data = {
-                        "u": user_row["strNombreUsuario"], 
-                        "id": user_row["id"], 
-                        "pid": user_row["idPerfil"],
-                        "exp": time.time() + 86400
-                    }
+                    token_data = {"u": user_row["strNombreUsuario"], "id": user_row["id"], "pid": user_row["idPerfil"], "exp": time.time() + 86400}
                     token = jwt_encode(token_data)
-                    start_response("303 See Other", [
-                        ("Location", "/dashboard"),
-                        ("Set-Cookie", f"token={token}; Path=/; HttpOnly")
-                    ])
+                    start_response("303 See Other", [("Location", "/dashboard"), ("Set-Cookie", f"token={token}; Path=/; HttpOnly")])
                     return [b""]
                 else:
                     error_msg = "<p style='color:#ef4444; text-align:center;'>⚠️ Usuario o contraseña incorrectos</p>"
 
-        # Generar nuevos números para el siguiente intento
-        n1, n2 = random.randint(1, 9), random.randint(1, 9)
-        suma = n1 + n2
-
         login_html = f"""
+        <style>
+            .recaptcha-box {{
+                background: #f9f9f9; border: 1px solid #d3d3d3; border-radius: 3px;
+                width: 300px; height: 76px; display: flex; align-items: center;
+                padding: 0 12px; margin: 15px auto; font-family: Roboto, helvetica, arial, sans-serif;
+            }}
+            .rc-check-container {{ width: 28px; height: 28px; position: relative; cursor: pointer; }}
+            .rc-checkbox {{ 
+                width: 100%; height: 100%; border: 2px solid #c1c1c1; background: #fff; border-radius: 2px;
+                transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+            }}
+            .rc-checkbox.loading {{ border-radius: 50%; border: 3px solid #f3f3f3; border-top: 3px solid #4d90fe; animation: spin 1s linear infinite; }}
+            .rc-checkbox.checked {{ border: none; background: transparent; }}
+            .rc-checkbox.checked::after {{
+                content: '✔'; color: #00ad45; font-size: 30px; line-height: 1;
+            }}
+            .rc-text {{ color: #000; font-size: 14px; margin-left: 12px; flex-grow: 1; }}
+            .rc-logo {{ text-align: center; font-size: 10px; color: #555; }}
+            .rc-logo img {{ width: 32px; display: block; margin: 0 auto; }}
+            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+        </style>
+
         <div style="min-height:80vh; display:flex; align-items:center; justify-content:center;">
-          <div class="card" style="width:400px;">
-            <div style="text-align:center; margin-bottom:30px;">
-              <div style="font-size:56px; margin-bottom:10px;">🏥</div>
-              <h2 style="color:#10b981; margin:0 0 5px;">Clínica</h2>
-              <p style="color:#94a3b8; font-size:14px; margin:0;">Sistema de Gestión Médica</p>
+          <div class="card" style="width:400px; border-radius: 8px;">
+            <div style="text-align:center; margin-bottom:20px;">
+              <h2 style="color:#1e293b; margin-bottom:5px;">Login</h2>
+              <p style="color:#64748b; font-size:14px;">Welcome back! Please login to your account.</p>
             </div>
-            
             {error_msg}
-            
-            <form method="POST" action="/login">
-              <label>Usuario</label>
-              <input name="u" placeholder="Nombre de usuario" required>
+            <form method="POST" id="loginForm">
+              <label>User Name</label>
+              <input name="u" placeholder="usuario@gmail.com" required>
+              <label>Password</label>
+              <input name="p" type="password" placeholder="••••••••" required>
               
-              <label>Contraseña</label>
-              <input name="p" type="password" placeholder="Contraseña" required>
-              
-              <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 10px;">
-                <label style="margin-bottom: 8px;">Verificación de seguridad</label>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="background: #10b981; color: white; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 18px;">
-                        {n1} + {n2} = 
-                    </span>
-                    <input type="number" name="cap_ans" placeholder="?" required 
-                           style="margin-bottom: 0; width: 80px; text-align: center; border: 2px solid #10b981;">
-                    <input type="hidden" name="cap_real" value="{suma}">
+              <div class="recaptcha-box">
+                <div class="rc-check-container" onclick="verifyMe()">
+                    <div id="box" class="rc-checkbox"></div>
                 </div>
+                <div class="rc-text">No soy un robot</div>
+                <div class="rc-logo">
+                    <img src="https://www.gstatic.com/recaptcha/api2/logo_48.png" alt="re">
+                    reCAPTCHA<br><span style="font-size:8px">Privacidad - Condiciones</span>
+                </div>
+                <input type="hidden" name="captcha_status" id="captcha_status" value="0">
               </div>
 
-              <button type="submit" class="btn-emerald" style="margin-top:20px;">INICIAR SESIÓN</button>
+              <button type="submit" class="btn-emerald" style="background:#7c3aed; padding:14px;">Login</button>
+              <p style="text-align:center; font-size:13px; margin-top:15px; color:#64748b;">
+                New User? <a href="#" style="color:#7c3aed; text-decoration:none; font-weight:bold;">Signup</a>
+              </p>
             </form>
           </div>
-        </div>"""
+        </div>
+
+        <script>
+            function verifyMe() {{
+                let box = document.getElementById('box');
+                let status = document.getElementById('captcha_status');
+                if(status.value === "1") return; // Ya verificado
+
+                box.classList.add('loading');
+                setTimeout(() => {{
+                    box.classList.remove('loading');
+                    box.classList.add('checked');
+                    status.value = "1";
+                }}, 1500);
+            }}
+        </script>
+        """
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [render_layout("Login - Clínica", login_html).encode("utf-8")]
  
