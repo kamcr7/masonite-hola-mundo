@@ -33,8 +33,27 @@ def conectar_bd():
         password=res.password, database=res.path[1:], charset='utf8mb4'
     )
  
+ # --- Línea 36 aproximadamente ---
+def generar_navbar(id_perfil):
+    conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+    # Buscamos módulos donde el perfil tenga permisoVer = 1
+    cur.execute("""
+        SELECT m.* FROM modulos m 
+        JOIN permisos p ON m.strNombreModulo = p.nombreModulo 
+        WHERE p.idPerfil = %s AND p.permisoVer = 1
+    """, (id_perfil,))
+    permitidos = cur.fetchall()
+    
+    menus = {"Seguridad": "", "Principal 1": "", "Principal 2": ""}
+    for m in permitidos:
+        padre = m['strMenuPadre']
+        if padre in menus:
+            menus[padre] += f"<li><a class='dropdown-item' href='{m['strRuta']}'>📦 {m['strNombreModulo']}</a></li>"
+    
+    cur.close(); conn.close()
+    return menus
 # =========================================================
-# LAYOUT PRINCIPAL
+# LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -42,60 +61,55 @@ def render_layout(title, content, user=None):
         id_p = user.get('pid')
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
         
-        # 1. Módulos con permiso de VER para este perfil
+        # 1. Obtenemos los módulos que tienen permiso de VER (permisoVer = 1)
         cur.execute("SELECT nombreModulo FROM permisos WHERE idPerfil=%s AND permisoVer=1", (id_p,))
         permitidos = [r['nombreModulo'].lower() for r in cur.fetchall()]
         
-        # 2. Todos los módulos de la BD
-        cur.execute("SELECT * FROM modulos")
-        all_mods = cur.fetchall()
+        # 2. Obtenemos todos los módulos para los submenús de Principal 1 y 2
+        cur.execute("SELECT * FROM modulos"); all_mods = cur.fetchall()
         cur.close(); conn.close()
- 
-        # ── Seguridad: hardcodeado ──
+
+        # Función auxiliar para filtrar submenús (Principal 1, Principal 2, etc.)
+        def get_links(padre):
+            links = []
+            for m in all_mods:
+                # Solo agregamos el link si el padre coincide Y el usuario tiene permiso de ver ese módulo
+                if m['strMenuPadre'] == padre and m['strNombreModulo'].lower() in permitidos:
+                    ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
+                    links.append(f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>')
+            return "".join(links)
+        
+        # 3. Construimos el menú de Seguridad dinámicamente
         seg_items = [
             ("Perfiles", "/perfiles", "👤"),
             ("Módulos",  "/modulos",  "📦"),
             ("Usuarios", "/usuarios", "👥"),
             ("Permisos", "/permisos", "🔐")
         ]
+        
         seg_html = ""
         for nom, rut, ico in seg_items:
             if nom.lower() in permitidos:
                 seg_html += f'<a href="{rut}">{ico} {nom}</a>'
- 
-        # ── Módulos de la BD que pertenecen a Seguridad y tienen permiso ──
-        # (por si el admin agrega módulos propios bajo Seguridad)
-        for m in all_mods:
-            if m['strMenuPadre'] == 'Seguridad' and m['strNombreModulo'].lower() in permitidos:
-                ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
-                seg_html += f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>'
- 
+
+        # Solo mostramos el botón "Seguridad" si tiene al menos un módulo permitido dentro
         dropdown_seguridad = f"""
         <div class="dropdown">
             <button class="dropbtn">Seguridad ▾</button>
-            <div class="dropdown-content">{seg_html}</div>
+            <div class="dropdown-content">
+                {seg_html}
+            </div>
         </div>""" if seg_html else ""
- 
-        # ── Principal 1: módulos de la BD con ese padre y con permiso ──
-        p1_html = ""
-        for m in all_mods:
-            if m['strMenuPadre'] == 'Principal 1' and m['strNombreModulo'].lower() in permitidos:
-                ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
-                p1_html += f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>'
- 
+
+        # Construimos Principal 1 y 2
+        p1_links = get_links("Principal 1")
         dropdown_p1 = f"""<div class="dropdown"><button class="dropbtn">Principal 1 ▾</button>
-                          <div class="dropdown-content">{p1_html}</div></div>""" if p1_html else ""
- 
-        # ── Principal 2: igual ──
-        p2_html = ""
-        for m in all_mods:
-            if m['strMenuPadre'] == 'Principal 2' and m['strNombreModulo'].lower() in permitidos:
-                ruta = m["strRuta"] or f"/{m['strNombreModulo'].lower().replace(' ', '-')}"
-                p2_html += f'<a href="{ruta}">📦 {m["strNombreModulo"]}</a>'
- 
+                          <div class="dropdown-content">{p1_links}</div></div>""" if p1_links else ""
+        
+        p2_links = get_links("Principal 2")
         dropdown_p2 = f"""<div class="dropdown"><button class="dropbtn">Principal 2 ▾</button>
-                          <div class="dropdown-content">{p2_html}</div></div>""" if p2_html else ""
- 
+                          <div class="dropdown-content">{p2_links}</div></div>""" if p2_links else ""
+
         nav = f"""
         <div class="top-nav">
           <div class="nav-container">
@@ -112,7 +126,7 @@ def render_layout(title, content, user=None):
             </div>
           </div>
         </div>"""
- 
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -131,13 +145,12 @@ def render_layout(title, content, user=None):
     * {{ box-sizing: border-box; }}
     body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }}
     
-    /* NAV */
+    /* NAV CLARO */
     .top-nav {{ background: #ffffff; height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
     .nav-container {{ width: 100%; max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; padding: 0 20px; align-items: center; }}
     .logo {{ color: var(--emerald); font-weight: bold; font-size: 1.2rem; margin-right: 20px; }}
     .nav-link {{ color: var(--text-muted); text-decoration: none; padding: 10px; font-size: 14px; font-weight: 500; }}
     .nav-link:hover {{ color: var(--emerald); }}
-    .nav-left {{ display: flex; align-items: center; }}
     
     .dropdown {{ position: relative; display: inline-block; }}
     .dropdown-content {{ display: none; position: absolute; background: #ffffff; min-width: 180px; border: 1px solid var(--border); border-radius: 12px; z-index: 300; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); top: 100%; left: 0; overflow: hidden; }}
@@ -157,7 +170,7 @@ def render_layout(title, content, user=None):
     .container {{ padding: 40px; max-width: 1200px; margin: 0 auto; }}
     .card {{ background: var(--card); padding: 30px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
     
-    /* TABLE */
+    /* TABLE CLARA */
     table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }}
     th {{ background: #f8fafc; color: var(--text-muted); font-size: 12px; text-transform: uppercase; padding: 15px; text-align: left; border-bottom: 1px solid var(--border); }}
     td {{ padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text); }}
@@ -170,7 +183,7 @@ def render_layout(title, content, user=None):
     .active {{ background: #dcfce7; color: #166534; }}
     .inactive {{ background: #fee2e2; color: #991b1b; }}
     
-    /* FORMS */
+    /* FORMS CLAROS */
     input, select {{
       background: #ffffff; border: 1px solid var(--border); color: var(--text);
       padding: 12px; width: 100%; margin-bottom: 15px; border-radius: 8px;
@@ -187,22 +200,23 @@ def render_layout(title, content, user=None):
     .btn-red {{ color: #dc2626; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 13px; padding: 4px 8px; }}
     .btn-red:hover {{ color: #991b1b; text-decoration: underline; }}
     
-    /* MODAL */
+    /* MODAL CLARO */
     .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 1000; overflow-y: auto; }}
     .modal-content {{ background: var(--card); width: 500px; margin: 5% auto; padding: 35px; border-radius: 20px; border: 1px solid var(--border); position: relative; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }}
     .close-x {{ position: absolute; top: 20px; right: 25px; color: var(--text-muted); cursor: pointer; font-size: 24px; line-height: 1; }}
     .close-x:hover {{ color: var(--text); }}
     
-    /* DASHBOARD */
+    /* DASHBOARD CLARO */
     .dash-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }}
     .dash-card {{ background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 25px; text-decoration: none; text-align: center; transition: 0.2s; display: block; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
     .dash-card:hover {{ border-color: var(--emerald); transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }}
     .dash-card .icon {{ font-size: 36px; margin-bottom: 10px; display: block; }}
     .dash-card h3 {{ color: var(--emerald); margin: 0; font-size: 16px; }}
     
-    /* TOOLBAR */
+    /* SEARCH / TOOLBAR */
     .toolbar {{ display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; gap: 10px; }}
     .search-input {{ width: 220px; margin-bottom: 0; background: #f1f5f9; }}
+    
     .paginador-ui {{ display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }}
   </style>
   <script>
@@ -296,10 +310,9 @@ def application(environ, start_response):
         if idp_raw:
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                cur.execute("""SELECT nombreModulo,
-                               permisoVer, permisoCrear,
-                               permisoEditar, permisoEliminar
-                               FROM permisos WHERE idPerfil = %s""", (idp_raw,))
+                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
+                               can_edit as e, can_delete as d
+                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
                 perms = cur.fetchall()
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
             except Exception as e:
@@ -309,8 +322,8 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
  
-    # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL
+# ----------------------------------------------------------
+    # 2. API: CRUD PRINCIPAL (REPARADO PARA PERFILES Y MÓDULOS)
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
@@ -318,6 +331,7 @@ def application(environ, start_response):
         conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
         
         try:
+            # --- VALIDACIÓN DE PERMISOS ---
             if p['action'] != 'save_permisos_matrix':
                 id_p = u_data.get('pid')
                 mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
@@ -327,10 +341,11 @@ def application(environ, start_response):
                     cur.execute(f"SELECT {col} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_mod))
                     p_row = cur.fetchone()
                     if not p_row or not p_row[col]: raise Exception(f"Sin permiso para {p['action']}")
- 
+
+            # --- ACCIONES ---
             if p['action'] == 'delete':
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
- 
+
             elif p['action'] == 'save':
                 if p['table'] == 'usuarios':
                     u_nom = p['data']['u'].strip()
@@ -341,27 +356,31 @@ def application(environ, start_response):
                         VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                         (u_nom, hash_password(p['data']['p']), p['data'].get('c',''), 
                          p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
- 
+
                 elif p['table'] == 'perfiles':
+                    # Usamos .get('n') porque Perfiles envía 'n' como nombre
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
- 
+
                 elif p['table'] == 'modulos':
+                    # Modulos envía 'n', 'r', 'p'
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
- 
+
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
                                 (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
- 
+
                 elif p['table'] == 'perfiles':
+                    # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", 
                                 (p['data'].get('n', '').strip(), p['id']))
- 
+
                 elif p['table'] == 'modulos':
+                    # Reparado: ahora busca 'n', 'r' y 'p'
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
- 
+
             elif p['action'] == 'save_permisos_matrix':
                 id_p = p['data']['idp']
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
@@ -371,7 +390,7 @@ def application(environ, start_response):
                             (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) 
                             VALUES (%s,%s,%s,%s,%s,%s)""",
                             (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
- 
+
             conn.commit()
             res = b'{"ok":true}'
         except Exception as e:
@@ -385,7 +404,7 @@ def application(environ, start_response):
         return [res]
     
     # ----------------------------------------------------------
-    # 3. LOGIN (CON CAPTCHA SIMULADO)
+    # 3. LOGIN (CON DISEÑO DE RECAPTCHA ESTILO GOOGLE)
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
@@ -393,8 +412,9 @@ def application(environ, start_response):
             form = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
+            # Validamos que el captcha haya sido marcado en el cliente
             captcha_val = form.getvalue("captcha_status", "0")
- 
+
             if captcha_val != "1":
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Por favor, verifica que no eres un robot.</p>"
             else:
@@ -411,9 +431,11 @@ def application(environ, start_response):
                     return [b""]
                 else:
                     error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
- 
+
+        # El contenido HTML manteniendo tu estructura de 'card'
         login_html = f"""
         <style>
+            /* Estilos específicos para el widget reCAPTCHA */
             .captcha-container {{
                 background: #f9f9f9; border: 1px solid #d3d3d3; border-radius: 3px;
                 width: 300px; height: 74px; display: flex; align-items: center;
@@ -436,8 +458,10 @@ def application(environ, start_response):
             .rc-logo-side {{ text-align: center; line-height: 1; }}
             .rc-logo-side img {{ width: 30px; display: block; margin: 0 auto 2px; }}
             .rc-logo-side span {{ font-size: 8px; color: #555; display: block; }}
+            
             @keyframes rc-spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         </style>
+
         <div style="display:flex; align-items:center; justify-content:center; padding: 40px 0;">
           <div class="card" style="width:100%; max-width:400px;">
             <h2 style="text-align:center; margin-bottom:20px;">Iniciar Sesión</h2>
@@ -445,8 +469,10 @@ def application(environ, start_response):
             <form method="POST">
               <label>Usuario</label>
               <input name="u" placeholder="nombre@ejemplo.com" required style="width:100%; margin-bottom:15px;">
+              
               <label>Contraseña</label>
               <input name="p" type="password" placeholder="••••••••" required style="width:100%; margin-bottom:10px;">
+              
               <div class="captcha-container">
                 <div id="check-box" class="rc-check-box" onclick="simularVerificacion()"></div>
                 <div class="rc-text">No soy un robot</div>
@@ -457,20 +483,26 @@ def application(environ, start_response):
                 </div>
                 <input type="hidden" name="captcha_status" id="captcha_status" value="0">
               </div>
+
               <button type="submit" class="btn-emerald" style="width:100%; padding:12px;">Entrar</button>
             </form>
           </div>
         </div>
+
         <script>
             function simularVerificacion() {{
                 const box = document.getElementById('check-box');
                 const status = document.getElementById('captcha_status');
-                if(status.value === "1") return;
+                
+                if(status.value === "1") return; // Evitar repetir
+
                 box.classList.add('loading');
+                
+                // Simulamos una carga de 1.2 segundos como el real
                 setTimeout(() => {{
                     box.classList.remove('loading');
                     box.classList.add('checked');
-                    status.value = "1";
+                    status.value = "1"; // Marcamos como verificado para el backend
                 }}, 1200);
             }}
         </script>
@@ -489,7 +521,7 @@ def application(environ, start_response):
         return [b""]
  
     # ----------------------------------------------------------
-    # 5. PROTECCIÓN DE SESIÓN
+    # 5. PROTECCIÓN DE SESIÓN — redirige si no hay JWT válido
     # ----------------------------------------------------------
     if not u_data:
         start_response("303 See Other", [("Location", "/login")])
@@ -501,76 +533,118 @@ def application(environ, start_response):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     content = ""
  
-    # ----------------------------------------------------------
-    # 6. DASHBOARD (ESTILO CORPORATIVO VERDE ESMERALDA)
+## ----------------------------------------------------------
+    # 6. DASHBOARD (ESTILO CORPORATIVO - VERDE ESMERALDA)
     # ----------------------------------------------------------
     if path in ("/", "/dashboard"):
+        # Extraemos el nombre del usuario para personalizar la bienvenida
         nombre_usuario = u_data.get('u', 'Usuario')
+
         content = f"""
         <style>
             .welcome-wrapper {{
-                display: flex; justify-content: center; align-items: center;
-                min-height: 60vh; padding: 20px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 60vh;
+                padding: 20px;
             }}
+            /* RECUADRO GIGANTE EN VERDE ESMERALDA */
             .welcome-card-hero {{
+                /* Degradado de Verde Esmeralda (oscuro a claro) */
                 background: linear-gradient(135deg, #047857 0%, #10b981 100%);
-                color: white; border-radius: 24px; padding: 80px 40px;
-                text-align: center; width: 100%; max-width: 900px;
+                color: white;
+                border-radius: 24px;
+                padding: 80px 40px;
+                text-align: center;
+                width: 100%;
+                max-width: 900px;
                 box-shadow: 0 25px 50px -12px rgba(4, 120, 87, 0.25);
                 border: 1px solid rgba(255, 255, 255, 0.1);
             }}
             .welcome-badge {{
-                display: inline-block; background: rgba(255,255,255,0.2);
-                padding: 8px 20px; border-radius: 50px; font-size: 13px;
-                font-weight: 600; margin-bottom: 30px; color: white;
-                text-transform: uppercase; letter-spacing: 1px;
+                display: inline-block;
+                background: rgba(255, 255, 255, 0.2);
+                padding: 8px 20px;
+                border-radius: 50px;
+                font-size: 13px;
+                font-weight: 600;
+                margin-bottom: 30px;
+                backdrop-filter: blur(5px);
+                color: white;
+                text-transform: uppercase;
+                letter-spacing: 1px;
             }}
             .welcome-card-hero h1 {{
-                font-size: 3.2rem; font-weight: 800; margin: 0 0 20px 0;
-                text-transform: uppercase; letter-spacing: -1px; line-height: 1.1; color: white;
+                font-size: 3.2rem;
+                font-weight: 800;
+                margin: 0 0 20px 0;
+                text-transform: uppercase;
+                letter-spacing: -1px;
+                line-height: 1.1;
+                color: white;
             }}
             .welcome-card-hero p {{
-                font-size: 1.25rem; opacity: 0.95; max-width: 650px;
-                margin: 0 auto; line-height: 1.6; font-weight: 300; color: #ecfdf5;
+                font-size: 1.25rem;
+                opacity: 0.95;
+                max-width: 650px;
+                margin: 0 auto;
+                line-height: 1.6;
+                font-weight: 300;
+                color: #ecfdf5; /* Verde muy clarito para el texto secundario */
             }}
             .status-line {{
-                margin-top: 50px; opacity: 0.8; font-size: 11px;
-                letter-spacing: 2px; color: #d1fae5; text-transform: uppercase;
+                margin-top: 50px; 
+                opacity: 0.8; 
+                font-size: 11px; 
+                letter-spacing: 2px; 
+                color: #d1fae5;
+                text-transform: uppercase;
             }}
         </style>
+
         <div class="welcome-wrapper">
             <div class="welcome-card-hero">
                 <div class="welcome-badge">SISTEMA DE GESTIÓN CLÍNICA v2.0</div>
+                
                 <h1>BIENVENIDO AL SISTEMA DE ADMINISTRACIÓN</h1>
+                
                 <p>
                     Hola <strong>{nombre_usuario}</strong>, has ingresado al panel de control central. 
                     Desde aquí podrás gestionar usuarios, configurar la seguridad y supervisar 
                     la estructura modular de la institución con total eficiencia.
                 </p>
-                <div class="status-line">ESTADO DEL SISTEMA: OPERATIVO</div>
+                
+                <div class="status-line">
+                    ESTADO DEL SISTEMA: OPERATIVO
+                </div>
             </div>
         </div>
         """
  
-    # ----------------------------------------------------------
-    # 7. USUARIOS
+# ----------------------------------------------------------
+    # 7. USUARIOS (CON FOTO Y RESTRICCIONES DE FORMULARIO)
     # ----------------------------------------------------------
     elif path == "/usuarios":
         id_p = u_data.get('pid')
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo='Usuarios'""", (id_p,))
         p_user = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
- 
+
         if not p_user['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2><p>No tienes permisos.</p></div>"
         else:
             cur.execute("SELECT u.*, p.strNombrePerfil FROM usuarios u LEFT JOIN perfiles p ON u.idPerfil=p.id")
             usuarios = cur.fetchall()
+            
             rows = ""
             for u in usuarios:
+                # Priorizar foto de la BD, si no, avatar aleatorio
                 foto_src = u.get('strFoto') if u.get('strFoto') else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
+                
                 btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
+                
                 rows += f"""
                 <tr class='u-row'>
                   <td><img src='{foto_src}' class='avatar-table' style='width:35px;height:35px;border-radius:50%;object-fit:cover;'></td>
@@ -579,11 +653,11 @@ def application(environ, start_response):
                   <td><span class='status-pill {"active" if u["strEstado"]=="Activo" else "inactive"}'>{u['strEstado']}</span></td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
- 
+
             cur.execute("SELECT * FROM perfiles")
             p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in cur.fetchall()])
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNew')\">+ NUEVO USUARIO</button>" if p_user['permisoCrear'] else ""
- 
+
             content = f"""
             <div class='card'>
               <h2 style="margin-top:0;">👥 Gestión de Usuarios</h2>
@@ -602,10 +676,11 @@ def application(environ, start_response):
                 <button class='btn-blue' onclick="cambiarPagina(1,'.u-row')">Siguiente ❯</button>
               </div>
             </div>
- 
+
             <div id='mNew' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNew')">&times;</span>
               <h3>Nuevo Usuario</h3>
+              
               <div style="text-align:center; margin-bottom:15px;">
                 <img id="imgPre" src="https://ui-avatars.com/api/?name=U&background=random" 
                      style="width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid var(--emerald);">
@@ -613,6 +688,7 @@ def application(environ, start_response):
                 <label for="u_foto" class="btn-blue" style="display:inline-block; padding:4px 8px; font-size:11px; cursor:pointer; margin-top:5px;">📸 Foto</label>
                 <input type="file" id="u_foto" accept="image/*" style="display:none" onchange="previewImg(this)">
               </div>
+
               <div class='grid-2'>
                 <div><label>Nombre (Solo letras)</label>
                      <input id='un' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
@@ -627,7 +703,7 @@ def application(environ, start_response):
               </div>
               <button class='btn-emerald' onclick='validateAndSave()'>GUARDAR USUARIO</button>
             </div></div>
- 
+
             <div id='mEdit' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mEdit')">&times;</span>
               <h3>Editar Usuario</h3>
@@ -640,9 +716,10 @@ def application(environ, start_response):
               </div>
               <button class='btn-emerald' onclick='updateUser()'>ACTUALIZAR</button>
             </div></div>
- 
+
             <script>
               let base64Foto = "";
+
               function previewImg(i) {{
                 if (i.files && i.files[0]) {{
                   const r = new FileReader();
@@ -650,58 +727,73 @@ def application(environ, start_response):
                   r.readAsDataURL(i.files[0]);
                 }}
               }}
+
               function validateAndSave() {{
                 const u = document.getElementById('un').value.trim();
                 const p = document.getElementById('up').value;
                 const c = document.getElementById('uc').value.trim();
                 const t = document.getElementById('ut').value.trim();
+                
                 if (!u||!p||!c||!t) return alert("⚠️ Todos los campos son obligatorios");
                 if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
                 if (p.length < 5 || p.length > 8) return alert("⚠️ La contraseña debe tener entre 5 y 8 caracteres");
                 if (!c.toLowerCase().endsWith("@gmail.com")) return alert("⚠️ El correo debe ser @gmail.com");
                 if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
-                runCrud('save','usuarios',0,{{ u, p, c, t, 
+                
+                runCrud('save','usuarios',0,{{ 
+                    u, p, c, t, 
                     idp: document.getElementById('un_idp').value, 
                     st: document.getElementById('un_st').value,
-                    img: base64Foto }});
+                    img: base64Foto 
+                }});
               }}
+              
               function updateUser() {{
                 const u = document.getElementById('ed_u').value.trim();
                 if (!u) return alert("⚠️ El nombre es obligatorio");
                 if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+
                 runCrud('update','usuarios', document.getElementById('ed_id').value, {{
-                  u: u, idp: document.getElementById('ed_idp').value, st: document.getElementById('ed_st').value
+                  u: u,
+                  idp: document.getElementById('ed_idp').value,
+                  st: document.getElementById('ed_st').value
                 }});
               }}
             </script>"""
  
     # ----------------------------------------------------------
-    # 8. PERFILES (CON VALIDACIÓN DE DUPLICADOS)
+    # 8. PERFILES (CON CONTROL DE DUPLICADOS)
     # ----------------------------------------------------------
     elif path == "/perfiles":
         id_p = u_data.get('pid')
+        # Consultar permisos para el módulo Perfiles
         cur.execute("SELECT * FROM permisos WHERE idPerfil=%s AND nombreModulo='Perfiles'", (id_p,))
         p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
- 
+
         if not p_acc['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
             cur.execute("SELECT * FROM perfiles ORDER BY id ASC")
             perfiles = cur.fetchall()
+            
+            # Extraemos los nombres para la validación en JS (convertidos a minúsculas para comparar mejor)
             nombres_existentes = [p['strNombrePerfil'].strip().lower() for p in perfiles]
+            
             rows = ""
             for i, p in enumerate(perfiles, 1):
+                # Botones condicionales
                 btn_edit = f"<button class='btn-blue' onclick='preEdit({p['id']}, {{n:\"{p['strNombrePerfil']}\"}}, \"mEditP\")'>Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','perfiles',{p['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
+                
                 rows += f"""
                 <tr class='p-row'>
                   <td>{i}</td>
                   <td><b class='p-name'>{p['strNombrePerfil']}</b></td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
- 
+
             btn_nuevo_html = "<button class='btn-emerald' style='width:auto' onclick=\"openM('mNewP')\">+ NUEVO PERFIL</button>" if p_acc['permisoCrear'] else ""
- 
+
             content = f"""
             <div class='card'>
               <h2 style="margin-top:0;">👤 Gestión de Perfiles</h2>
@@ -720,7 +812,7 @@ def application(environ, start_response):
                 <button class='btn-blue' onclick="cambiarPagina(1,'.p-row')">Siguiente ❯</button>
               </div>
             </div>
- 
+
             <div id='mNewP' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mNewP')">&times;</span>
               <h3>Nuevo Perfil</h3>
@@ -728,7 +820,7 @@ def application(environ, start_response):
               <input id='pn' maxlength='15' placeholder='Ej: Administrador' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='savePerfil()'>GUARDAR PERFIL</button>
             </div></div>
- 
+
             <div id='mEditP' class='modal'><div class='modal-content'>
               <span class='close-x' onclick="closeM('mEditP')">&times;</span>
               <h3>Editar Perfil</h3>
@@ -737,34 +829,42 @@ def application(environ, start_response):
               <input id='ed_n' maxlength='15' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
               <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updatePerfil()'>ACTUALIZAR PERFIL</button>
             </div></div>
- 
+
             <script>
+              // Pasamos la lista de nombres desde Python a JavaScript
               const perfilesExistentes = {nombres_existentes};
+
               function savePerfil() {{
                 const n = document.getElementById('pn').value.trim();
                 if (!n) return alert("⚠️ El nombre es obligatorio");
-                if (perfilesExistentes.includes(n.toLowerCase()))
-                    return alert("❌ Ya existe un perfil con el nombre '" + n + "'");
+                
+                // Validación de duplicados
+                if (perfilesExistentes.includes(n.toLowerCase())) {{
+                    return alert("❌ Error: Ya existe un perfil con el nombre '" + n + "'");
+                }}
+                
                 runCrud('save','perfiles',0,{{n}});
               }}
+
               function updatePerfil() {{
                 const id = document.getElementById('ed_id').value;
                 const n = document.getElementById('ed_n').value.trim();
                 if (!n) return alert("⚠️ El nombre es obligatorio");
-                const nombreOriginal = document.querySelector('.p-row button[onclick*="' + id + '"]')
-                    .parentElement.parentElement.querySelector('.p-name').innerText.trim().toLowerCase();
-                if (n.toLowerCase() !== nombreOriginal && perfilesExistentes.includes(n.toLowerCase()))
-                    return alert("❌ Ya existe otro perfil con el nombre '" + n + "'");
+
+                // Para editar, verificamos que el nombre no exista en OTROS registros
+                // (permitimos que guarde si el nombre es el mismo que ya tenía el registro actual)
+                const nombreOriginal = document.querySelector('.p-row button[onclick*="'+id+'"]').parentElement.parentElement.querySelector('.p-name').innerText.trim().toLowerCase();
+                
+                if (n.toLowerCase() !== nombreOriginal && perfilesExistentes.includes(n.toLowerCase())) {{
+                    return alert("❌ Error: Ya existe otro perfil con el nombre '" + n + "'");
+                }}
+
                 runCrud('update','perfiles', id, {{n}});
               }}
             </script>"""
- 
+            
     # ----------------------------------------------------------
-    # 9. MÓDULOS
-    #    CAMBIO 1: tabla sin columna RUTA, "PADRE" → "SECCIÓN"
-    #    CAMBIO 2: modal editar pre-llena sección correctamente
-    #    CAMBIO 3: al guardar, el módulo nuevo aparece en navbar
-    #              en cuanto se le asigne permisoVer en Permisos
+    # 9. MÓDULOS (CORRECCIÓN DE GUARDADO PARA NAVBAR)
     # ----------------------------------------------------------
     elif path == "/modulos":
         id_p = u_data.get('pid')
@@ -774,23 +874,20 @@ def application(environ, start_response):
         if not p_acc['permisoVer']:
             content = "<div class='card'><h2 style='color:red;'>🚫 Acceso Denegado</h2></div>"
         else:
-            cur.execute("SELECT * FROM modulos ORDER BY strMenuPadre ASC, strNombreModulo ASC")
+            cur.execute("SELECT * FROM modulos ORDER BY id ASC")
             modulos = cur.fetchall()
+            
             rows = ""
             for m in modulos:
-                # CORRECCIÓN: Uso de comillas simples para el diccionario y escapado para JS
-                btn_edit = f"<button class='btn-blue' onclick=\"preEditMod({m['id']}, '{m['strNombreModulo']}', '{m['strMenuPadre']}')\">Editar</button>" if p_acc['permisoEditar'] else ""
+                # Pasamos los datos al modal de edición
+                btn_edit = f"<button class='btn-blue' onclick='preEdit({m['id']}, {{n:\"{m['strNombreModulo']}\", p:\"{m['strMenuPadre']}\"}}, \"mEditM\")'>Editar</button>" if p_acc['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','modulos',{m['id']})\">Borrar</button>" if p_acc['permisoEliminar'] else ""
-
+                
                 rows += f"""
                 <tr class='m-row'>
                   <td><b class='m-name'>{m['strNombreModulo']}</b></td>
-                  <td>
-                    <span style='background:#f1f5f9; color:var(--text-muted); padding:4px 12px;
-                                 border-radius:20px; font-size:12px; font-weight:600;'>
-                      {m['strMenuPadre']}
-                    </span>
-                  </td>
+                  <td><code style='color:#94a3b8; font-size:12px;'>{m['strRuta']}</code></td>
+                  <td>{m['strMenuPadre']}</td>
                   <td>{btn_edit} {btn_del}</td>
                 </tr>"""
 
@@ -804,18 +901,10 @@ def application(environ, start_response):
                 <input type='text' id='txtBusca' class='search-input'
                   onkeyup="paginaActual=1; filtrar('.m-row','.m-name');" placeholder='🔍 Buscar...'>
               </div>
-
               <table>
-                <thead>
-                  <tr>
-                    <th>NOMBRE</th>
-                    <th>SECCIÓN</th>
-                    <th>ACCIONES</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>NOMBRE</th><th>RUTA</th><th>PADRE</th><th>ACCIONES</th></tr></thead>
                 <tbody>{rows}</tbody>
               </table>
-
               <div class='paginador-ui'>
                 <button class='btn-blue' onclick="cambiarPagina(-1,'.m-row')">❮ Anterior</button>
                 <span id='infoPagina' style='color:var(--emerald); font-weight:bold;'></span>
@@ -827,15 +916,14 @@ def application(environ, start_response):
               <span class='close-x' onclick="closeM('mNewM')">&times;</span>
               <h3>Nuevo Módulo</h3>
               <label>Nombre del Módulo</label>
-              <input id='mn' maxlength='20' placeholder='Ej: Reportes'
-                     onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <label>Sección (menú donde aparecerá)</label>
+              <input id='mn' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
               <select id='mp'>
-                <option value='Seguridad'>Seguridad</option>
-                <option value='Principal 1'>Principal 1</option>
-                <option value='Principal 2'>Principal 2</option>
+                <option>Seguridad</option>
+                <option>Principal 1</option>
+                <option>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR MÓDULO</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='saveMod()'>GUARDAR</button>
             </div></div>
 
             <div id='mEditM' class='modal'><div class='modal-content'>
@@ -843,48 +931,48 @@ def application(environ, start_response):
               <h3>Editar Módulo</h3>
               <input type='hidden' id='ed_id'>
               <label>Nombre</label>
-              <input id='ed_n' maxlength='20'
-                     onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
-              <label>Sección (menú donde aparecerá)</label>
+              <input id='ed_n' maxlength='20' onkeypress="return /^[a-zA-Z0-9.ñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)">
+              <label>Menú Padre</label>
               <select id='ed_p'>
-                <option value='Seguridad'>Seguridad</option>
-                <option value='Principal 1'>Principal 1</option>
-                <option value='Principal 2'>Principal 2</option>
+                <option>Seguridad</option>
+                <option>Principal 1</option>
+                <option>Principal 2</option>
               </select>
-              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR MÓDULO</button>
+              <button class='btn-emerald' style="width:100%; margin-top:10px;" onclick='updateMod()'>ACTUALIZAR</button>
             </div></div>
 
             <script>
-              function preEditMod(id, nombre, seccion) {{
-                document.getElementById('ed_id').value = id;
-                document.getElementById('ed_n').value  = nombre;
-                document.getElementById('ed_p').value  = seccion;
-                openM('mEditM');
-              }}
               function saveMod() {{
                 const n = document.getElementById('mn').value.trim();
                 const p = document.getElementById('mp').value;
-                if (!n) return alert("⚠️ El nombre es obligatorio");
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                
+                // Generamos la ruta automáticamente para que el Navbar funcione
                 const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-                runCrud('save', 'modulos', 0, {{ n: n, r: r, p: p }});
+                
+                // IMPORTANTE: Enviamos n, r, p para que coincida con el API
+                runCrud('save','modulos',0,{{ n: n, r: r, p: p }});
               }}
+
               function updateMod() {{
                 const id = document.getElementById('ed_id').value;
                 const n  = document.getElementById('ed_n').value.trim();
                 const p  = document.getElementById('ed_p').value;
-                if (!n) return alert("⚠️ El nombre es obligatorio");
+                if (!n) return alert("⚠️ Nombre obligatorio");
+                
                 const r = "/" + n.toLowerCase().replace(/\s+/g, '-');
-                runCrud('update', 'modulos', id, {{ n: n, r: r, p: p }});
+                runCrud('update','modulos', id, {{ n: n, r: r, p: p }});
               }}
             </script>"""
- 
-    # ----------------------------------------------------------
-    # 10. PERMISOS (matriz)
+     
+ # ----------------------------------------------------------
+    # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY) - LIGHT MODE
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
         perfiles = cur.fetchall()
         
+        # Módulos fijos de seguridad + Módulos dinámicos de la BD
         mods_fijos = [
             {'id': -1, 'nm': 'Perfiles',  'p': 'Seguridad'},
             {'id': -2, 'nm': 'Módulos',   'p': 'Seguridad'},
@@ -893,7 +981,7 @@ def application(environ, start_response):
         ]
         cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
         todos_mods = mods_fijos + cur.fetchall()
- 
+
         p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
         
         rows = ""
@@ -909,7 +997,7 @@ def application(environ, start_response):
               <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
               <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
             </tr>"""
- 
+
         content = f"""
         <div class='card'>
           <h2 style="margin-top:0; color:var(--emerald); display:flex; align-items:center; gap:10px;">
@@ -922,7 +1010,7 @@ def application(environ, start_response):
             style='border:2px solid var(--emerald); max-width:400px; margin-bottom:10px; font-weight:bold;'>
             <option value=''>-- Seleccione un perfil --</option>{p_opts}
           </select>
- 
+
           <div id='area_permisos' style='display:none; margin-top:25px;'>
             <div class='toolbar' style='background:#f1f5f9; padding:15px; border-radius:12px; border:1px solid var(--border);'>
               <div style='display:flex; gap:10px;'>
@@ -933,7 +1021,7 @@ def application(environ, start_response):
                 style='margin-bottom:0; background:white;'
                 onkeyup="paginaActual=1; filtrar('.perm-row','.perm-name');" placeholder='🔍 Buscar módulo...'>
             </div>
- 
+
             <table style='margin-bottom:20px;'>
               <thead>
                 <tr>
@@ -946,33 +1034,38 @@ def application(environ, start_response):
               </thead>
               <tbody>{rows}</tbody>
             </table>
- 
+
             <div class='paginador-ui' style='margin-bottom:25px;'>
               <button class='btn-blue' onclick="cambiarPagina(-1,'.perm-row')">❮ Anterior</button>
               <span id='infoPagina' style='color:var(--text); font-weight:bold; background:#e2e8f0; padding:5px 15px; border-radius:20px; font-size:13px;'></span>
               <button class='btn-blue' onclick="cambiarPagina(1,'.perm-row')">Siguiente ❯</button>
             </div>
- 
+
             <button class='btn-emerald' style='font-size:16px; padding:18px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);' onclick='guardarPermisos()'>
               💾 GUARDAR CONFIGURACIÓN DE SEGURIDAD
             </button>
           </div>
         </div>
- 
+
         <script>
           async function cargarPermisos(idp) {{
             if (!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
+            
+            // Limpiar checks
             document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
+            
             const res  = await fetch('/api/get_permisos?idp=' + idp);
             const data = await res.json();
+            
             if (data.ok) {{
               data.perms.forEach(p => {{
+                // Buscamos la fila por el nombre del módulo guardado
                 const fila = document.querySelector(`tr[data-modname="${{p.nombreModulo}}"]`);
                 if (fila) {{
                     const idm = fila.querySelector('.perm-check').dataset.mod;
-                    if(p.permisoVer)      document.getElementById('v_' + idm).checked = true;
-                    if(p.permisoCrear)    document.getElementById('c_' + idm).checked = true;
-                    if(p.permisoEditar)   document.getElementById('e_' + idm).checked = true;
+                    if(p.permisoVer) document.getElementById('v_' + idm).checked = true;
+                    if(p.permisoCrear) document.getElementById('c_' + idm).checked = true;
+                    if(p.permisoEditar) document.getElementById('e_' + idm).checked = true;
                     if(p.permisoEliminar) document.getElementById('d_' + idm).checked = true;
                 }}
               }});
@@ -981,15 +1074,18 @@ def application(environ, start_response):
               filtrar('.perm-row', '.perm-name');
             }}
           }}
+
           function bulk(v) {{
             document.querySelectorAll('.perm-row').forEach(row => {{
               if (row.style.display !== 'none')
                 row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
             }});
           }}
+
           function guardarPermisos() {{
             const idp = document.getElementById('sel_perfil').value;
             if (!idp) return;
+            
             const matrix = [];
             document.querySelectorAll('.perm-row').forEach(tr => {{
                 const idm = tr.querySelector('.perm-check').dataset.mod;
@@ -1001,17 +1097,20 @@ def application(environ, start_response):
                     d: document.getElementById('d_' + idm).checked ? 1 : 0
                 }});
             }});
+
             if(confirm("¿Deseas actualizar los permisos para este perfil?")) {{
                 runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
             }}
           }}
         </script>"""
  
-    # ----------------------------------------------------------
+  # ----------------------------------------------------------
     # 11. VISTAS DE MAQUETAS (PRINCIPAL 1 Y 2)
     # ----------------------------------------------------------
     elif path.startswith("/principal") or path.startswith("/modulo"):
         id_p = u_data.get('pid')
+        
+        # 1. Diccionario extendido con todas las pantallas estáticas
         vistas = {
             "/principal-1.1": {
                 "modulo_bd": "Principal 1.1",
@@ -1054,7 +1153,8 @@ def application(environ, start_response):
                 ]
             }
         }
- 
+
+        # Obtenemos la configuración según el path, o una genérica si no existe
         config = vistas.get(path, {
             "modulo_bd": "Módulo Desconocido",
             "titulo": "📦 Contenido en Desarrollo",
@@ -1062,16 +1162,19 @@ def application(environ, start_response):
             "headers": ["COLUMNA 1", "COLUMNA 2", "ESTADO", "ACCIONES"],
             "filas": []
         })
- 
+
+        # 2. Validación de Permisos (Doble vía: por nombre exacto o por ruta)
         cur.execute("""SELECT permisoVer, permisoCrear, permisoEditar, permisoEliminar 
                        FROM permisos WHERE idPerfil=%s AND nombreModulo=%s""", (id_p, config["modulo_bd"]))
         p_acc = cur.fetchone()
+        
         if not p_acc:
             cur.execute("""SELECT p.permisoVer, p.permisoCrear, p.permisoEditar, p.permisoEliminar 
                            FROM permisos p JOIN modulos m ON p.nombreModulo = m.strNombreModulo 
                            WHERE p.idPerfil=%s AND m.strRuta=%s""", (id_p, path))
             p_acc = cur.fetchone() or {'permisoVer':0, 'permisoCrear':0, 'permisoEditar':0, 'permisoEliminar':0}
- 
+
+        # 3. Lógica de renderizado (Solo si tiene permisoVer)
         if not p_acc['permisoVer']:
             content = f"""
             <div class='card' style='text-align:center; padding:50px;'>
@@ -1083,20 +1186,28 @@ def application(environ, start_response):
         else:
             thead = "".join([f"<th style='text-align:left;'>{h}</th>" for h in config["headers"]])
             tbody = ""
+            
             if not config["filas"]:
                 tbody = f"<tr><td colspan='{len(config['headers'])}' style='text-align:center; padding:30px; color:gray;'>No hay registros disponibles en esta sección.</td></tr>"
             else:
                 for item in config["filas"]:
                     f = item["data"]
                     item_id = item["id"]
-                    status_val = f[-1]
+                    
+                    # El último elemento de la lista 'data' siempre es el estado para el pill
+                    status_val = f[-1] 
                     data_cells = "".join([f"<td>{str(col)}</td>" for col in f[:-1]])
+                    
                     status_pill = f"<td><span class='status-pill {status_val}'>{'Activo' if status_val=='active' else 'Inactivo'}</span></td>"
+                    
+                    # Botones dinámicos según permisos de la tabla 'permisos'
                     btn_edit = f"<button class='btn-blue' onclick=\"alert('Editando ID: {item_id}')\" style='padding:4px 8px; font-size:11px;'>Editar</button>" if p_acc['permisoEditar'] else ""
-                    btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','{config['modulo_bd']}',{item_id})\" style='padding:4px 8px; font-size:11px;'>Borrar</button>" if p_acc['permisoEliminar'] else ""
+                    btn_del = f"<button class='btn-red' onclick=\"runCrud('delete','{config['modulo_bd']}',{item_id})\" style='padding:4px 8px; font-size:11px;'>Borrar</button>" if p_acc['permisoEliminar'] else ""
+                    
                     tbody += f"<tr>{data_cells}{status_pill}<td>{btn_edit} {btn_del}</td></tr>"
- 
+
             btn_nuevo = f"<button class='btn-emerald' style='width:auto' onclick=\"alert('Nuevo registro en {config['modulo_bd']}')\">+ NUEVO REGISTRO</button>" if p_acc['permisoCrear'] else ""
+
             content = f"""
             <div class='card'>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:10px;">
@@ -1110,7 +1221,7 @@ def application(environ, start_response):
                     </table>
                 </div>
             </div>"""
- 
+        
     # ----------------------------------------------------------
     # Cierre de BD y respuesta
     # ----------------------------------------------------------
