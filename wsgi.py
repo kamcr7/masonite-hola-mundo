@@ -298,28 +298,37 @@ def application(environ, start_response):
     conn   = None
     cur    = None
  
+    # ... otros elif anteriores ...
+
     # ----------------------------------------------------------
-    # 1. API: GET PERMISOS (matriz)
+    # 1. API: GET PERMISOS (matriz) - CORREGIDO E INTEGRADO
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
-        params  = parse_qs(environ.get('QUERY_STRING', ''))
+        params = parse_qs(environ.get('QUERY_STRING', ''))
         idp_raw = params.get('idp', [None])[0]
-        res = b'{"ok":false,"perms":[]}'
+        
+        # Usamos el 'cur' que ya abriste arriba en "Conexión para pantallas protegidas"
+        res_dict = {"ok": False, "perms": []}
+        
         if idp_raw:
-            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
-                               can_edit as e, can_delete as d
-                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
+                cur.execute("""
+                    SELECT nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar 
+                    FROM permisos WHERE idPerfil = %s
+                """, (idp_raw,))
                 perms = cur.fetchall()
-                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+                res_dict = {"ok": True, "perms": perms}
             except Exception as e:
-                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-            finally:
-                cur.close(); conn.close()
-        start_response("200 OK", [("Content-Type", "application/json")])
-        return [res]
+                res_dict = {"ok": False, "error": str(e)}
+
+        # Convertimos a JSON y enviamos respuesta INMEDIATA
+        res_json = json.dumps(res_dict).encode('utf-8')
+        start_response("200 OK", [("Content-Type", "application/json; charset=utf-8")])
+        return [res_json]
+
+    # ... otros elif siguientes o el cierre final ...
+      
  
 # ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL 
