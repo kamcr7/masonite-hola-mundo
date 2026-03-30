@@ -33,7 +33,6 @@ def conectar_bd():
         password=res.password, database=res.path[1:], charset='utf8mb4'
     )
  
- # --- Línea 36 aproximadamente ---
 def generar_navbar(id_perfil):
     conn = conectar_bd(); cur = conn.cursor(dictionary=True)
     # Buscamos módulos donde el perfil tenga permisoVer = 1
@@ -323,7 +322,7 @@ def application(environ, start_response):
         return [res]
  
 # ----------------------------------------------------------
-    # 2. API: CRUD PRINCIPAL (REPARADO PARA PERFILES Y MÓDULOS)
+    # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
@@ -404,7 +403,7 @@ def application(environ, start_response):
         return [res]
     
     # ----------------------------------------------------------
-    # 3. LOGIN (CON DISEÑO DE RECAPTCHA ESTILO GOOGLE)
+    # 3. LOGIN 
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
@@ -623,7 +622,7 @@ def application(environ, start_response):
         """
  
 # ----------------------------------------------------------
-    # 7. USUARIOS (CON FOTO Y RESTRICCIONES DE FORMULARIO)
+    # 7. USUARIOS 
     # ----------------------------------------------------------
     elif path == "/usuarios":
         id_p = u_data.get('pid')
@@ -864,7 +863,7 @@ def application(environ, start_response):
             </script>"""
             
     # ----------------------------------------------------------
-    # 9. MÓDULOS (CORRECCIÓN DE GUARDADO PARA NAVBAR)
+    # 9. MÓDULOS 
     # ----------------------------------------------------------
     elif path == "/modulos":
         id_p = u_data.get('pid')
@@ -1111,147 +1110,8 @@ def application(environ, start_response):
             }}
           }}
         </script>"""
- 
-     
- # ----------------------------------------------------------
-    # 10. PERMISOS (CONEXIÓN CON TABLA RAILWAY) - LIGHT MODE
-    # ----------------------------------------------------------
-    elif path == "/permisos":
-        cur.execute("SELECT id, strNombrePerfil FROM perfiles")
-        perfiles = cur.fetchall()
-        
-        # Módulos fijos de seguridad + Módulos dinámicos de la BD
-        mods_fijos = [
-            {'id': -1, 'nm': 'Perfiles',  'p': 'Seguridad'},
-            {'id': -2, 'nm': 'Módulos',   'p': 'Seguridad'},
-            {'id': -3, 'nm': 'Usuarios',  'p': 'Seguridad'},
-            {'id': -4, 'nm': 'Permisos',  'p': 'Seguridad'},
-        ]
-        cur.execute("SELECT id, strNombreModulo as nm, strMenuPadre as p FROM modulos")
-        todos_mods = mods_fijos + cur.fetchall()
 
-        p_opts = "".join([f"<option value='{p['id']}'>{p['strNombrePerfil']}</option>" for p in perfiles])
-        
-        rows = ""
-        for m in todos_mods:
-            rows += f"""
-            <tr class='perm-row' data-visible='true' data-modname='{m['nm']}'>
-              <td>
-                <b class='perm-name' style='color:var(--text);'>{m['nm']}</b><br>
-                <small style='color:var(--text-muted); font-size:11px; text-transform:uppercase;'>{m['p']}</small>
-              </td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='v_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='c_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='e_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
-              <td style='text-align:center'><input type='checkbox' class='perm-check' data-mod='{m["id"]}' id='d_{m["id"]}' style='width:18px; height:18px; cursor:pointer;'></td>
-            </tr>"""
 
-        content = f"""
-        <div class='card'>
-          <h2 style="margin-top:0; color:var(--emerald); display:flex; align-items:center; gap:10px;">
-            <span style='font-size:24px;'>🛡️</span> Matriz de Permisos
-          </h2>
-          <p style='color:var(--text-muted); margin-bottom:20px;'>Configura los privilegios de acceso para cada rol del sistema.</p>
-          
-          <label>Selecciona un Perfil para configurar</label>
-          <select id='sel_perfil' onchange='cargarPermisos(this.value)'
-            style='border:2px solid var(--emerald); max-width:400px; margin-bottom:10px; font-weight:bold;'>
-            <option value=''>-- Seleccione un perfil --</option>{p_opts}
-          </select>
-
-          <div id='area_permisos' style='display:none; margin-top:25px;'>
-            <div class='toolbar' style='background:#f1f5f9; padding:15px; border-radius:12px; border:1px solid var(--border);'>
-              <div style='display:flex; gap:10px;'>
-                <button class='btn-emerald' onclick='bulk(true)' style='width:auto; padding:8px 15px; font-size:12px;'>☑ Marcar Todo</button>
-                <button class='btn-salir'  onclick='bulk(false)' style='width:auto; padding:8px 15px; font-size:12px;'>☐ Desmarcar Todo</button>
-              </div>
-              <input type='text' id='txtBusca' class='search-input' 
-                style='margin-bottom:0; background:white;'
-                onkeyup="paginaActual=1; filtrar('.perm-row','.perm-name');" placeholder='🔍 Buscar módulo...'>
-            </div>
-
-            <table style='margin-bottom:20px;'>
-              <thead>
-                <tr>
-                    <th style="text-align:left; width:40%;">MÓDULO</th>
-                    <th style="text-align:center;">VER</th>
-                    <th style="text-align:center;">CREAR</th>
-                    <th style="text-align:center;">EDITAR</th>
-                    <th style="text-align:center;">ELIMINAR</th>
-                </tr>
-              </thead>
-              <tbody>{rows}</tbody>
-            </table>
-
-            <div class='paginador-ui' style='margin-bottom:25px;'>
-              <button class='btn-blue' onclick="cambiarPagina(-1,'.perm-row')">❮ Anterior</button>
-              <span id='infoPagina' style='color:var(--text); font-weight:bold; background:#e2e8f0; padding:5px 15px; border-radius:20px; font-size:13px;'></span>
-              <button class='btn-blue' onclick="cambiarPagina(1,'.perm-row')">Siguiente ❯</button>
-            </div>
-
-            <button class='btn-emerald' style='font-size:16px; padding:18px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);' onclick='guardarPermisos()'>
-              💾 GUARDAR CONFIGURACIÓN DE SEGURIDAD
-            </button>
-          </div>
-        </div>
-
-        <script>
-          async function cargarPermisos(idp) {{
-            if (!idp) {{ document.getElementById('area_permisos').style.display='none'; return; }}
-            
-            // Limpiar checks
-            document.querySelectorAll('.perm-check').forEach(c => c.checked = false);
-            
-            const res  = await fetch('/api/get_permisos?idp=' + idp);
-            const data = await res.json();
-            
-            if (data.ok) {{
-              data.perms.forEach(p => {{
-                // Buscamos la fila por el nombre del módulo guardado
-                const fila = document.querySelector(`tr[data-modname="${{p.nombreModulo}}"]`);
-                if (fila) {{
-                    const idm = fila.querySelector('.perm-check').dataset.mod;
-                    if(p.permisoVer) document.getElementById('v_' + idm).checked = true;
-                    if(p.permisoCrear) document.getElementById('c_' + idm).checked = true;
-                    if(p.permisoEditar) document.getElementById('e_' + idm).checked = true;
-                    if(p.permisoEliminar) document.getElementById('d_' + idm).checked = true;
-                }}
-              }});
-              document.getElementById('area_permisos').style.display = 'block';
-              paginaActual = 1;
-              filtrar('.perm-row', '.perm-name');
-            }}
-          }}
-
-          function bulk(v) {{
-            document.querySelectorAll('.perm-row').forEach(row => {{
-              if (row.style.display !== 'none')
-                row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
-            }});
-          }}
-
-          function guardarPermisos() {{
-            const idp = document.getElementById('sel_perfil').value;
-            if (!idp) return;
-            
-            const matrix = [];
-            document.querySelectorAll('.perm-row').forEach(tr => {{
-                const idm = tr.querySelector('.perm-check').dataset.mod;
-                matrix.push({{
-                    nom: tr.dataset.modname,
-                    v: document.getElementById('v_' + idm).checked ? 1 : 0,
-                    c: document.getElementById('c_' + idm).checked ? 1 : 0,
-                    e: document.getElementById('e_' + idm).checked ? 1 : 0,
-                    d: document.getElementById('d_' + idm).checked ? 1 : 0
-                }});
-            }});
-
-            if(confirm("¿Deseas actualizar los permisos para este perfil?")) {{
-                runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
-            }}
-          }}
-        </script>"""
- 
   # ----------------------------------------------------------
     # 11. VISTAS DE MAQUETAS (PRINCIPAL 1 Y 2)
     # ----------------------------------------------------------
@@ -1262,7 +1122,7 @@ def application(environ, start_response):
         vistas = {
             "/principal-1.1": {
                 "modulo_bd": "Principal 1.1",
-                "titulo": "👥 Catálogo de Clientes",
+                "titulo": "👥 Principal 1.1",
                 "color": "#3b82f6",
                 "headers": ["ID", "RAZÓN SOCIAL", "RFC", "CONTACTO", "ESTADO", "ACCIONES"],
                 "filas": [
@@ -1272,7 +1132,7 @@ def application(environ, start_response):
             },
             "/principal-1.2": {
                 "modulo_bd": "Principal 1.2",
-                "titulo": "📄 Emisión de Facturas",
+                "titulo": "📄 Principal 1.2",
                 "color": "#10b981",
                 "headers": ["FOLIO", "CLIENTE", "MONTO", "ESTADO", "ACCIONES"],
                 "filas": [
@@ -1282,7 +1142,7 @@ def application(environ, start_response):
             },
             "/principal-2.1": {
                 "modulo_bd": "Principal 2.1",
-                "titulo": "📦 Inventario de Farmacia",
+                "titulo": "📦 Principal 2.1",
                 "color": "#f59e0b",
                 "headers": ["SKU", "PRODUCTO", "STOCK", "PRECIO", "ESTADO", "ACCIONES"],
                 "filas": [
@@ -1292,7 +1152,7 @@ def application(environ, start_response):
             },
             "/principal-2.2": {
                 "modulo_bd": "Principal 2.2",
-                "titulo": "📋 Órdenes de Servicio",
+                "titulo": "📋 Principal 2.2",
                 "color": "#8b5cf6",
                 "headers": ["ID", "PACIENTE", "SERVICIO", "FECHA", "ESTADO", "ACCIONES"],
                 "filas": [
