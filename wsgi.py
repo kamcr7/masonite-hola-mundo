@@ -331,39 +331,48 @@ def application(environ, start_response):
       
  
 # ----------------------------------------------------------
-    # API: GET PERMISOS (Para que la tabla aparezca al seleccionar)
-    # ----------------------------------------------------------
-    elif path == "/api/get_permisos":
-        from urllib.parse import parse_qs
-        params = parse_qs(environ.get('QUERY_STRING', ''))
-        idp_raw = params.get('idp', [None])[0]
-        
-        # Respuesta por defecto
-        res_json = {"ok": False, "perms": []}
-        
-        if idp_raw:
-            # Usamos el 'cur' que ya abriste al inicio de las pantallas protegidas
-            try:
-                # IMPORTANTE: Los nombres de columnas deben coincidir con tu INSERT del CRUD
-                cur.execute("""
-                    SELECT 
-                        nombreModulo, 
-                        permisoVer, 
-                        permisoCrear, 
-                        permisoEditar, 
-                        permisoEliminar 
-                    FROM permisos 
-                    WHERE idPerfil = %s
-                """, (idp_raw,))
-                
-                perms = cur.fetchall()
-                # Si el perfil no tiene permisos aún, enviamos lista vacía pero con ok:true
-                res_json = {"ok": True, "perms": perms}
-            except Exception as e:
-                res_json = {"ok": False, "error": str(e)}
 
-        start_response("200 OK", [("Content-Type", "application/json; charset=utf-8")])
-        return [json.dumps(res_json).encode('utf-8')]
+    # 1. API: GET PERMISOS (matriz)
+
+    # ----------------------------------------------------------
+
+    if path == "/api/get_permisos":
+
+        from urllib.parse import parse_qs
+
+        params  = parse_qs(environ.get('QUERY_STRING', ''))
+
+        idp_raw = params.get('idp', [None])[0]
+
+        res = b'{"ok":false,"perms":[]}'
+
+        if idp_raw:
+
+            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+
+            try:
+
+                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
+
+                               can_edit as e, can_delete as d
+
+                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
+
+                perms = cur.fetchall()
+
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+
+            except Exception as e:
+
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+
+            finally:
+
+                cur.close(); conn.close()
+
+        start_response("200 OK", [("Content-Type", "application/json")])
+
+        return [res]
     
     # ----------------------------------------------------------
     # 3. LOGIN 
