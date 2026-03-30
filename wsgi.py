@@ -298,80 +298,109 @@ def application(environ, start_response):
     conn   = None
     cur    = None
  
-    # ... otros elif anteriores ...
-
     # ----------------------------------------------------------
-    # 1. API: GET PERMISOS (matriz) - CORREGIDO E INTEGRADO
+    # 1. API: GET PERMISOS (matriz)
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
-        params = parse_qs(environ.get('QUERY_STRING', ''))
+        params  = parse_qs(environ.get('QUERY_STRING', ''))
         idp_raw = params.get('idp', [None])[0]
-        
-        # Usamos el 'cur' que ya abriste arriba en "Conexión para pantallas protegidas"
-        res_dict = {"ok": False, "perms": []}
-        
+        res = b'{"ok":false,"perms":[]}'
         if idp_raw:
+            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                cur.execute("""
-                    SELECT nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar 
-                    FROM permisos WHERE idPerfil = %s
-                """, (idp_raw,))
+                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
+                               can_edit as e, can_delete as d
+                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
                 perms = cur.fetchall()
-                res_dict = {"ok": True, "perms": perms}
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
             except Exception as e:
-                res_dict = {"ok": False, "error": str(e)}
-
-        # Convertimos a JSON y enviamos respuesta INMEDIATA
-        res_json = json.dumps(res_dict).encode('utf-8')
-        start_response("200 OK", [("Content-Type", "application/json; charset=utf-8")])
-        return [res_json]
-
-    # ... otros elif siguientes o el cierre final ...
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+            finally:
+                cur.close(); conn.close()
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [res]
       
  
 # ----------------------------------------------------------
-
-    # 1. API: GET PERMISOS (matriz)
-
+    # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
+    if path == "/api/crud" and method == "POST":
+        raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
+        p   = json.loads(raw)
+        conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
+        
+        try:
+            # --- VALIDACIÓN DE PERMISOS ---
+            if p['action'] != 'save_permisos_matrix':
+                id_p = u_data.get('pid')
+                mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
+                col = mapa.get(p['action'])
+                if col:
+                    nom_mod = p['table'].capitalize()
+                    cur.execute(f"SELECT {col} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_mod))
+                    p_row = cur.fetchone()
+                    if not p_row or not p_row[col]: raise Exception(f"Sin permiso para {p['action']}")
 
-    if path == "/api/get_permisos":
+            # --- ACCIONES ---
+            if p['action'] == 'delete':
+                cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
 
-        from urllib.parse import parse_qs
+            elif p['action'] == 'save':
+                if p['table'] == 'usuarios':
+                    u_nom = p['data']['u'].strip()
+                    cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
+                    if cur.fetchone(): raise Exception("El usuario ya existe")
+                    cur.execute("""INSERT INTO usuarios 
+                        (strNombreUsuario, strPwd, strCorreo, strTelefono, idPerfil, strEstado, strFoto) 
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                        (u_nom, hash_password(p['data']['p']), p['data'].get('c',''), 
+                         p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
 
-        params  = parse_qs(environ.get('QUERY_STRING', ''))
+                elif p['table'] == 'perfiles':
+                    # Usamos .get('n') porque Perfiles envía 'n' como nombre
+                    cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
 
-        idp_raw = params.get('idp', [None])[0]
+                elif p['table'] == 'modulos':
+                    # Modulos envía 'n', 'r', 'p'
+                    cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
+                                (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
 
-        res = b'{"ok":false,"perms":[]}'
+            elif p['action'] == 'update':
+                if p['table'] == 'usuarios':
+                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
+                                (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
 
-        if idp_raw:
+                elif p['table'] == 'perfiles':
+                    # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
+                    cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", 
+                                (p['data'].get('n', '').strip(), p['id']))
 
-            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+                elif p['table'] == 'modulos':
+                    # Reparado: ahora busca 'n', 'r' y 'p'
+                    cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
+                                (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
 
-            try:
+            elif p['action'] == 'save_permisos_matrix':
+                id_p = p['data']['idp']
+                cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
+                for per in p['data']['perms']:
+                    if per['v'] or per['c'] or per['e'] or per['d']:
+                        cur.execute("""INSERT INTO permisos 
+                            (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) 
+                            VALUES (%s,%s,%s,%s,%s,%s)""",
+                            (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
 
-                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
-
-                               can_edit as e, can_delete as d
-
-                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
-
-                perms = cur.fetchall()
-
-                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
-
-            except Exception as e:
-
-                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-
-            finally:
-
-                cur.close(); conn.close()
-
+            conn.commit()
+            res = b'{"ok":true}'
+        except Exception as e:
+            if conn: conn.rollback()
+            res = json.dumps({"ok": False, "error": str(e)}).encode()
+        finally:
+            if cur: cur.close()
+            if conn: conn.close()
+        
         start_response("200 OK", [("Content-Type", "application/json")])
-
         return [res]
     
     # ----------------------------------------------------------
