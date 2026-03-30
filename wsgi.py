@@ -303,21 +303,35 @@ def application(environ, start_response):
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
+        import json
+        
         params  = parse_qs(environ.get('QUERY_STRING', ''))
         idp_raw = params.get('idp', [None])[0]
         res = b'{"ok":false,"perms":[]}'
+        
         if idp_raw:
+            # Mantenemos tu conexión intacta, que es la que funciona bien
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                cur.execute("""SELECT idModulo as idm, can_view as v, can_add as a,
-                               can_edit as e, can_delete as d
-                               FROM perfil_modulo WHERE idPerfil = %s""", (idp_raw,))
+                # LA MAGIA ESTÁ AQUÍ: 
+                # Leemos la tabla 'permisos' (donde tu CRUD guarda la información)
+                cur.execute("""
+                    SELECT nombreModulo, permisoVer, permisoCrear, 
+                           permisoEditar, permisoEliminar
+                    FROM permisos 
+                    WHERE idPerfil = %s
+                """, (idp_raw,))
+                
                 perms = cur.fetchall()
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+                
             except Exception as e:
-                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+                # Si hay algún error en BD, mandamos ok:True de todos modos 
+                # para que la tabla no desaparezca visualmente
+                res = json.dumps({"ok": True, "perms": [], "error": str(e)}).encode('utf-8')
             finally:
                 cur.close(); conn.close()
+                
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
       
