@@ -52,7 +52,7 @@ def generar_navbar(id_perfil):
     cur.close(); conn.close()
     return menus
 # =========================================================
-# LAYOUT PRINCIPAL (LIGHT MODE CORREGIDO)
+# LAYOUT PRINCIPAL 
 # =========================================================
 def render_layout(title, content, user=None):
     nav = ""
@@ -301,7 +301,7 @@ def application(environ, start_response):
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
-        import json
+        
         
         params  = parse_qs(environ.get('QUERY_STRING', ''))
         idp_raw = params.get('idp', [None])[0]
