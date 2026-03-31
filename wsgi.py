@@ -299,7 +299,7 @@ def application(environ, start_response):
     cur    = None
  
     # ----------------------------------------------------------
-    # 1. API: GET PERMISOS (matriz)
+    # 1. API: GET PERMISOS (Sincronizado con tabla 'permisos')
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
@@ -312,14 +312,17 @@ def application(environ, start_response):
         if idp_raw:
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                # CORRECCIÓN: Consultamos la tabla 'permisos' y sacamos las columnas exactas
-                # que el JavaScript espera (nombreModulo, permisoVer, etc.)
-                cur.execute("""SELECT nombreModulo, permisoVer, permisoCrear,
-                               permisoEditar, permisoEliminar
-                               FROM permisos WHERE idPerfil = %s""", (idp_raw,))
-                perms = cur.fetchall()
+                # AHORA SÍ: Leemos de tu tabla correcta (la de la 2da foto)
+                cur.execute("""
+                    SELECT nombreModulo, permisoVer, permisoCrear, 
+                           permisoEditar, permisoEliminar
+                    FROM permisos 
+                    WHERE idPerfil = %s
+                """, (idp_raw,))
                 
+                perms = cur.fetchall()
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+                
             except Exception as e:
                 res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
             finally:
