@@ -299,6 +299,40 @@ def application(environ, start_response):
     cur    = None
  
     # ----------------------------------------------------------
+    # 1. API: GET PERMISOS (Sincronizado con tabla 'permisos')
+    # ----------------------------------------------------------
+    if path == "/api/get_permisos":
+        from urllib.parse import parse_qs
+        import json
+        
+        params  = parse_qs(environ.get('QUERY_STRING', ''))
+        idp_raw = params.get('idp', [None])[0]
+        res = b'{"ok":false,"perms":[]}'
+        
+        if idp_raw:
+            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+            try:
+                # AHORA SÍ: Leemos de tu tabla correcta (la de la 2da foto)
+                cur.execute("""
+                    SELECT nombreModulo, permisoVer, permisoCrear, 
+                           permisoEditar, permisoEliminar
+                    FROM permisos 
+                    WHERE idPerfil = %s
+                """, (idp_raw,))
+                
+                perms = cur.fetchall()
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+                
+            except Exception as e:
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+            finally:
+                cur.close(); conn.close()
+                
+        start_response("200 OK", [("Content-Type", "application/json")])
+        return [res]
+      
+ 
+# ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
     if path.rstrip('/') == "/api/crud" and method == "POST":
@@ -390,6 +424,7 @@ def application(environ, start_response):
         # Pylance Warning Fix: Asegúrate de que esto esté alineado con el 'try' externo
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
+    
     # ----------------------------------------------------------
     # 3. LOGIN 
     # ----------------------------------------------------------
