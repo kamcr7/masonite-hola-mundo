@@ -335,23 +335,29 @@ def application(environ, start_response):
 # ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
-   # Hacemos que acepte con o sin slash final y nos aseguramos de que entre
-    if path.startswith("/api/crud") and method == "POST":
+    # Usamos rstrip('/') para que funcione con /api/crud o /api/crud/
+    if path.rstrip('/') == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
-        conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
+        
+        conn = conectar_bd()
+        cur = conn.cursor(dictionary=True)
+        res = b'{"ok": false, "error": "Error desconocido"}' # Respuesta por defecto
         
         try:
             # --- VALIDACIÓN DE PERMISOS ---
-            if p['action'] != 'save_permisos_matrix':
-                id_p = u_data.get('pid')
+            if p.get('action') != 'save_permisos_matrix':
+                # Si es una acción normal, validamos. Si es la matriz, la saltamos porque la guarda el admin.
+                id_p = u_data.get('pid') if 'u_data' in locals() else None
                 mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
-                col = mapa.get(p['action'])
-                if col:
-                    nom_mod = p['table'].capitalize()
+                col = mapa.get(p.get('action'))
+                
+                if col and id_p is not None:
+                    nom_mod = p.get('table', '').capitalize()
                     cur.execute(f"SELECT {col} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_mod))
                     p_row = cur.fetchone()
-                    if not p_row or not p_row[col]: raise Exception(f"Sin permiso para {p['action']}")
+                    if not p_row or not p_row[col]: 
+                        raise Exception(f"No tienes privilegios suficientes para la acción: {p.get('action')}")
 
             # --- ACCIONES ---
             if p['action'] == 'delete':
@@ -369,11 +375,9 @@ def application(environ, start_response):
                          p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
 
                 elif p['table'] == 'perfiles':
-                    # Usamos .get('n') porque Perfiles envía 'n' como nombre
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
 
                 elif p['table'] == 'modulos':
-                    # Modulos envía 'n', 'r', 'p'
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
 
@@ -383,34 +387,46 @@ def application(environ, start_response):
                                 (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
 
                 elif p['table'] == 'perfiles':
-                    # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s", 
                                 (p['data'].get('n', '').strip(), p['id']))
 
                 elif p['table'] == 'modulos':
-                    # Reparado: ahora busca 'n', 'r' y 'p'
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
 
+            # -------------------------------------------------------------
+            # AQUÍ ES DONDE SE GUARDA LA MATRIZ DE PERMISOS
+            # -------------------------------------------------------------
             elif p['action'] == 'save_permisos_matrix':
                 id_p = p['data']['idp']
+                
+                # 1. Borramos los permisos viejos de ese perfil
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
+                
+                # 2. Insertamos los nuevos permisos marcados
                 for per in p['data']['perms']:
+                    # Solo insertamos si al menos una casilla (ver, crear, editar, eliminar) está marcada
                     if per['v'] or per['c'] or per['e'] or per['d']:
                         cur.execute("""INSERT INTO permisos 
                             (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar) 
                             VALUES (%s,%s,%s,%s,%s,%s)""",
                             (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
 
+            # Si todo salió bien, confirmamos los cambios en MySQL
             conn.commit()
-            res = b'{"ok":true}'
+            res = b'{"ok": true}'
+            
         except Exception as e:
+            # Si hubo un error en BD, echamos para atrás los cambios (rollback)
             if conn: conn.rollback()
-            res = json.dumps({"ok": False, "error": str(e)}).encode()
+            # Empaquetamos el error en JSON para que JS pueda leerlo
+            res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+            
         finally:
             if cur: cur.close()
             if conn: conn.close()
         
+        # Le decimos al navegador que todo fue un éxito a nivel de servidor (200 OK)
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
     
