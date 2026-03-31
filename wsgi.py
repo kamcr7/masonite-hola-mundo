@@ -295,9 +295,7 @@ def application(environ, start_response):
     path   = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
     u_data = verify_jwt(environ)
-    conn   = None
-    cur    = None
- 
+    
     # ----------------------------------------------------------
     # 1. API: GET PERMISOS (Sincronizado con tabla 'permisos')
     # ----------------------------------------------------------
@@ -310,9 +308,9 @@ def application(environ, start_response):
         res = b'{"ok":false,"perms":[]}'
         
         if idp_raw:
-            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+            conn = conectar_bd()
+            cur = conn.cursor(dictionary=True)
             try:
-                # AHORA SÍ: Leemos de tu tabla correcta (la de la 2da foto)
                 cur.execute("""
                     SELECT nombreModulo, permisoVer, permisoCrear, 
                            permisoEditar, permisoEliminar
@@ -326,17 +324,18 @@ def application(environ, start_response):
             except Exception as e:
                 res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
             finally:
-                cur.close(); conn.close()
+                cur.close()
+                conn.close()
                 
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
       
- 
-# ----------------------------------------------------------
+
+    # ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
-    if path.rstrip('/') == "/api/crud" and method == "POST":
-        # Envolvemos TODO desde el inicio para que no haya escape
+    # Usamos ELIF para que esté perfectamente enlazado con el IF de arriba
+    elif path.rstrip('/') == "/api/crud" and method == "POST":
         try:
             # 1. Leer petición de forma segura
             content_length = int(environ.get("CONTENT_LENGTH") or 0)
@@ -350,7 +349,8 @@ def application(environ, start_response):
             try:
                 # --- VALIDACIÓN DE PERMISOS ---
                 if p.get('action') != 'save_permisos_matrix':
-                    id_p = u_data.get('pid') if 'u_data' in locals() else None
+                    # Fix: Evitamos el error si u_data es None
+                    id_p = u_data.get('pid') if u_data else None 
                     mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
                     col = mapa.get(p.get('action'))
                     
@@ -411,17 +411,15 @@ def application(environ, start_response):
                 
             except Exception as e:
                 if 'conn' in locals() and conn: conn.rollback()
-                raise e # Lanza el error hacia el except externo para empaquetarlo
+                raise e # Sube el error al bloque principal
                 
             finally:
                 if 'cur' in locals() and cur: cur.close()
                 if 'conn' in locals() and conn: conn.close()
                 
         except Exception as e:
-            # Si colapsa al inicio (BD, JSON, etc), lo capturamos aquí SÍ O SÍ
-            res = json.dumps({"ok": False, "error": f"Error Interno de Python: {str(e)}"}).encode('utf-8')
+            res = json.dumps({"ok": False, "error": f"Error del Servidor: {str(e)}"}).encode('utf-8')
             
-        # Pylance Warning Fix: Asegúrate de que esto esté alineado con el 'try' externo
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
     
