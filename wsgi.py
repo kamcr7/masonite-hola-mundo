@@ -297,55 +297,57 @@ def application(environ, start_response):
     u_data = verify_jwt(environ)
     
     # ----------------------------------------------------------
-    # 1. API: GET PERMISOS (matriz)
+    # 1. API: GET PERMISOS (Híbrido)
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
+        import json
+        
         params  = parse_qs(environ.get('QUERY_STRING', ''))
         idp_raw = params.get('idp', [None])[0]
         res = b'{"ok":false,"perms":[]}'
-
+        
         if idp_raw:
-            conn = conectar_bd(); cur = conn.cursor(dictionary=True)
+            conn = conectar_bd()
+            cur = conn.cursor(dictionary=True)
             try:
-                # Usamos LOWER y TRIM para asegurar que los nombres coincidan 
-                # aunque haya diferencias de mayúsculas o espacios extra.
+                # Obtenemos los datos de la base
                 cur.execute("""
-                    SELECT 
-                        m.id as idm, 
-                        p.nombreModulo as nom, 
-                        p.permisoVer as v, 
-                        p.permisoCrear as c,
-                        p.permisoCrear as a, 
-                        p.permisoEditar as e, 
-                        p.permisoEliminar as d
-                    FROM permisos p
-                    JOIN modulos m ON LOWER(TRIM(p.nombreModulo)) = LOWER(TRIM(m.strNombreModulo))
-                    WHERE p.idPerfil = %s
+                    SELECT nombreModulo, permisoVer, permisoCrear, 
+                           permisoEditar, permisoEliminar
+                    FROM permisos 
+                    WHERE idPerfil = %s
                 """, (idp_raw,))
                 
                 raw_perms = cur.fetchall()
                 perms = []
                 
-                # Convertimos explícitamente los 1 y 0 a booleanos (true/false)
-                # para que el frontend no tenga problemas al leerlos.
+                # FUSIONAMOS LAS VARIABLES
                 for row in raw_perms:
                     perms.append({
-                        "idm": row["idm"],
-                        "nom": row["nom"],
-                        "v": bool(row["v"]),
-                        "c": bool(row["c"]),
-                        "a": bool(row["a"]),
-                        "e": bool(row["e"]),
-                        "d": bool(row["d"])
+                        # 1. Variables para MOSTRAR (Las que el JS usa para pintar)
+                        "nombreModulo": row["nombreModulo"],
+                        "permisoVer": row["permisoVer"],
+                        "permisoCrear": row["permisoCrear"],
+                        "permisoEditar": row["permisoEditar"],
+                        "permisoEliminar": row["permisoEliminar"],
+                        
+                        # 2. Variables para GUARDAR (Las que el POST necesita)
+                        "nom": row["nombreModulo"],
+                        "v": bool(row["permisoVer"]),
+                        "c": bool(row["permisoCrear"]),
+                        "e": bool(row["permisoEditar"]),
+                        "d": bool(row["permisoEliminar"])
                     })
-
+                    
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
+                
             except Exception as e:
                 res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
             finally:
-                cur.close(); conn.close()
-
+                cur.close()
+                conn.close()
+                
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
       
