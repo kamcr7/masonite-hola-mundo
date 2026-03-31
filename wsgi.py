@@ -308,8 +308,8 @@ def application(environ, start_response):
         if idp_raw:
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                # Hacemos un JOIN para enviar 'idm' y 'a' (que el JS necesita para pintar la tabla)
-                # al mismo tiempo que enviamos 'nom' y 'c' (que el POST necesita para guardar)
+                # Usamos LOWER y TRIM para asegurar que los nombres coincidan 
+                # aunque haya diferencias de mayúsculas o espacios extra.
                 cur.execute("""
                     SELECT 
                         m.id as idm, 
@@ -320,10 +320,26 @@ def application(environ, start_response):
                         p.permisoEditar as e, 
                         p.permisoEliminar as d
                     FROM permisos p
-                    JOIN modulos m ON p.nombreModulo = m.strNombreModulo
+                    JOIN modulos m ON LOWER(TRIM(p.nombreModulo)) = LOWER(TRIM(m.strNombreModulo))
                     WHERE p.idPerfil = %s
                 """, (idp_raw,))
-                perms = cur.fetchall()
+                
+                raw_perms = cur.fetchall()
+                perms = []
+                
+                # Convertimos explícitamente los 1 y 0 a booleanos (true/false)
+                # para que el frontend no tenga problemas al leerlos.
+                for row in raw_perms:
+                    perms.append({
+                        "idm": row["idm"],
+                        "nom": row["nom"],
+                        "v": bool(row["v"]),
+                        "c": bool(row["c"]),
+                        "a": bool(row["a"]),
+                        "e": bool(row["e"]),
+                        "d": bool(row["d"])
+                    })
+
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
             except Exception as e:
                 res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
