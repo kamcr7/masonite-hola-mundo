@@ -308,10 +308,21 @@ def application(environ, start_response):
         if idp_raw:
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                # CORRECCIÓN: Leer de la tabla 'permisos' con las llaves correctas
-                cur.execute("""SELECT nombreModulo as nom, permisoVer as v, permisoCrear as c,
-                               permisoEditar as e, permisoEliminar as d
-                               FROM permisos WHERE idPerfil = %s""", (idp_raw,))
+                # Hacemos un JOIN para enviar 'idm' y 'a' (que el JS necesita para pintar la tabla)
+                # al mismo tiempo que enviamos 'nom' y 'c' (que el POST necesita para guardar)
+                cur.execute("""
+                    SELECT 
+                        m.id as idm, 
+                        p.nombreModulo as nom, 
+                        p.permisoVer as v, 
+                        p.permisoCrear as c,
+                        p.permisoCrear as a, 
+                        p.permisoEditar as e, 
+                        p.permisoEliminar as d
+                    FROM permisos p
+                    JOIN modulos m ON p.nombreModulo = m.strNombreModulo
+                    WHERE p.idPerfil = %s
+                """, (idp_raw,))
                 perms = cur.fetchall()
                 res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
             except Exception as e:
