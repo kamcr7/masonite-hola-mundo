@@ -335,7 +335,8 @@ def application(environ, start_response):
 # ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL 
     # ----------------------------------------------------------
-    if path == "/api/crud" and method == "POST":
+   # Hacemos que acepte con o sin slash final y nos aseguramos de que entre
+    if path.startswith("/api/crud") and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
         conn = conectar_bd(); cur = conn.cursor(dictionary=True) 
