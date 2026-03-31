@@ -310,25 +310,18 @@ def application(environ, start_response):
         res = b'{"ok":false,"perms":[]}'
         
         if idp_raw:
-            # Mantenemos tu conexión intacta, que es la que funciona bien
             conn = conectar_bd(); cur = conn.cursor(dictionary=True)
             try:
-                # LA MAGIA ESTÁ AQUÍ: 
-                # Leemos la tabla 'permisos' (donde tu CRUD guarda la información)
-                cur.execute("""
-                    SELECT nombreModulo, permisoVer, permisoCrear, 
-                           permisoEditar, permisoEliminar
-                    FROM permisos 
-                    WHERE idPerfil = %s
-                """, (idp_raw,))
-                
+                # CORRECCIÓN: Consultamos la tabla 'permisos' y sacamos las columnas exactas
+                # que el JavaScript espera (nombreModulo, permisoVer, etc.)
+                cur.execute("""SELECT nombreModulo, permisoVer, permisoCrear,
+                               permisoEditar, permisoEliminar
+                               FROM permisos WHERE idPerfil = %s""", (idp_raw,))
                 perms = cur.fetchall()
-                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
                 
+                res = json.dumps({"ok": True, "perms": perms}).encode('utf-8')
             except Exception as e:
-                # Si hay algún error en BD, mandamos ok:True de todos modos 
-                # para que la tabla no desaparezca visualmente
-                res = json.dumps({"ok": True, "perms": [], "error": str(e)}).encode('utf-8')
+                res = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
             finally:
                 cur.close(); conn.close()
                 
