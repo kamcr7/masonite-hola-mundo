@@ -993,7 +993,7 @@ def application(environ, start_response):
               }}
             </script>"""
  
-    # ----------------------------------------------------------
+   # ----------------------------------------------------------
     # 10. PERMISOS (matriz)
     # ----------------------------------------------------------
     elif path == "/permisos":
@@ -1096,15 +1096,21 @@ def application(environ, start_response):
               filtrar('.perm-row', '.perm-name');
             }}
           }}
+          
           function bulk(v) {{
             document.querySelectorAll('.perm-row').forEach(row => {{
               if (row.style.display !== 'none')
                 row.querySelectorAll('.perm-check').forEach(c => c.checked = v);
             }});
           }}
-          function guardarPermisos() {{
+          
+          async function guardarPermisos() {{
             const idp = document.getElementById('sel_perfil').value;
-            if (!idp) return;
+            if (!idp) {{
+                alert("Selecciona un perfil primero.");
+                return;
+            }}
+            
             const matrix = [];
             document.querySelectorAll('.perm-row').forEach(tr => {{
                 const idm = tr.querySelector('.perm-check').dataset.mod;
@@ -1116,8 +1122,34 @@ def application(environ, start_response):
                     d: document.getElementById('d_' + idm).checked ? 1 : 0
                 }});
             }});
+
             if(confirm("¿Deseas actualizar los permisos para este perfil?")) {{
-                runCrud('save_permisos_matrix', 'permisos', 0, {{ idp, perms: matrix }});
+                try {{
+                    const payload = {{
+                        action: 'save_permisos_matrix',
+                        table: 'permisos',
+                        id: 0,
+                        data: {{ idp: idp, perms: matrix }}
+                    }};
+
+                    const response = await fetch('/api/crud', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(payload)
+                    }});
+
+                    const res = await response.json();
+
+                    if (res.ok) {{
+                        alert("🛡️ Permisos guardados correctamente.");
+                        cargarPermisos(idp); // Esto refresca la tabla al instante
+                    }} else {{
+                        alert("❌ Falló al guardar. Error de la BD: \\n" + res.error);
+                        console.error("Detalle del error:", res);
+                    }}
+                }} catch(err) {{
+                    alert("❌ Error de comunicación con el servidor: " + err.message);
+                }}
             }}
           }}
         </script>"""
