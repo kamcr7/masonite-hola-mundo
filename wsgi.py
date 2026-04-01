@@ -297,7 +297,7 @@ def application(environ, start_response):
     u_data = verify_jwt(environ)
     
     # ----------------------------------------------------------
-    # 1. API: GET PERMISOS (Híbrido)
+    # 1. API: GET PERMISOS
     # ----------------------------------------------------------
     if path == "/api/get_permisos":
         from urllib.parse import parse_qs
@@ -459,10 +459,12 @@ def application(environ, start_response):
     # ----------------------------------------------------------
     if path == "/login":
         error_msg = ""
+        
         if method == "POST":
             form = cgi.FieldStorage(fp=environ["wsgi.input"], environ=environ)
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
+
             # Validamos que el captcha haya sido marcado en el cliente
             captcha_val = form.getvalue("captcha_status", "0")
 
@@ -470,18 +472,28 @@ def application(environ, start_response):
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Por favor, verifica que no eres un robot.</p>"
             else:
                 conn2 = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
-                cur2.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s AND strPwd=%s AND strEstado='Activo'",
-                            (usuario, hash_password(pwd)))
+                
+                # 1. Buscamos solo por el nombre de usuario primero
+                cur2.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s", (usuario,))
                 user_row = cur2.fetchone()
                 cur2.close(); conn2.close()
                 
-                if user_row:
+                # 2. Validaciones separadas
+                if not user_row:
+                    # El usuario no existe en la base de datos
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
+                elif user_row["strPwd"] != hash_password(pwd):
+                    # El usuario existe, pero la contraseña está mal
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
+                elif user_row["strEstado"] == "Inactivo":
+                    # El usuario existe y su contraseña es correcta, PERO está inactivo
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario inactivo</p>"
+                else:
+                    # Todo está perfecto (Existe, password correcto y está Activo)
                     token_data = {"u": user_row["strNombreUsuario"], "id": user_row["id"], "pid": user_row["idPerfil"], "exp": time.time() + 86400}
                     token = jwt_encode(token_data)
                     start_response("303 See Other", [("Location", "/dashboard"), ("Set-Cookie", f"token={token}; Path=/; HttpOnly")])
                     return [b""]
-                else:
-                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
 
         # El contenido HTML manteniendo tu estructura de 'card'
         login_html = f"""
@@ -572,7 +584,7 @@ def application(environ, start_response):
         return [b""]
  
     # ----------------------------------------------------------
-    # 5. PROTECCIÓN DE SESIÓN — redirige si no hay JWT válido
+    # 5. PROTECCIÓN DE SESIÓN 
     # ----------------------------------------------------------
     if not u_data:
         start_response("303 See Other", [("Location", "/login")])
@@ -585,7 +597,7 @@ def application(environ, start_response):
     content = ""
  
 ## ----------------------------------------------------------
-    # 6. DASHBOARD (ESTILO CORPORATIVO - VERDE ESMERALDA)
+    # 6. DASHBOARD 
     # ----------------------------------------------------------
     if path in ("/", "/dashboard"):
         # Extraemos el nombre del usuario para personalizar la bienvenida
@@ -873,7 +885,7 @@ def application(environ, start_response):
             </script>"""
  
     # ----------------------------------------------------------
-    # 8. PERFILES (CON CONTROL DE DUPLICADOS)
+    # 8. PERFILES 
     # ----------------------------------------------------------
     elif path == "/perfiles":
         id_p = u_data.get('pid')
@@ -1095,7 +1107,7 @@ def application(environ, start_response):
             </script>"""
  
     # ----------------------------------------------------------
-    # 10. PERMISOS (matriz)
+    # 10. PERMISOS 
     # ----------------------------------------------------------
     elif path == "/permisos":
         cur.execute("SELECT id, strNombrePerfil FROM perfiles")
