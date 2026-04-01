@@ -469,7 +469,7 @@ def application(environ, start_response):
             recaptcha_response = form.getvalue("g-recaptcha-response", "")
             
             # ---> INGRESA AQUÍ LA "CLAVE SECRETA" QUE OBTUVISTE EN GOOGLE <---
-            RECAPTCHA_SECRET = "6LcMjKAsAAAAAFBOfpzt8HfXG2RDGJLTLy0Bwcwk" 
+            RECAPTCHA_SECRET = "6LcMjKAsAAAAAP4hMwivVDk3BLID4RZRe0HmDPNv" 
 
             if not recaptcha_response:
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Por favor, verifica que no eres un robot.</p>"
