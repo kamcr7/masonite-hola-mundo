@@ -352,12 +352,9 @@ def application(environ, start_response):
         return [res]
       
 
-    # ----------------------------------------------------------
-
+# ----------------------------------------------------------
     # 2. API: CRUD PRINCIPAL
-
     # ----------------------------------------------------------
-
     if path == "/api/crud" and method == "POST":
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
         p   = json.loads(raw)
@@ -389,27 +386,54 @@ def application(environ, start_response):
                         (u_nom, hash_password(p['data']['p']), p['data'].get('c',''),
                          p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
                 elif p['table'] == 'perfiles':
-                  
                     # Usamos .get('n') porque Perfiles envía 'n' como nombre
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
                 elif p['table'] == 'modulos':
                     # Modulos envía 'n', 'r', 'p'
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
+            
             elif p['action'] == 'update':
                 if p['table'] == 'usuarios':
-                    cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
-                                (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
-                elif p['table'] == 'perfiles':
+                    # EXTRAEMOS DATOS DEL DICCIONARIO
+                    u_nom = p['data']['u'].strip()
+                    id_perfil = p['data']['idp']
+                    estado = p['data']['st']
+                    password = p['data'].get('p', '').strip()
+                    img_base64 = p['data'].get('img', '')
+                    remove_img = p['data'].get('removeImg', False)
 
+                    # CONSTRUIMOS LA CONSULTA DINÁMICA
+                    query = "UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s"
+                    params = [u_nom, id_perfil, estado]
+
+                    # ¿Viene contraseña nueva? La encriptamos usando tu función y la agregamos
+                    if password:
+                        query += ", strPwd=%s"
+                        params.append(hash_password(password))
+
+                    # ¿Qué hacemos con la foto?
+                    if remove_img:
+                        query += ", strFoto=NULL"
+                    elif img_base64:
+                        query += ", strFoto=%s"
+                        params.append(img_base64)
+
+                    query += " WHERE id=%s"
+                    params.append(p['id'])
+
+                    # EJECUTAMOS LA CONSULTA DINÁMICA
+                    cur.execute(query, tuple(params))
+
+                elif p['table'] == 'perfiles':
                     # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s",
                                 (p['data'].get('n', '').strip(), p['id']))
                 elif p['table'] == 'modulos':
-
                     # Reparado: ahora busca 'n', 'r' y 'p'
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
+            
             elif p['action'] == 'save_permisos_matrix':
                 id_p = p['data']['idp']
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
