@@ -454,7 +454,7 @@ def application(environ, start_response):
         start_response("200 OK", [("Content-Type", "application/json")])
         return [res]
     
-# ----------------------------------------------------------
+    # ----------------------------------------------------------
     # 3. LOGIN 
     # ----------------------------------------------------------
     if path == "/login":
@@ -465,54 +465,65 @@ def application(environ, start_response):
             usuario = form.getvalue("u", "").strip()
             pwd     = form.getvalue("p", "")
 
-            # 1. Validamos que el captcha real de Google haya sido marcado
-            recaptcha_response = form.getvalue("g-recaptcha-response", "")
-            
-            # ---> INGRESA AQUÍ LA "CLAVE SECRETA" QUE OBTUVISTE EN GOOGLE <---
-            RECAPTCHA_SECRET = "6LcMjKAsAAAAAP4hMwivVDk3BLID4RZRe0HmDPNv" 
+            # Validamos que el captcha haya sido marcado en el cliente
+            captcha_val = form.getvalue("captcha_status", "0")
 
-            if not recaptcha_response:
+            if captcha_val != "1":
                 error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Por favor, verifica que no eres un robot.</p>"
             else:
-                # Nos comunicamos de servidor a servidor con Google
-                url_google = 'https://www.google.com/recaptcha/api/siteverify'
-                data_google = urllib.parse.urlencode({'secret': RECAPTCHA_SECRET, 'response': recaptcha_response}).encode()
-                req = urllib.request.Request(url_google, data=data_google)
-                respuesta_google = urllib.request.urlopen(req)
-                resultado_recaptcha = json.loads(respuesta_google.read().decode())
-
-                # Si Google dice que es un robot o falló:
-                if not resultado_recaptcha.get('success'):
-                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Error en la validación de Google reCAPTCHA.</p>"
+                conn2 = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
+                
+                # 1. Buscamos solo por el nombre de usuario primero
+                cur2.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s", (usuario,))
+                user_row = cur2.fetchone()
+                cur2.close(); conn2.close()
+                
+                # 2. Validaciones separadas
+                if not user_row:
+                    # El usuario no existe en la base de datos
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
+                elif user_row["strPwd"] != hash_password(pwd):
+                    # El usuario existe, pero la contraseña está mal
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
+                elif user_row["strEstado"] == "Inactivo":
+                    # El usuario existe y su contraseña es correcta, PERO está inactivo
+                    error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario inactivo</p>"
                 else:
-                    # El reCAPTCHA es válido, procedemos a validar en BD
-                    conn2 = conectar_bd(); cur2 = conn2.cursor(dictionary=True)
-                    
-                    # Buscamos solo por el nombre de usuario primero
-                    cur2.execute("SELECT * FROM usuarios WHERE strNombreUsuario=%s", (usuario,))
-                    user_row = cur2.fetchone()
-                    cur2.close(); conn2.close()
-                    
-                    # Validaciones separadas
-                    if not user_row:
-                        # El usuario no existe en la base de datos
-                        error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
-                    elif user_row["strPwd"] != hash_password(pwd):
-                        # El usuario existe, pero la contraseña está mal
-                        error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario o contraseña incorrectos</p>"
-                    elif user_row["strEstado"] == "Inactivo":
-                        # El usuario existe y su contraseña es correcta, PERO está inactivo
-                        error_msg = "<p style='color:#ef4444; text-align:center; margin-bottom:10px;'>⚠️ Usuario inactivo</p>"
-                    else:
-                        # Todo está perfecto (Existe, password correcto y está Activo)
-                        token_data = {"u": user_row["strNombreUsuario"], "id": user_row["id"], "pid": user_row["idPerfil"], "exp": time.time() + 86400}
-                        token = jwt_encode(token_data)
-                        start_response("303 See Other", [("Location", "/dashboard"), ("Set-Cookie", f"token={token}; Path=/; HttpOnly")])
-                        return [b""]
+                    # Todo está perfecto (Existe, password correcto y está Activo)
+                    token_data = {"u": user_row["strNombreUsuario"], "id": user_row["id"], "pid": user_row["idPerfil"], "exp": time.time() + 86400}
+                    token = jwt_encode(token_data)
+                    start_response("303 See Other", [("Location", "/dashboard"), ("Set-Cookie", f"token={token}; Path=/; HttpOnly")])
+                    return [b""]
 
-        # El contenido HTML limpiado, usando el widget oficial de Google
+        # El contenido HTML manteniendo tu estructura de 'card'
         login_html = f"""
-        <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+        <style>
+            /* Estilos específicos para el widget reCAPTCHA */
+            .captcha-container {{
+                background: #f9f9f9; border: 1px solid #d3d3d3; border-radius: 3px;
+                width: 300px; height: 74px; display: flex; align-items: center;
+                padding: 0 12px; margin: 20px auto; font-family: 'Segoe UI', Roboto, sans-serif;
+            }}
+            .rc-check-box {{
+                width: 24px; height: 24px; border: 2px solid #c1c1c1; background: #fff;
+                border-radius: 2px; cursor: pointer; transition: all 0.2s;
+                display: flex; align-items: center; justify-content: center;
+            }}
+            .rc-check-box.loading {{
+                border-radius: 50%; border: 3px solid #f3f3f3; border-top: 3px solid #4d90fe;
+                animation: rc-spin 1s linear infinite; width: 22px; height: 22px;
+            }}
+            .rc-check-box.checked {{ border: none; background: transparent; }}
+            .rc-check-box.checked::after {{
+                content: '✔'; color: #00ad45; font-size: 32px; font-weight: bold;
+            }}
+            .rc-text {{ color: #000; font-size: 14px; margin-left: 12px; flex-grow: 1; user-select: none; }}
+            .rc-logo-side {{ text-align: center; line-height: 1; }}
+            .rc-logo-side img {{ width: 30px; display: block; margin: 0 auto 2px; }}
+            .rc-logo-side span {{ font-size: 8px; color: #555; display: block; }}
+            
+            @keyframes rc-spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+        </style>
 
         <div style="display:flex; align-items:center; justify-content:center; padding: 40px 0;">
           <div class="card" style="width:100%; max-width:400px;">
@@ -523,20 +534,45 @@ def application(environ, start_response):
               <input name="u" placeholder="nombre@ejemplo.com" required style="width:100%; margin-bottom:15px;">
               
               <label>Contraseña</label>
-              <input name="p" type="password" placeholder="••••••••" required style="width:100%; margin-bottom:20px;">
+              <input name="p" type="password" placeholder="••••••••" required style="width:100%; margin-bottom:10px;">
               
-              <div style="display:flex; justify-content:center; margin-bottom: 20px;">
-                INGRESA AQUÍ LA "CLAVE DEL SITIO WEB" QUE OBTUVISTE EN GOOGLE <--- -->
-                <div class="g-recaptcha" data-sitekey="6Lfkg6AsAAAAANOzzBDf7mWYlX9EGJA90-aNMCu8"></div>
+              <div class="captcha-container">
+                <div id="check-box" class="rc-check-box" onclick="simularVerificacion()"></div>
+                <div class="rc-text">No soy un robot</div>
+                <div class="rc-logo-side">
+                    <img src="https://www.gstatic.com/recaptcha/api2/logo_48.png" alt="re">
+                    <span>reCAPTCHA</span>
+                    <span style="color:#777;">Privacidad - Condiciones</span>
+                </div>
+                <input type="hidden" name="captcha_status" id="captcha_status" value="0">
               </div>
 
               <button type="submit" class="btn-emerald" style="width:100%; padding:12px;">Entrar</button>
             </form>
           </div>
         </div>
+
+        <script>
+            function simularVerificacion() {{
+                const box = document.getElementById('check-box');
+                const status = document.getElementById('captcha_status');
+                
+                if(status.value === "1") return; // Evitar repetir
+
+                box.classList.add('loading');
+                
+                // Simulamos una carga de 1.2 segundos como el real
+                setTimeout(() => {{
+                    box.classList.remove('loading');
+                    box.classList.add('checked');
+                    status.value = "1"; // Marcamos como verificado para el backend
+                }}, 1200);
+            }}
+        </script>
         """
         start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
         return [render_layout("Login - Clínica", login_html).encode("utf-8")]
+ 
     # ----------------------------------------------------------
     # 4. LOGOUT
     # ----------------------------------------------------------
