@@ -359,157 +359,75 @@ def application(environ, start_response):
     # ----------------------------------------------------------
 
     if path == "/api/crud" and method == "POST":
-
         raw = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH", 0)))
-
         p   = json.loads(raw)
-
         conn = conectar_bd(); cur = conn.cursor(dictionary=True)
-
-       
-
+      
         try:
-
             # --- VALIDACIÓN DE PERMISOS ---
-
             if p['action'] != 'save_permisos_matrix':
-
                 id_p = u_data.get('pid')
-
                 mapa = {'save': 'permisoCrear', 'update': 'permisoEditar', 'delete': 'permisoEliminar'}
-
                 col = mapa.get(p['action'])
-
                 if col:
-
                     nom_mod = p['table'].capitalize()
-
                     cur.execute(f"SELECT {col} FROM permisos WHERE idPerfil=%s AND nombreModulo=%s", (id_p, nom_mod))
-
                     p_row = cur.fetchone()
-
                     if not p_row or not p_row[col]: raise Exception(f"Sin permiso para {p['action']}")
-
-
-
+                    
             # --- ACCIONES ---
-
             if p['action'] == 'delete':
-
                 cur.execute(f"DELETE FROM {p['table']} WHERE id=%s", (p['id'],))
-
-
-
             elif p['action'] == 'save':
-
                 if p['table'] == 'usuarios':
-
                     u_nom = p['data']['u'].strip()
-
                     cur.execute("SELECT id FROM usuarios WHERE LOWER(strNombreUsuario)=LOWER(%s)", (u_nom,))
-
                     if cur.fetchone(): raise Exception("El usuario ya existe")
-
                     cur.execute("""INSERT INTO usuarios
-
                         (strNombreUsuario, strPwd, strCorreo, strTelefono, idPerfil, strEstado, strFoto)
-
                         VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-
                         (u_nom, hash_password(p['data']['p']), p['data'].get('c',''),
-
                          p['data'].get('t',''), p['data']['idp'], p['data']['st'], p['data'].get('img','')))
-
-
-
                 elif p['table'] == 'perfiles':
-
+                  
                     # Usamos .get('n') porque Perfiles envía 'n' como nombre
-
                     cur.execute("INSERT INTO perfiles (strNombrePerfil) VALUES (%s)", (p['data'].get('n', '').strip(),))
-
-
-
                 elif p['table'] == 'modulos':
-
                     # Modulos envía 'n', 'r', 'p'
-
                     cur.execute("INSERT INTO modulos (strNombreModulo, strRuta, strMenuPadre) VALUES (%s,%s,%s)",
-
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p','')))
-
-
-
             elif p['action'] == 'update':
-
                 if p['table'] == 'usuarios':
-
                     cur.execute("UPDATE usuarios SET strNombreUsuario=%s, idPerfil=%s, strEstado=%s WHERE id=%s",
-
                                 (p['data']['u'].strip(), p['data']['idp'], p['data']['st'], p['id']))
-
-
-
                 elif p['table'] == 'perfiles':
 
                     # Reparado: ahora busca 'n' que es lo que envía el JS de perfiles
-
                     cur.execute("UPDATE perfiles SET strNombrePerfil=%s WHERE id=%s",
-
                                 (p['data'].get('n', '').strip(), p['id']))
-
-
-
                 elif p['table'] == 'modulos':
 
                     # Reparado: ahora busca 'n', 'r' y 'p'
-
                     cur.execute("UPDATE modulos SET strNombreModulo=%s, strRuta=%s, strMenuPadre=%s WHERE id=%s",
-
                                 (p['data'].get('n','').strip(), p['data'].get('r',''), p['data'].get('p',''), p['id']))
-
-
-
             elif p['action'] == 'save_permisos_matrix':
-
                 id_p = p['data']['idp']
-
                 cur.execute("DELETE FROM permisos WHERE idPerfil=%s", (id_p,))
-
                 for per in p['data']['perms']:
-
                     if per['v'] or per['c'] or per['e'] or per['d']:
-
                         cur.execute("""INSERT INTO permisos
-
                             (idPerfil, nombreModulo, permisoVer, permisoCrear, permisoEditar, permisoEliminar)
-
                             VALUES (%s,%s,%s,%s,%s,%s)""",
-
                             (id_p, per['nom'], per['v'], per['c'], per['e'], per['d']))
-
-
-
             conn.commit()
-
             res = b'{"ok":true}'
-
         except Exception as e:
-
             if conn: conn.rollback()
-
             res = json.dumps({"ok": False, "error": str(e)}).encode()
-
         finally:
-
             if cur: cur.close()
-
             if conn: conn.close()
-
-       
-
         start_response("200 OK", [("Content-Type", "application/json")])
-
         return [res]
     
     # ----------------------------------------------------------
@@ -751,7 +669,8 @@ def application(environ, start_response):
                 # Priorizar foto de la BD, si no, avatar aleatorio
                 foto_src = u.get('strFoto') if u.get('strFoto') else f"https://ui-avatars.com/api/?name={u['strNombreUsuario']}&background=random"
                 
-                btn_edit = f"<button class='btn-blue' onclick='preEdit({u['id']}, {{u:\"{u['strNombreUsuario']}\", idp:{u['idPerfil']}, st:\"{u['strEstado']}\"}}, \"mEdit\")'>Editar</button>" if p_user['permisoEditar'] else ""
+                # Se cambió preEdit por una función dedicada openEditUser para manejar la foto
+                btn_edit = f"<button class='btn-blue' onclick='openEditUser({u['id']}, \"{u['strNombreUsuario']}\", {u['idPerfil']}, \"{u['strEstado']}\", \"{foto_src}\")'>Editar</button>" if p_user['permisoEditar'] else ""
                 btn_del  = f"<button class='btn-red' onclick=\"runCrud('delete','usuarios',{u['id']})\">Borrar</button>" if p_user['permisoEliminar'] else ""
                 
                 rows += f"""
@@ -817,9 +736,21 @@ def application(environ, start_response):
               <span class='close-x' onclick="closeM('mEdit')">&times;</span>
               <h3>Editar Usuario</h3>
               <input type='hidden' id='ed_id'>
+              
+              <div style="text-align:center; margin-bottom:15px;">
+                <img id="ed_imgPre" src="" 
+                     style="width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid var(--blue);">
+                <br>
+                <label for="ed_foto" class="btn-blue" style="display:inline-block; padding:4px 8px; font-size:11px; cursor:pointer; margin-top:5px;">📸 Cambiar</label>
+                <input type="file" id="ed_foto" accept="image/*" style="display:none" onchange="previewImgEdit(this)">
+                <button class="btn-red" style="padding:4px 8px; font-size:11px; margin-top:5px;" onclick="removeImgEdit()">🗑️ Quitar</button>
+              </div>
+
               <div class='grid-2'>
                 <div><label>Usuario</label>
                      <input id='ed_u' onkeypress="return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(event.key)"></div>
+                <div><label>Nueva Pass (Dejar en blanco si no cambia)</label>
+                     <input id='ed_p' type='password' maxlength='8' placeholder='***'></div>
                 <div><label>Perfil</label><select id='ed_idp'>{p_opts}</select></div>
                 <div><label>Estado</label><select id='ed_st'><option>Activo</option><option>Inactivo</option></select></div>
               </div>
@@ -827,14 +758,55 @@ def application(environ, start_response):
             </div></div>
 
             <script>
+              // Variables globales para fotos
               let base64Foto = "";
+              let base64FotoEdit = "";
+              let flagRemoveImg = false;
 
+              // Previsualización para modal NUEVO
               function previewImg(i) {{
                 if (i.files && i.files[0]) {{
                   const r = new FileReader();
                   r.onload = e => {{ document.getElementById('imgPre').src = e.target.result; base64Foto = e.target.result; }};
                   r.readAsDataURL(i.files[0]);
                 }}
+              }}
+
+              // Previsualización para modal EDITAR
+              function previewImgEdit(i) {{
+                if (i.files && i.files[0]) {{
+                  const r = new FileReader();
+                  r.onload = e => {{ 
+                      document.getElementById('ed_imgPre').src = e.target.result; 
+                      base64FotoEdit = e.target.result; 
+                      flagRemoveImg = false; // Cancelamos el flag de borrado si elige una nueva
+                  }};
+                  r.readAsDataURL(i.files[0]);
+                }}
+              }}
+
+              // Función para quitar la foto en modal EDITAR
+              function removeImgEdit() {{
+                const userName = document.getElementById('ed_u').value || "U";
+                document.getElementById('ed_imgPre').src = "https://ui-avatars.com/api/?name=" + userName + "&background=random";
+                base64FotoEdit = "";
+                flagRemoveImg = true;
+              }}
+
+              // Función para abrir modal y setear datos
+              function openEditUser(id, nombre, idp, estado, fotoSrc) {{
+                document.getElementById('ed_id').value = id;
+                document.getElementById('ed_u').value = nombre;
+                document.getElementById('ed_idp').value = idp;
+                document.getElementById('ed_st').value = estado;
+                document.getElementById('ed_p').value = ""; // Vaciamos para no sobreescribir si no lo editan
+                
+                // Configurar imagen actual
+                document.getElementById('ed_imgPre').src = fotoSrc;
+                base64FotoEdit = "";
+                flagRemoveImg = false;
+                
+                openM('mEdit');
               }}
 
               function validateAndSave() {{
@@ -850,7 +822,7 @@ def application(environ, start_response):
                 if (!/^\d{{10}}$/.test(t)) return alert("⚠️ El teléfono debe tener exactamente 10 dígitos numéricos");
                 
                 runCrud('save','usuarios',0,{{ 
-                    u, p, c, t, 
+                    u: u, p: p, c: c, t: t, 
                     idp: document.getElementById('un_idp').value, 
                     st: document.getElementById('un_st').value,
                     img: base64Foto 
@@ -859,13 +831,19 @@ def application(environ, start_response):
               
               function updateUser() {{
                 const u = document.getElementById('ed_u').value.trim();
+                const p = document.getElementById('ed_p').value; // Nueva contraseña (puede venir vacía)
+                
                 if (!u) return alert("⚠️ El nombre es obligatorio");
                 if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ ]+$/.test(u)) return alert("⚠️ El nombre solo puede contener letras");
+                if (p !== "" && (p.length < 5 || p.length > 8)) return alert("⚠️ La nueva contraseña debe tener entre 5 y 8 caracteres");
 
                 runCrud('update','usuarios', document.getElementById('ed_id').value, {{
                   u: u,
                   idp: document.getElementById('ed_idp').value,
-                  st: document.getElementById('ed_st').value
+                  st: document.getElementById('ed_st').value,
+                  p: p,                  // Enviamos la pass nueva al backend (si va vacía "", tu backend debe ignorarla)
+                  img: base64FotoEdit,   // Enviamos la nueva foto en base64
+                  removeImg: flagRemoveImg // Enviamos un flag (true/false) para saber si el usuario dio clic en "Quitar"
                 }});
               }}
             </script>"""
